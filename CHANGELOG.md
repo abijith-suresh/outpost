@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.9
+
+### Patch Changes
+
+- 25b924b: Extend `outpost doctor` to report degraded status when managed repositories are missing from disk.
+
 ## 0.0.8
 
 ### Patch Changes
