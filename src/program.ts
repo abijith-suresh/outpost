@@ -1,0 +1,164 @@
+import * as FileSystem from "@effect/platform/FileSystem";
+import * as Path from "@effect/platform/Path";
+import { Console, Effect, Schema } from "effect";
+
+import { runDoctor } from "./commands/doctor.js";
+import { runInit } from "./commands/init.js";
+import type { CommandOutput } from "./types.js";
+
+const cliVersionSchema = Schema.Struct({
+  argv: Schema.Array(Schema.String),
+  version: Schema.String,
+});
+
+export class CliError extends Schema.TaggedError<CliError>()("CliError", {
+  message: Schema.String,
+}) {}
+
+const demoItems = [
+  { id: "workspace-bootstrap", title: "Workspace bootstrap", status: "ready" },
+  { id: "effect-foundation", title: "Effect foundation", status: "ready" },
+] as const;
+
+function printHelp(version: string): string {
+  return `outpost ${version}
+
+Usage:
+  outpost <command> [options]
+
+Commands:
+  help                 Show this help output
+  doctor [--json]      Report local CLI environment status
+  init [--json]        Initialize Outpost home and worktrees roots
+  demo list [--json]   Show placeholder command output structure
+
+Global options:
+  --help               Show help output
+  --version            Show CLI version
+  --json               Use JSON output for supported commands`;
+}
+
+function printJson(output: CommandOutput): Effect.Effect<void> {
+  return Console.log(JSON.stringify(output, null, 2));
+}
+
+function printCommandOutput(
+  output: CommandOutput,
+  asJson: boolean,
+): Effect.Effect<void> {
+  if (asJson) {
+    return printJson(output);
+  }
+
+  switch (output.command) {
+    case "doctor":
+      return Effect.all([
+        Console.log("outpost doctor"),
+        Console.log(`status: ${String(output.data.status)}`),
+        Console.log(`node: ${String(output.data.node)}`),
+        Console.log(`platform: ${String(output.data.platform)}`),
+        Console.log(`cwd: ${String(output.data.cwd)}`),
+      ]).pipe(Effect.asVoid);
+    case "init":
+      return Effect.all([
+        Console.log("outpost init"),
+        Console.log(`outpost home: ${String(output.data.outpostHome)}`),
+        Console.log(`worktrees root: ${String(output.data.worktreesRoot)}`),
+      ]).pipe(Effect.asVoid);
+    case "demo list":
+      return Effect.all([
+        Console.log("outpost demo list"),
+        ...demoItems.map((item) =>
+          Console.log(`- ${item.id}: ${item.title} [${item.status}]`),
+        ),
+      ]).pipe(Effect.asVoid);
+    default:
+      return Console.log(JSON.stringify(output));
+  }
+}
+
+function printUnknownCommand(command: string): Effect.Effect<number> {
+  return Effect.all([
+    Console.error(`Unknown command: ${command}`),
+    Console.error("Run `outpost --help` to see available commands."),
+  ]).pipe(Effect.as(1));
+}
+
+function runDemoList(): Effect.Effect<CommandOutput> {
+  return Effect.succeed({
+    command: "demo list",
+    data: {
+      items: demoItems,
+    },
+  });
+}
+
+function resolveCommand(
+  positionalArgs: ReadonlyArray<string>,
+): Effect.Effect<CommandOutput, CliError, FileSystem.FileSystem | Path.Path> {
+  if (positionalArgs[0] === "doctor") {
+    return runDoctor();
+  }
+
+  if (positionalArgs[0] === "init") {
+    return runInit().pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "demo" && positionalArgs[1] === "list") {
+    return runDemoList();
+  }
+
+  return Effect.fail(new CliError({ message: positionalArgs.join(" ") }));
+}
+
+export function run(
+  argv: readonly string[],
+  version: string,
+): Effect.Effect<number, never, FileSystem.FileSystem | Path.Path> {
+  const program = Effect.gen(function* () {
+    const input = yield* Schema.decodeUnknown(cliVersionSchema)({
+      argv: [...argv],
+      version,
+    }).pipe(
+      Effect.mapError(
+        (error) =>
+          new CliError({
+            message: error.message,
+          }),
+      ),
+    );
+
+    const asJson = input.argv.includes("--json");
+    const positionalArgs = input.argv.filter((arg) => arg !== "--json");
+
+    if (
+      positionalArgs.length === 0 ||
+      positionalArgs[0] === "help" ||
+      (positionalArgs.length === 1 && positionalArgs[0] === "--help")
+    ) {
+      yield* Console.log(printHelp(input.version));
+      return 0;
+    }
+
+    if (positionalArgs.length === 1 && positionalArgs[0] === "--version") {
+      yield* Console.log(input.version);
+      return 0;
+    }
+
+    const output = yield* resolveCommand(positionalArgs).pipe(
+      Effect.matchEffect({
+        onFailure: (error) => printUnknownCommand(error.message),
+        onSuccess: (commandOutput) =>
+          printCommandOutput(commandOutput, asJson).pipe(Effect.as(0)),
+      }),
+    );
+
+    return output;
+  });
+
+  return program.pipe(
+    Effect.catchTag("CliError", (error) => printUnknownCommand(error.message)),
+  );
+}
