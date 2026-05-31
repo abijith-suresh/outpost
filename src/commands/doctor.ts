@@ -33,6 +33,8 @@ export function runDoctor(): Effect.Effect<
         data: {
           cwd: process.cwd(),
           initialized: false,
+          missingRepoCount: 0,
+          missingRepos: [],
           node: process.version,
           outpostHome,
           platform: process.platform,
@@ -47,6 +49,19 @@ export function runDoctor(): Effect.Effect<
     const repoRegistry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.catchAll(() => Effect.succeed(emptyRepoRegistry)),
     );
+    const missingRepos = yield* Effect.forEach(repoRegistry.repos, (repo) =>
+      fs.exists(repo.managedRepoPath).pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.map((exists) => (exists ? null : repo.managedRepoPath)),
+      ),
+    ).pipe(
+      Effect.map((paths) =>
+        [
+          ...new Set(paths.filter((path): path is string => path !== null)),
+        ].sort(),
+      ),
+    );
+    const missingRepoCount = missingRepos.length;
 
     return {
       command: "doctor",
@@ -54,13 +69,15 @@ export function runDoctor(): Effect.Effect<
         configFilePath,
         cwd: process.cwd(),
         initialized: true,
+        missingRepoCount,
+        missingRepos,
         node: process.version,
         outpostHome,
         platform: process.platform,
         repoCount: repoRegistry.repos.length,
         repoRegistryFilePath,
         reposRoot: config.reposRoot,
-        status: "ok",
+        status: missingRepoCount > 0 ? "degraded" : "ok",
         worktreesRoot: config.worktreesRoot,
       },
     } satisfies CommandOutput;
