@@ -1,0 +1,38 @@
+import type * as FileSystem from "@effect/platform/FileSystem";
+import type * as Path from "@effect/platform/Path";
+import { Effect, Schema } from "effect";
+
+import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import type { CommandOutput } from "../types.js";
+
+export class RepoListError extends Schema.TaggedError<RepoListError>()(
+  "RepoListError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export function runRepoList(): Effect.Effect<
+  CommandOutput,
+  RepoListError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const outpostHome = yield* resolveOutpostHome();
+
+    yield* loadConfig(outpostHome).pipe(
+      Effect.mapError((error) => new RepoListError({ message: error.message })),
+    );
+
+    const registry = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.mapError((error) => new RepoListError({ message: error.message })),
+    );
+
+    return {
+      command: "repo list",
+      data: {
+        repos: registry.repos,
+      },
+    } satisfies CommandOutput;
+  });
+}

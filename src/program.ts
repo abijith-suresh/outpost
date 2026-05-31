@@ -6,6 +6,7 @@ import { Console, Effect, Schema } from "effect";
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
+import { runRepoList } from "./commands/repo-list.js";
 import type { CommandOutput } from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
@@ -33,6 +34,7 @@ Commands:
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
   repo add <path>      Validate a local repository for Outpost registration
+  repo list [--json]   List imported repositories
   demo list [--json]   Show placeholder command output structure
 
 Global options:
@@ -94,6 +96,29 @@ function printCommandOutput(
             )
           : []),
       ]).pipe(Effect.asVoid);
+    case "repo list":
+      return Effect.all([
+        Console.log("outpost repo list"),
+        Console.log(
+          `repos: ${Array.isArray(output.data.repos) ? output.data.repos.length : 0}`,
+        ),
+        ...(Array.isArray(output.data.repos)
+          ? output.data.repos.map((repo) => {
+              const name =
+                typeof repo === "object" && repo !== null && "name" in repo
+                  ? String(repo.name)
+                  : "";
+              const managedRepoPath =
+                typeof repo === "object" &&
+                repo !== null &&
+                "managedRepoPath" in repo
+                  ? String(repo.managedRepoPath)
+                  : "";
+
+              return Console.log(`- ${name}: ${managedRepoPath}`);
+            })
+          : []),
+      ]).pipe(Effect.asVoid);
     default:
       return Console.log(JSON.stringify(output));
   }
@@ -134,6 +159,12 @@ function resolveCommand(
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "add") {
     return runRepoAdd(positionalArgs[2]).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "repo" && positionalArgs[1] === "list") {
+    return runRepoList().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
