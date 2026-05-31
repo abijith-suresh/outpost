@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.6
+
+### Patch Changes
+
+- 68773c4: Persist imported repositories in a versioned repo registry and initialize that registry during `outpost init`.
+
 ## 0.0.5
 
 ### Patch Changes
