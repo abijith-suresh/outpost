@@ -50,6 +50,9 @@ describe("run", () => {
   });
 
   it("prints doctor output", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -58,10 +61,18 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
-    expect(infoSpy).toHaveBeenNthCalledWith(2, "status: ok");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, "status: not-initialized");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      3,
+      `resolved outpost home: ${tempHome}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(4, "initialized: false");
   });
 
   it("prints doctor output as json", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -71,6 +82,50 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "doctor"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "not-initialized"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"initialized": false');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      `"outpostHome": "${tempHome}"`,
+    );
+  });
+
+  it("prints initialized doctor output", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, "status: ok");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      3,
+      `resolved outpost home: ${tempHome}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(4, "initialized: true");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      5,
+      `config file path: ${path.join(tempHome, "config.json")}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      6,
+      `repo registry file path: ${path.join(tempHome, "repos.json")}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      7,
+      `repos root: ${path.join(tempHome, "repos")}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      8,
+      `worktrees root: ${path.join(tempHome, "worktrees")}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(9, "repo count: 0");
   });
 
   it("initializes outpost home and worktrees root", async () => {

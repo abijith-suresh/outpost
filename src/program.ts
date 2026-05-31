@@ -60,6 +60,25 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost doctor"),
         Console.log(`status: ${String(output.data.status)}`),
+        Console.log(
+          `resolved outpost home: ${String(output.data.outpostHome)}`,
+        ),
+        Console.log(`initialized: ${String(output.data.initialized)}`),
+        ...(output.data.initialized === true
+          ? [
+              Console.log(
+                `config file path: ${String(output.data.configFilePath)}`,
+              ),
+              Console.log(
+                `repo registry file path: ${String(output.data.repoRegistryFilePath)}`,
+              ),
+              Console.log(`repos root: ${String(output.data.reposRoot)}`),
+              Console.log(
+                `worktrees root: ${String(output.data.worktreesRoot)}`,
+              ),
+              Console.log(`repo count: ${String(output.data.repoCount)}`),
+            ]
+          : []),
         Console.log(`node: ${String(output.data.node)}`),
         Console.log(`platform: ${String(output.data.platform)}`),
         Console.log(`cwd: ${String(output.data.cwd)}`),
