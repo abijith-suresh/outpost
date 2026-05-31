@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.4
+
+### Patch Changes
+
+- 900f18a: Add a read-only `repo add` preflight command that validates local Git repositories against initialized Outpost configuration.
+
 ## 0.0.3
 
 ### Patch Changes
