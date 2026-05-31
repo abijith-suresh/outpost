@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.5
+
+### Patch Changes
+
+- 020dd9a: Add managed bare-repo import for `repo add`, create a dedicated repos root during init, and automatically dispatch CI for Changesets release branches.
+
 ## 0.0.4
 
 ### Patch Changes
