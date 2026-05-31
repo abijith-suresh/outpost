@@ -64,6 +64,7 @@ function printCommandOutput(
           `resolved outpost home: ${String(output.data.outpostHome)}`,
         ),
         Console.log(`initialized: ${String(output.data.initialized)}`),
+        Console.log(`missing repos: ${String(output.data.missingRepoCount)}`),
         ...(output.data.initialized === true
           ? [
               Console.log(
@@ -77,6 +78,13 @@ function printCommandOutput(
                 `worktrees root: ${String(output.data.worktreesRoot)}`,
               ),
               Console.log(`repo count: ${String(output.data.repoCount)}`),
+              ...(Array.isArray(output.data.missingRepos)
+                ? output.data.missingRepos.map((missingRepoPath) =>
+                    Console.log(
+                      `missing managed repo: ${String(missingRepoPath)}`,
+                    ),
+                  )
+                : []),
             ]
           : []),
         Console.log(`node: ${String(output.data.node)}`),
