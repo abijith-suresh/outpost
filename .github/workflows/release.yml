@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: write
   contents: write
   id-token: write
   pull-requests: write
@@ -54,6 +55,7 @@ jobs:
         run: npm run build
 
       - name: Create release pull request or publish package
+        id: changesets
         uses: changesets/action@v1
         with:
           commit: "chore: version packages"
@@ -61,3 +63,18 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger CI on changeset release branch
+        if: steps.changesets.outputs.hasChangesets == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
+              -f ref="changeset-release/${GITHUB_REF_NAME}" && exit 0
+            sleep 5
+          done
+          exit 1

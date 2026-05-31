@@ -66,6 +66,7 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost init"),
         Console.log(`outpost home: ${String(output.data.outpostHome)}`),
+        Console.log(`repos root: ${String(output.data.reposRoot)}`),
         Console.log(`worktrees root: ${String(output.data.worktreesRoot)}`),
       ]).pipe(Effect.asVoid);
     case "demo list":
@@ -78,8 +79,12 @@ function printCommandOutput(
     case "repo add":
       return Effect.all([
         Console.log("outpost repo add"),
-        Console.log(`repo path: ${String(output.data.repoPath)}`),
+        Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
+        Console.log(`remote name: ${String(output.data.remoteName)}`),
+        Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`repo name: ${String(output.data.repoName)}`),
+        Console.log(`managed repo path: ${String(output.data.repoPath)}`),
+        Console.log(`action: ${String(output.data.action)}`),
         Console.log(`ready: ${String(output.data.ready)}`),
         ...(Array.isArray(output.data.blockers) &&
         output.data.blockers.length > 0
