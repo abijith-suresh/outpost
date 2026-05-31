@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.7
+
+### Patch Changes
+
+- 4da548c: Add a basic `outpost repo list` command.
+
 ## 0.0.6
 
 ### Patch Changes
