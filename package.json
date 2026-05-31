@@ -1,0 +1,83 @@
+{
+  "name": "@abijith-suresh/outpost",
+  "version": "0.0.1",
+  "description": "CLI for managing local repository workspaces.",
+  "type": "module",
+  "bin": {
+    "outpost": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.14.0",
+    "npm": ">=11.5.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abijith-suresh/outpost.git"
+  },
+  "homepage": "https://github.com/abijith-suresh/outpost#readme",
+  "bugs": {
+    "url": "https://github.com/abijith-suresh/outpost/issues"
+  },
+  "keywords": [
+    "cli",
+    "developer-tools",
+    "typescript"
+  ],
+  "author": "abijith-suresh",
+  "license": "MIT",
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "changeset": "changeset",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepare": "husky",
+    "prepublishOnly": "npm run build",
+    "publish:release": "changeset publish",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "lint-staged": {
+    "*.{ts,mts,cts,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.31.0",
+    "@commitlint/cli": "21.0.2",
+    "@commitlint/config-conventional": "21.0.2",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.4.1",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.6.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.0.7",
+    "prettier": "3.8.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.60.0",
+    "vitest": "4.1.7"
+  }
+}
