@@ -33,6 +33,9 @@ export default tseslint.config(
       globals: {
         ...globals.node,
       },
+      parserOptions: {
+        projectService: false,
+      },
     },
   },
 );

@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
+
 export function run(argv: readonly string[]): number {
   if (argv.includes("--version")) {
-    console.log("0.0.1");
+    console.log(version);
     return 0;
   }
 

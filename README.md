@@ -22,3 +22,7 @@ npm run build
 - Merging to `main` updates or creates a release PR.
 - Merging the release PR publishes the package from GitHub Actions.
 - npm trusted publishing should be configured for `.github/workflows/release.yml`.
+
+## Package Name
+
+The package is published under the scoped name `@abijith-suresh/outpost`.

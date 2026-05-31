@@ -50,10 +50,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Create or update release pull request
-        id: changesets
+      - name: Create release pull request or publish package
         uses: changesets/action@v1
-
-      - name: Publish package
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        run: npm run publish:release
+        with:
+          publish: npm run publish:release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
