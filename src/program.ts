@@ -1,9 +1,11 @@
 import * as FileSystem from "@effect/platform/FileSystem";
+import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
 
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
+import { runRepoAdd } from "./commands/repo-add.js";
 import type { CommandOutput } from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
@@ -30,6 +32,7 @@ Commands:
   help                 Show this help output
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
+  repo add <path>      Validate a local repository for Outpost registration
   demo list [--json]   Show placeholder command output structure
 
 Global options:
@@ -72,6 +75,19 @@ function printCommandOutput(
           Console.log(`- ${item.id}: ${item.title} [${item.status}]`),
         ),
       ]).pipe(Effect.asVoid);
+    case "repo add":
+      return Effect.all([
+        Console.log("outpost repo add"),
+        Console.log(`repo path: ${String(output.data.repoPath)}`),
+        Console.log(`repo name: ${String(output.data.repoName)}`),
+        Console.log(`ready: ${String(output.data.ready)}`),
+        ...(Array.isArray(output.data.blockers) &&
+        output.data.blockers.length > 0
+          ? output.data.blockers.map((blocker) =>
+              Console.log(`blocker: ${String(blocker)}`),
+            )
+          : []),
+      ]).pipe(Effect.asVoid);
     default:
       return Console.log(JSON.stringify(output));
   }
@@ -95,13 +111,23 @@ function runDemoList(): Effect.Effect<CommandOutput> {
 
 function resolveCommand(
   positionalArgs: ReadonlyArray<string>,
-): Effect.Effect<CommandOutput, CliError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  CommandOutput,
+  CliError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> {
   if (positionalArgs[0] === "doctor") {
     return runDoctor();
   }
 
   if (positionalArgs[0] === "init") {
     return runInit().pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "repo" && positionalArgs[1] === "add") {
+    return runRepoAdd(positionalArgs[2]).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
@@ -116,7 +142,11 @@ function resolveCommand(
 export function run(
   argv: readonly string[],
   version: string,
-): Effect.Effect<number, never, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  number,
+  never,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> {
   const program = Effect.gen(function* () {
     const input = yield* Schema.decodeUnknown(cliVersionSchema)({
       argv: [...argv],
