@@ -56,6 +56,8 @@ jobs:
       - name: Create release pull request or publish package
         uses: changesets/action@v1
         with:
+          commit: "chore: version packages"
           publish: npm run publish:release
+          title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
