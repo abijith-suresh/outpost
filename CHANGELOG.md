@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.8
+
+### Patch Changes
+
+- 0e0d09b: Enhance `outpost doctor` with Outpost initialization and repo registry details.
+
 ## 0.0.7
 
 ### Patch Changes
