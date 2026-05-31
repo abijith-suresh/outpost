@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.3
+
+### Patch Changes
+
+- 2346f38: Add an Effect-based CLI foundation with a real `init` command, validated config bootstrap, and async runtime-backed command execution.
+
 ## 0.0.2
 
 ### Patch Changes
