@@ -1,6 +1,11 @@
+import { createRequire } from "node:module";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { run } from "../src/index.ts";
+
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -27,7 +32,7 @@ describe("run", () => {
     const exitCode = run(["--version"]);
 
     expect(exitCode).toBe(0);
-    expect(infoSpy).toHaveBeenCalledWith("0.0.1");
+    expect(infoSpy).toHaveBeenCalledWith(version);
   });
 
   it("prints doctor output", () => {
