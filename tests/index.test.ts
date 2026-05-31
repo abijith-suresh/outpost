@@ -83,6 +83,81 @@ describe("run", () => {
     );
   });
 
+  it("preflights repo add for a local git repository", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["init"], { cwd: tempRepo });
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo add");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, `repo path: ${tempRepo}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      3,
+      `repo name: ${path.basename(tempRepo)}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(4, "ready: true");
+  });
+
+  it("returns an error when repo add is run before init", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      `Unknown command: Outpost is not initialized at ${tempHome}`,
+    );
+  });
+
+  it("prints repo add output as json", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["init"], { cwd: tempRepo });
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", tempRepo, "--json"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo add"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ready": true');
+  });
+
   it("prints demo list output", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
