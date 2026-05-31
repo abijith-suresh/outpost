@@ -1,15 +1,68 @@
+import * as FileSystem from "@effect/platform/FileSystem";
+import * as Path from "@effect/platform/Path";
 import { Effect } from "effect";
 
+import {
+  buildInitialConfig,
+  emptyRepoRegistry,
+  getConfigFilePath,
+  getRepoRegistryFilePath,
+  loadConfig,
+  loadRepoRegistry,
+  resolveOutpostHome,
+} from "../config.js";
 import type { CommandOutput } from "../types.js";
 
-export function runDoctor(): Effect.Effect<CommandOutput> {
-  return Effect.succeed({
-    command: "doctor",
-    data: {
-      node: process.version,
-      platform: process.platform,
-      cwd: process.cwd(),
-      status: "ok",
-    },
-  } satisfies CommandOutput);
+export function runDoctor(): Effect.Effect<
+  CommandOutput,
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const outpostHome = yield* resolveOutpostHome();
+    const configFilePath = yield* getConfigFilePath(outpostHome);
+    const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
+    const initialized = yield* fs
+      .exists(configFilePath)
+      .pipe(Effect.orElseSucceed(() => false));
+
+    if (!initialized) {
+      return {
+        command: "doctor",
+        data: {
+          cwd: process.cwd(),
+          initialized: false,
+          node: process.version,
+          outpostHome,
+          platform: process.platform,
+          status: "not-initialized",
+        },
+      } satisfies CommandOutput;
+    }
+
+    const config = yield* loadConfig(outpostHome).pipe(
+      Effect.catchAll(() => buildInitialConfig(outpostHome)),
+    );
+    const repoRegistry = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.catchAll(() => Effect.succeed(emptyRepoRegistry)),
+    );
+
+    return {
+      command: "doctor",
+      data: {
+        configFilePath,
+        cwd: process.cwd(),
+        initialized: true,
+        node: process.version,
+        outpostHome,
+        platform: process.platform,
+        repoCount: repoRegistry.repos.length,
+        repoRegistryFilePath,
+        reposRoot: config.reposRoot,
+        status: "ok",
+        worktreesRoot: config.worktreesRoot,
+      },
+    } satisfies CommandOutput;
+  });
 }
