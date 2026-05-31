@@ -15,6 +15,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()(
 export const OutpostConfigSchema = Schema.Struct({
   version: Schema.Literal(1),
   outpostHome: Schema.String,
+  reposRoot: Schema.String,
   worktreesRoot: Schema.String,
 });
 
@@ -65,6 +66,7 @@ export function buildInitialConfig(
     return {
       version: 1,
       outpostHome,
+      reposRoot: path.join(outpostHome, "repos"),
       worktreesRoot: path.join(outpostHome, "worktrees"),
     };
   });

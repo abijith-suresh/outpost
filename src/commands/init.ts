@@ -53,6 +53,15 @@ export function runInit(): Effect.Effect<
       ),
     );
 
+    yield* fs.makeDirectory(config.reposRoot, { recursive: true }).pipe(
+      Effect.mapError(
+        (error) =>
+          new InitError({
+            message: `Failed to create repos root ${config.reposRoot}: ${error.message}`,
+          }),
+      ),
+    );
+
     yield* fs.writeFileString(configFilePath, `${configJson}\n`).pipe(
       Effect.mapError(
         (error) =>
@@ -66,6 +75,7 @@ export function runInit(): Effect.Effect<
       command: "init",
       data: {
         outpostHome,
+        reposRoot: config.reposRoot,
         worktreesRoot: config.worktreesRoot,
         configFilePath: path.normalize(configFilePath),
         initialized: true,
