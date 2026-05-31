@@ -5,7 +5,9 @@ import { Effect, Schema } from "effect";
 
 import {
   buildInitialConfig,
+  emptyRepoRegistry,
   getConfigFilePath,
+  getRepoRegistryFilePath,
   resolveOutpostHome,
 } from "../config.js";
 import type { CommandOutput } from "../types.js";
@@ -24,6 +26,7 @@ export function runInit(): Effect.Effect<
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const configFilePath = yield* getConfigFilePath(outpostHome);
+    const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
     const configExists = yield* fs.exists(configFilePath);
 
     if (configExists) {
@@ -70,6 +73,20 @@ export function runInit(): Effect.Effect<
           }),
       ),
     );
+
+    yield* fs
+      .writeFileString(
+        repoRegistryFilePath,
+        `${JSON.stringify(emptyRepoRegistry, null, 2)}\n`,
+      )
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new InitError({
+              message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
+            }),
+        ),
+      );
 
     return {
       command: "init",

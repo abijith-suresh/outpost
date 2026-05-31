@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import os from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +94,12 @@ describe("run", () => {
       4,
       `worktrees root: ${path.join(tempHome, "worktrees")}`,
     );
+
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as { version: number; repos: Array<unknown> };
+
+    expect(registry).toEqual({ repos: [], version: 1 });
   });
 
   it("imports the current repo into the managed bare repo store", async () => {
@@ -141,7 +148,31 @@ describe("run", () => {
       `managed repo path: ${expectedManagedRepoPath}`,
     );
     expect(infoSpy).toHaveBeenNthCalledWith(7, "action: cloned");
-    expect(infoSpy).toHaveBeenNthCalledWith(8, "ready: true");
+    expect(infoSpy).toHaveBeenNthCalledWith(8, "registry action: created");
+    expect(infoSpy).toHaveBeenNthCalledWith(9, "ready: true");
+
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as {
+      version: number;
+      repos: Array<{
+        managedRepoPath: string;
+        name: string;
+        remoteName: string;
+        remoteUrl: string;
+        sourceRepoPath: string;
+      }>;
+    };
+
+    expect(registry.version).toBe(1);
+    expect(registry.repos).toHaveLength(1);
+    expect(registry.repos[0]).toMatchObject({
+      managedRepoPath: expectedManagedRepoPath,
+      name: path.basename(tempRepo),
+      remoteName: "origin",
+      remoteUrl: tempRemote,
+      sourceRepoPath: tempRepo,
+    });
   });
 
   it("returns an error when repo add is run before init", async () => {
@@ -196,7 +227,50 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo add"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"action": "cloned"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"registryAction": "created"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"ready": true');
+  });
+
+  it("updates an existing registry record when repo add is rerun", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    const tempRemote = path.join(
+      os.tmpdir(),
+      `outpost-remote-${Date.now()}.git`,
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["init", "--bare", tempRemote]);
+    execFileSync("git", ["init"], { cwd: tempRepo });
+    execFileSync("git", ["remote", "add", "origin", tempRemote], {
+      cwd: tempRepo,
+    });
+
+    await runCli(["repo", "add", tempRepo]);
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const secondExitCode = await runCli(["repo", "add", tempRepo]);
+
+    expect(secondExitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(7, "action: fetched");
+    expect(infoSpy).toHaveBeenNthCalledWith(8, "registry action: updated");
+    expect(infoSpy).toHaveBeenNthCalledWith(9, "ready: true");
+
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as { version: number; repos: Array<unknown> };
+
+    expect(registry.version).toBe(1);
+    expect(registry.repos).toHaveLength(1);
   });
 
   it("returns an error when repo add finds multiple remotes", async () => {

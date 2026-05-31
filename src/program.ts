@@ -85,6 +85,7 @@ function printCommandOutput(
         Console.log(`repo name: ${String(output.data.repoName)}`),
         Console.log(`managed repo path: ${String(output.data.repoPath)}`),
         Console.log(`action: ${String(output.data.action)}`),
+        Console.log(`registry action: ${String(output.data.registryAction)}`),
         Console.log(`ready: ${String(output.data.ready)}`),
         ...(Array.isArray(output.data.blockers) &&
         output.data.blockers.length > 0

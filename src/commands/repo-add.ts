@@ -5,7 +5,12 @@ import type { PlatformError } from "@effect/platform/Error";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
-import { loadConfig, resolveOutpostHome } from "../config.js";
+import {
+  loadConfig,
+  loadRepoRegistry,
+  resolveOutpostHome,
+  writeRepoRegistry,
+} from "../config.js";
 import type { CommandOutput } from "../types.js";
 
 export class RepoAddError extends Schema.TaggedError<RepoAddError>()(
@@ -17,6 +22,7 @@ export class RepoAddError extends Schema.TaggedError<RepoAddError>()(
 
 type RepoImportResult = {
   action: "cloned" | "fetched";
+  registryAction: "created" | "updated";
   remoteName: string;
   remoteUrl: string;
   sourceRepoPath: string;
@@ -110,7 +116,7 @@ function cloneBareRepository(
   managedRepoPath: string,
 ): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
   return Command.exitCode(
-    gitCommand("clone", "--bare", remoteUrl, managedRepoPath),
+    gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
   ).pipe(
     Effect.flatMap((exitCode) =>
       exitCode === 0
@@ -120,7 +126,7 @@ function cloneBareRepository(
             reason: "Unknown",
             module: "Command",
             method: "clone",
-            message: `git clone --bare failed for ${remoteUrl}`,
+            message: `git clone --mirror failed for ${remoteUrl}`,
           } as PlatformError),
     ),
   );
@@ -130,7 +136,7 @@ function fetchBareRepository(
   managedRepoPath: string,
 ): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
   return Command.exitCode(
-    gitCommand("fetch", "--prune", "--tags", "origin").pipe(
+    gitCommand("fetch", "--all", "--prune", "--tags").pipe(
       Command.workingDirectory(managedRepoPath),
     ),
   ).pipe(
@@ -246,8 +252,39 @@ export function runRepoAdd(
       );
     }
 
+    const now = new Date().toISOString();
+    const registry = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+    const existingRecord = registry.repos.find(
+      (repo) => repo.managedRepoPath === managedRepoPath,
+    );
+    const updatedRecord = {
+      id: sanitizeRemoteUrl(remoteUrl),
+      importedAt: existingRecord?.importedAt ?? now,
+      lastFetchedAt: now,
+      managedRepoPath,
+      name: repoName,
+      remoteName,
+      remoteUrl,
+      sourceRepoPath,
+    };
+    const nextRegistry = {
+      ...registry,
+      repos: existingRecord
+        ? registry.repos.map((repo) =>
+            repo.managedRepoPath === managedRepoPath ? updatedRecord : repo,
+          )
+        : [...registry.repos, updatedRecord],
+    };
+
+    yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+
     const data: RepoImportResult = {
       action: managedRepoExists ? "fetched" : "cloned",
+      registryAction: existingRecord ? "updated" : "created",
       remoteName,
       remoteUrl,
       sourceRepoPath,

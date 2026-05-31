@@ -21,6 +21,26 @@ export const OutpostConfigSchema = Schema.Struct({
 
 export type OutpostConfig = Schema.Schema.Type<typeof OutpostConfigSchema>;
 
+export const RepoRecordSchema = Schema.Struct({
+  id: Schema.String,
+  importedAt: Schema.String,
+  lastFetchedAt: Schema.String,
+  managedRepoPath: Schema.String,
+  name: Schema.String,
+  remoteName: Schema.String,
+  remoteUrl: Schema.String,
+  sourceRepoPath: Schema.String,
+});
+
+export type RepoRecord = Schema.Schema.Type<typeof RepoRecordSchema>;
+
+export const RepoRegistrySchema = Schema.Struct({
+  repos: Schema.Array(RepoRecordSchema),
+  version: Schema.Literal(1),
+});
+
+export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
+
 export function getDefaultOutpostHome(): Effect.Effect<
   string,
   never,
@@ -57,6 +77,15 @@ export function getConfigFilePath(
   });
 }
 
+export function getRepoRegistryFilePath(
+  outpostHome: string,
+): Effect.Effect<string, never, Path.Path> {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    return path.join(outpostHome, "repos.json");
+  });
+}
+
 export function buildInitialConfig(
   outpostHome: string,
 ): Effect.Effect<OutpostConfig, never, Path.Path> {
@@ -69,6 +98,85 @@ export function buildInitialConfig(
       reposRoot: path.join(outpostHome, "repos"),
       worktreesRoot: path.join(outpostHome, "worktrees"),
     };
+  });
+}
+
+export const emptyRepoRegistry: RepoRegistry = {
+  repos: [],
+  version: 1,
+};
+
+export function loadRepoRegistry(
+  outpostHome: string,
+): Effect.Effect<
+  RepoRegistry,
+  ConfigError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
+    const exists = yield* fs.exists(registryFilePath);
+
+    if (!exists) {
+      return yield* new ConfigError({
+        message: `Repo registry does not exist at ${registryFilePath}`,
+      });
+    }
+
+    const contents = yield* fs.readFileString(registryFilePath).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigError({
+            message: `Failed to read repo registry ${registryFilePath}: ${error.message}`,
+          }),
+      ),
+    );
+
+    const parsedJson = yield* Effect.try({
+      try: () => JSON.parse(contents) as unknown,
+      catch: (error) =>
+        new ConfigError({
+          message: `Invalid JSON in repo registry ${registryFilePath}: ${String(error)}`,
+        }),
+    });
+
+    return yield* Schema.decodeUnknown(RepoRegistrySchema)(parsedJson).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigError({
+            message: `Invalid repo registry ${registryFilePath}: ${error.message}`,
+          }),
+      ),
+    );
+  });
+}
+
+export function writeRepoRegistry(
+  outpostHome: string,
+  registry: RepoRegistry,
+): Effect.Effect<
+  void,
+  ConfigError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
+
+    yield* fs
+      .writeFileString(
+        registryFilePath,
+        `${JSON.stringify(registry, null, 2)}\n`,
+      )
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new ConfigError({
+              message: `Failed to write repo registry ${registryFilePath}: ${error.message}`,
+            }),
+        ),
+      );
   });
 }
 
