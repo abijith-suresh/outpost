@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import os from "node:os";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -229,6 +229,102 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"action": "cloned"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"registryAction": "created"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"ready": true');
+  });
+
+  it("prints repo list output", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const managedRepoPathOne = path.join(tempHome, "repos", "alpha.git");
+    const managedRepoPathTwo = path.join(tempHome, "repos", "beta.git");
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          repos: [
+            {
+              id: "alpha",
+              importedAt: "2026-01-01T00:00:00.000Z",
+              lastFetchedAt: "2026-01-01T00:00:00.000Z",
+              managedRepoPath: managedRepoPathOne,
+              name: "alpha",
+              remoteName: "origin",
+              remoteUrl: "https://example.com/alpha.git",
+              sourceRepoPath: "/tmp/alpha",
+            },
+            {
+              id: "beta",
+              importedAt: "2026-01-02T00:00:00.000Z",
+              lastFetchedAt: "2026-01-02T00:00:00.000Z",
+              managedRepoPath: managedRepoPathTwo,
+              name: "beta",
+              remoteName: "origin",
+              remoteUrl: "https://example.com/beta.git",
+              sourceRepoPath: "/tmp/beta",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo list");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, "repos: 2");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      3,
+      `- alpha: ${managedRepoPathOne}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(4, `- beta: ${managedRepoPathTwo}`);
+  });
+
+  it("prints repo list output as json", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const repoRecord = {
+      id: "alpha",
+      importedAt: "2026-01-01T00:00:00.000Z",
+      lastFetchedAt: "2026-01-01T00:00:00.000Z",
+      managedRepoPath: path.join(tempHome, "repos", "alpha.git"),
+      name: "alpha",
+      remoteName: "origin",
+      remoteUrl: "https://example.com/alpha.git",
+      sourceRepoPath: "/tmp/alpha",
+    };
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify({ version: 1, repos: [repoRecord] }, null, 2)}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list", "--json"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo list"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"repos": [');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(`"id": "${repoRecord.id}"`);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      `"managedRepoPath": "${repoRecord.managedRepoPath}"`,
+    );
   });
 
   it("updates an existing registry record when repo add is rerun", async () => {
