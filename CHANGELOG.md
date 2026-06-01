@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.14
+
+### Patch Changes
+
+- 8dec8e0: Make `--help` work as a true global flag anywhere in argv.
+
 ## 0.0.13
 
 ### Patch Changes
