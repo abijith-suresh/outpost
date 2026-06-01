@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.11
+
+### Patch Changes
+
+- 1d46e5c: Add `repo show`, include repo ids in `repo list`, and clarify the multi-remote `repo add` error text.
+
 ## 0.0.10
 
 ### Patch Changes
