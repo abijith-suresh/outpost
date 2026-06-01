@@ -189,6 +189,20 @@ function printUnknownCommand(command: string): Effect.Effect<number> {
   ]).pipe(Effect.as(1));
 }
 
+function printError(message: string): Effect.Effect<number> {
+  return Console.error(message).pipe(Effect.as(1));
+}
+
+function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
+  return (
+    positionalArgs[0] === "doctor" ||
+    positionalArgs[0] === "init" ||
+    (positionalArgs[0] === "repo" &&
+      ["add", "list", "show"].includes(positionalArgs[1] ?? "")) ||
+    (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
+  );
+}
+
 function runDemoList(): Effect.Effect<CommandOutput> {
   return Effect.succeed({
     command: "demo list",
@@ -345,7 +359,10 @@ export function run(
 
     const output = yield* resolveCommand(positionalArgs).pipe(
       Effect.matchEffect({
-        onFailure: (error) => printUnknownCommand(error.message),
+        onFailure: (error) =>
+          isKnownCommand(positionalArgs)
+            ? printError(error.message)
+            : printUnknownCommand(error.message),
         onSuccess: (commandOutput) =>
           printCommandOutput(commandOutput, asJson).pipe(Effect.as(0)),
       }),
@@ -355,6 +372,6 @@ export function run(
   });
 
   return program.pipe(
-    Effect.catchTag("CliError", (error) => printUnknownCommand(error.message)),
+    Effect.catchTag("CliError", (error) => printError(error.message)),
   );
 }
