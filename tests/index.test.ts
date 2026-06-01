@@ -95,6 +95,73 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledWith(version);
   });
 
+  it("prints help for a top-level --help flag", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Global options:");
+  });
+
+  it("prints top-level help when repo add includes --help", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", "--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "repo add <path> [--remote <name>]",
+    );
+  });
+
+  it("prints top-level help when repo list includes --help", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list", "--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo list [--json]");
+  });
+
+  it("prints top-level help when doctor includes --help", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor", "--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("doctor [--json]");
+  });
+
+  it("prints help instead of json when repo add includes --json and --help", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", "--json", "--help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
+  });
+
   it("prints doctor output", async () => {
     const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
     process.env.OUTPOST_HOME = tempHome;

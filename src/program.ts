@@ -340,14 +340,15 @@ export function run(
       ),
     );
 
+    if (input.argv.includes("--help")) {
+      yield* Console.log(printHelp(input.version));
+      return 0;
+    }
+
     const asJson = input.argv.includes("--json");
     const positionalArgs = input.argv.filter((arg) => arg !== "--json");
 
-    if (
-      positionalArgs.length === 0 ||
-      positionalArgs[0] === "help" ||
-      (positionalArgs.length === 1 && positionalArgs[0] === "--help")
-    ) {
+    if (positionalArgs.length === 0 || positionalArgs[0] === "help") {
       yield* Console.log(printHelp(input.version));
       return 0;
     }
