@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.12
+
+### Patch Changes
+
+- 4ad67db: Add `--remote <name>` support to `outpost repo add` for multi-remote repositories.
+
 ## 0.0.11
 
 ### Patch Changes
