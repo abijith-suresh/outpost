@@ -6,6 +6,7 @@ import { Console, Effect, Schema } from "effect";
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
+import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
 import { runRepoShow } from "./commands/repo-show.js";
 import type { CommandOutput } from "./types.js";
@@ -36,6 +37,8 @@ Commands:
   init [--json]        Initialize Outpost home and worktrees roots
   repo add <path> [--remote <name>]
                        Validate a local repository for Outpost registration
+  repo fetch --all [--json]
+                       Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
   repo show <id>       Show one imported repository by id
   demo list [--json]   Show placeholder command output structure
@@ -162,6 +165,85 @@ function printCommandOutput(
             })
           : []),
       ]).pipe(Effect.asVoid);
+    case "repo fetch":
+      return Effect.all([
+        Console.log("outpost repo fetch"),
+        Console.log(
+          `repos: ${typeof output.data.repoCount === "number" ? output.data.repoCount : 0}`,
+        ),
+        Console.log(
+          `fetched: ${typeof output.data.fetchedCount === "number" ? output.data.fetchedCount : 0}`,
+        ),
+        Console.log(
+          `failed: ${typeof output.data.failedCount === "number" ? output.data.failedCount : 0}`,
+        ),
+        ...(Array.isArray(output.data.results)
+          ? output.data.results.flatMap((result) => {
+              const id =
+                typeof result === "object" && result !== null && "id" in result
+                  ? String(result.id)
+                  : "";
+              const name =
+                typeof result === "object" &&
+                result !== null &&
+                "name" in result
+                  ? String(result.name)
+                  : "";
+              const managedRepoPath =
+                typeof result === "object" &&
+                result !== null &&
+                "managedRepoPath" in result
+                  ? String(result.managedRepoPath)
+                  : "";
+              const remoteName =
+                typeof result === "object" &&
+                result !== null &&
+                "remoteName" in result
+                  ? String(result.remoteName)
+                  : "";
+              const remoteUrl =
+                typeof result === "object" &&
+                result !== null &&
+                "remoteUrl" in result
+                  ? String(result.remoteUrl)
+                  : "";
+              const sourceRepoPath =
+                typeof result === "object" &&
+                result !== null &&
+                "sourceRepoPath" in result
+                  ? String(result.sourceRepoPath)
+                  : "";
+              const fetchStatus =
+                typeof result === "object" &&
+                result !== null &&
+                "fetchStatus" in result
+                  ? String(result.fetchStatus)
+                  : "";
+              const lastFetchedAt =
+                typeof result === "object" &&
+                result !== null &&
+                "lastFetchedAt" in result
+                  ? String(result.lastFetchedAt)
+                  : "";
+              const error =
+                typeof result === "object" &&
+                result !== null &&
+                "error" in result
+                  ? String(result.error)
+                  : undefined;
+
+              return [
+                Console.log(`- ${name} (id: ${id}) [${fetchStatus}]`),
+                Console.log(`  managed repo path: ${managedRepoPath}`),
+                Console.log(`  remote name: ${remoteName}`),
+                Console.log(`  remote url: ${remoteUrl}`),
+                Console.log(`  source repo path: ${sourceRepoPath}`),
+                Console.log(`  last fetched at: ${lastFetchedAt}`),
+                ...(error ? [Console.log(`  error: ${error}`)] : []),
+              ];
+            })
+          : []),
+      ]).pipe(Effect.asVoid);
     case "repo show":
       return Effect.all([
         Console.log("outpost repo show"),
@@ -198,7 +280,7 @@ function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
     positionalArgs[0] === "doctor" ||
     positionalArgs[0] === "init" ||
     (positionalArgs[0] === "repo" &&
-      ["add", "list", "show"].includes(positionalArgs[1] ?? "")) ||
+      ["add", "fetch", "list", "show"].includes(positionalArgs[1] ?? "")) ||
     (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
   );
 }
@@ -306,6 +388,12 @@ function resolveCommand(
     );
   }
 
+  if (positionalArgs[0] === "repo" && positionalArgs[1] === "fetch") {
+    return runRepoFetch(positionalArgs.slice(2)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "show") {
     return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
@@ -367,7 +455,9 @@ export function run(
             ? printError(error.message)
             : printUnknownCommand(error.message),
         onSuccess: (commandOutput) =>
-          printCommandOutput(commandOutput, asJson).pipe(Effect.as(0)),
+          printCommandOutput(commandOutput, asJson).pipe(
+            Effect.as(commandOutput.exitCode ?? 0),
+          ),
       }),
     );
 
