@@ -399,8 +399,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `Unknown command: Outpost is not initialized at ${tempHome}`,
+      `Outpost is not initialized at ${tempHome}`,
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("prints repo add output as json", async () => {
@@ -626,10 +627,8 @@ describe("run", () => {
     const exitCode = await runCli(["repo", "show", "missing"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Unknown command: Unknown repo id: missing",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown repo id: missing");
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when repo show is missing the id", async () => {
@@ -642,8 +641,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Usage: outpost repo show <id> [--json]",
+      "Usage: outpost repo show <id> [--json]",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when repo show includes an extra positional argument", async () => {
@@ -656,8 +656,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Usage: outpost repo show <id> [--json]",
+      "Usage: outpost repo show <id> [--json]",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when repo show finds duplicate ids in the registry", async () => {
@@ -701,8 +702,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Duplicate repo id in registry: alpha",
+      "Duplicate repo id in registry: alpha",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("prints repo list output as json", async () => {
@@ -890,8 +892,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Repository has multiple remotes (origin, upstream). Use --remote <name> to choose which remote to import.",
+      "Repository has multiple remotes (origin, upstream). Use --remote <name> to choose which remote to import.",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when repo add receives an unknown remote name", async () => {
@@ -933,8 +936,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Unknown remote: missing. Available remotes: origin, upstream.",
+      "Unknown remote: missing. Available remotes: origin, upstream.",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns a usage error when repo add --remote is missing a value", async () => {
@@ -947,8 +951,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
+      "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns a usage error when repo add --remote is provided more than once", async () => {
@@ -969,8 +974,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
+      "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
     );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("prints demo list output", async () => {
@@ -1001,5 +1007,9 @@ describe("run", () => {
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown command: wat");
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      2,
+      "Run `outpost --help` to see available commands.",
+    );
   });
 });
