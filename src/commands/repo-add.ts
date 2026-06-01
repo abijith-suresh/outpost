@@ -35,6 +35,10 @@ type RepoImportResult = {
   blockers: ReadonlyArray<string>;
 };
 
+type RepoAddOptions = {
+  remoteName?: string;
+};
+
 function gitCommand(...args: ReadonlyArray<string>) {
   return Command.make("git", ...args).pipe(
     Command.env({
@@ -101,6 +105,33 @@ function getRemoteUrl(
   ).pipe(Effect.map((output) => output.trim()));
 }
 
+function selectRemoteName(
+  remoteNames: ReadonlyArray<string>,
+  requestedRemoteName: string | undefined,
+): Effect.Effect<string, RepoAddError> {
+  if (requestedRemoteName) {
+    if (!remoteNames.includes(requestedRemoteName)) {
+      return Effect.fail(
+        new RepoAddError({
+          message: `Unknown remote: ${requestedRemoteName}. Available remotes: ${remoteNames.join(", ")}.`,
+        }),
+      );
+    }
+
+    return Effect.succeed(requestedRemoteName);
+  }
+
+  if (remoteNames.length > 1) {
+    return Effect.fail(
+      new RepoAddError({
+        message: `Repository has multiple remotes (${remoteNames.join(", ")}). Use --remote <name> to choose which remote to import.`,
+      }),
+    );
+  }
+
+  return Effect.succeed(remoteNames[0] as string);
+}
+
 function getManagedRepoPath(
   reposRoot: string,
   remoteUrl: string,
@@ -156,6 +187,7 @@ function fetchBareRepository(
 
 export function runRepoAdd(
   inputPath: string | undefined,
+  options: RepoAddOptions = {},
 ): Effect.Effect<
   CommandOutput,
   RepoAddError,
@@ -164,7 +196,9 @@ export function runRepoAdd(
   return Effect.gen(function* () {
     if (!inputPath) {
       return yield* Effect.fail(
-        new RepoAddError({ message: "Usage: outpost repo add <path>" }),
+        new RepoAddError({
+          message: "Usage: outpost repo add <path> [--remote <name>]",
+        }),
       );
     }
 
@@ -214,15 +248,7 @@ export function runRepoAdd(
       );
     }
 
-    if (remoteNames.length > 1) {
-      return yield* Effect.fail(
-        new RepoAddError({
-          message: `Repository has multiple remotes (${remoteNames.join(", ")}). Remote selection is not implemented yet; it will require --remote <name>.`,
-        }),
-      );
-    }
-
-    const remoteName = remoteNames[0] as string;
+    const remoteName = yield* selectRemoteName(remoteNames, options.remoteName);
     const remoteUrl = yield* getRemoteUrl(sourceRepoPath, remoteName).pipe(
       Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );

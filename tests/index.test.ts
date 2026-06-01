@@ -42,6 +42,27 @@ function makeRepoRecord(repo: {
   };
 }
 
+async function initGitRepo(repoPath: string) {
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["init"], { cwd: repoPath });
+}
+
+async function initBareGitRepo(repoPath: string) {
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["init", "--bare", repoPath]);
+}
+
+async function addGitRemote(
+  repoPath: string,
+  remoteName: string,
+  remotePath: string,
+) {
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["remote", "add", remoteName, remotePath], {
+    cwd: repoPath,
+  });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   process.env = { ...ORIGINAL_ENV };
@@ -58,6 +79,9 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "repo add <path> [--remote <name>]",
+    );
   });
 
   it("prints the current version", async () => {
@@ -302,12 +326,9 @@ describe("run", () => {
     const { mkdirSync } = await import("node:fs");
     mkdirSync(tempRepo, { recursive: true });
 
-    const { execFileSync } = await import("node:child_process");
-    execFileSync("git", ["init", "--bare", tempRemote]);
-    execFileSync("git", ["init"], { cwd: tempRepo });
-    execFileSync("git", ["remote", "add", "origin", tempRemote], {
-      cwd: tempRepo,
-    });
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempRemote);
 
     const infoSpy = vi
       .spyOn(console, "log")
@@ -396,12 +417,9 @@ describe("run", () => {
     const { mkdirSync } = await import("node:fs");
     mkdirSync(tempRepo, { recursive: true });
 
-    const { execFileSync } = await import("node:child_process");
-    execFileSync("git", ["init", "--bare", tempRemote]);
-    execFileSync("git", ["init"], { cwd: tempRepo });
-    execFileSync("git", ["remote", "add", "origin", tempRemote], {
-      cwd: tempRepo,
-    });
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempRemote);
 
     const infoSpy = vi
       .spyOn(console, "log")
@@ -742,12 +760,9 @@ describe("run", () => {
     const { mkdirSync } = await import("node:fs");
     mkdirSync(tempRepo, { recursive: true });
 
-    const { execFileSync } = await import("node:child_process");
-    execFileSync("git", ["init", "--bare", tempRemote]);
-    execFileSync("git", ["init"], { cwd: tempRepo });
-    execFileSync("git", ["remote", "add", "origin", tempRemote], {
-      cwd: tempRepo,
-    });
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempRemote);
 
     await runCli(["repo", "add", tempRepo]);
 
@@ -770,7 +785,7 @@ describe("run", () => {
     expect(registry.repos).toHaveLength(1);
   });
 
-  it("returns an error when repo add finds multiple remotes", async () => {
+  it("imports a selected remote from a multi-remote repository", async () => {
     const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
     const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
     const tempOriginRemote = path.join(
@@ -788,16 +803,83 @@ describe("run", () => {
     const { mkdirSync } = await import("node:fs");
     mkdirSync(tempRepo, { recursive: true });
 
-    const { execFileSync } = await import("node:child_process");
-    execFileSync("git", ["init", "--bare", tempOriginRemote]);
-    execFileSync("git", ["init", "--bare", tempUpstreamRemote]);
-    execFileSync("git", ["init"], { cwd: tempRepo });
-    execFileSync("git", ["remote", "add", "origin", tempOriginRemote], {
-      cwd: tempRepo,
+    await initBareGitRepo(tempOriginRemote);
+    await initBareGitRepo(tempUpstreamRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempOriginRemote);
+    await addGitRemote(tempRepo, "upstream", tempUpstreamRemote);
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "repo",
+      "add",
+      tempRepo,
+      "--remote",
+      "upstream",
+    ]);
+    const expectedManagedRepoPath = path.join(
+      tempHome,
+      "repos",
+      `${sanitizeRemoteUrl(tempUpstreamRemote)}.git`,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(3, "remote name: upstream");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      4,
+      `remote url: ${tempUpstreamRemote}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      6,
+      `managed repo path: ${expectedManagedRepoPath}`,
+    );
+
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as {
+      version: number;
+      repos: Array<{
+        managedRepoPath: string;
+        remoteName: string;
+        remoteUrl: string;
+      }>;
+    };
+
+    expect(registry.version).toBe(1);
+    expect(registry.repos).toHaveLength(1);
+    expect(registry.repos[0]).toMatchObject({
+      managedRepoPath: expectedManagedRepoPath,
+      remoteName: "upstream",
+      remoteUrl: tempUpstreamRemote,
     });
-    execFileSync("git", ["remote", "add", "upstream", tempUpstreamRemote], {
-      cwd: tempRepo,
-    });
+  });
+
+  it("returns an error when a multi-remote repo add omits --remote", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    const tempOriginRemote = path.join(
+      os.tmpdir(),
+      `outpost-origin-remote-${Date.now()}.git`,
+    );
+    const tempUpstreamRemote = path.join(
+      os.tmpdir(),
+      `outpost-upstream-remote-${Date.now()}.git`,
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    await initBareGitRepo(tempOriginRemote);
+    await initBareGitRepo(tempUpstreamRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempOriginRemote);
+    await addGitRemote(tempRepo, "upstream", tempUpstreamRemote);
 
     const errorSpy = vi
       .spyOn(console, "error")
@@ -808,7 +890,86 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Repository has multiple remotes (origin, upstream). Remote selection is not implemented yet; it will require --remote <name>.",
+      "Unknown command: Repository has multiple remotes (origin, upstream). Use --remote <name> to choose which remote to import.",
+    );
+  });
+
+  it("returns an error when repo add receives an unknown remote name", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempRepo = path.join(os.tmpdir(), `outpost-repo-${Date.now()}`);
+    const tempOriginRemote = path.join(
+      os.tmpdir(),
+      `outpost-origin-remote-${Date.now()}.git`,
+    );
+    const tempUpstreamRemote = path.join(
+      os.tmpdir(),
+      `outpost-upstream-remote-${Date.now()}.git`,
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(tempRepo, { recursive: true });
+
+    await initBareGitRepo(tempOriginRemote);
+    await initBareGitRepo(tempUpstreamRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempOriginRemote);
+    await addGitRemote(tempRepo, "upstream", tempUpstreamRemote);
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "repo",
+      "add",
+      tempRepo,
+      "--remote",
+      "missing",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Unknown remote: missing. Available remotes: origin, upstream.",
+    );
+  });
+
+  it("returns a usage error when repo add --remote is missing a value", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", "/tmp/repo", "--remote"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
+    );
+  });
+
+  it("returns a usage error when repo add --remote is provided more than once", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "repo",
+      "add",
+      "/tmp/repo",
+      "--remote",
+      "origin",
+      "--remote",
+      "upstream",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
     );
   });
 
