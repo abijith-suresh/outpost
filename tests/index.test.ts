@@ -20,6 +20,28 @@ function sanitizeRemoteUrl(remoteUrl: string): string {
     .slice(0, 80);
 }
 
+function makeRepoRecord(repo: {
+  id: string;
+  managedRepoPath: string;
+  name?: string;
+  remoteName?: string;
+  remoteUrl?: string;
+  sourceRepoPath?: string;
+  importedAt?: string;
+  lastFetchedAt?: string;
+}) {
+  return {
+    id: repo.id,
+    importedAt: repo.importedAt ?? "2026-01-01T00:00:00.000Z",
+    lastFetchedAt: repo.lastFetchedAt ?? "2026-01-01T00:00:00.000Z",
+    managedRepoPath: repo.managedRepoPath,
+    name: repo.name ?? repo.id,
+    remoteName: repo.remoteName ?? "origin",
+    remoteUrl: repo.remoteUrl ?? `https://example.com/${repo.id}.git`,
+    sourceRepoPath: repo.sourceRepoPath ?? `/tmp/${repo.id}`,
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   process.env = { ...ORIGINAL_ENV };
@@ -450,11 +472,218 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(3, "missing repos: 1");
     expect(infoSpy).toHaveBeenNthCalledWith(
       4,
-      `- alpha [ok]: ${managedRepoPathOne}`,
+      `- alpha (id: alpha) [ok]: ${managedRepoPathOne}`,
     );
     expect(infoSpy).toHaveBeenNthCalledWith(
       5,
-      `- beta [missing]: ${managedRepoPathTwo}`,
+      `- beta (id: beta) [missing]: ${managedRepoPathTwo}`,
+    );
+  });
+
+  it("prints repo show output", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const repoRecord = makeRepoRecord({
+      id: "alpha",
+      managedRepoPath: path.join(tempHome, "repos", "alpha.git"),
+      importedAt: "2026-01-01T00:00:00.000Z",
+      lastFetchedAt: "2026-01-02T00:00:00.000Z",
+    });
+    mkdirSync(repoRecord.managedRepoPath, { recursive: true });
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify({ version: 1, repos: [repoRecord] }, null, 2)}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "alpha"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo show");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, "id: alpha");
+    expect(infoSpy).toHaveBeenNthCalledWith(3, "name: alpha");
+    expect(infoSpy).toHaveBeenNthCalledWith(4, "status: ok");
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      5,
+      `managed repo path: ${repoRecord.managedRepoPath}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      6,
+      `source repo path: ${repoRecord.sourceRepoPath}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      7,
+      `remote name: ${repoRecord.remoteName}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      8,
+      `remote url: ${repoRecord.remoteUrl}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      9,
+      `imported at: ${repoRecord.importedAt}`,
+    );
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      10,
+      `last fetched at: ${repoRecord.lastFetchedAt}`,
+    );
+  });
+
+  it("prints repo show output as json", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const repoRecord = makeRepoRecord({
+      id: "alpha",
+      managedRepoPath: path.join(tempHome, "repos", "alpha.git"),
+    });
+    mkdirSync(repoRecord.managedRepoPath, { recursive: true });
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify({ version: 1, repos: [repoRecord] }, null, 2)}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "alpha", "--json"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo show"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"id": "alpha"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "ok"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      `"managedRepoPath": "${repoRecord.managedRepoPath}"`,
+    );
+  });
+
+  it("returns repo show status missing when managed repo is gone", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const repoRecord = makeRepoRecord({
+      id: "alpha",
+      managedRepoPath: path.join(tempHome, "repos", "alpha.git"),
+    });
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify({ version: 1, repos: [repoRecord] }, null, 2)}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "alpha"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(4, "status: missing");
+  });
+
+  it("returns an error when repo show uses an unknown id", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "missing"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Unknown repo id: missing",
+    );
+  });
+
+  it("returns an error when repo show is missing the id", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Usage: outpost repo show <id> [--json]",
+    );
+  });
+
+  it("returns an error when repo show includes an extra positional argument", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "alpha", "beta"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Usage: outpost repo show <id> [--json]",
+    );
+  });
+
+  it("returns an error when repo show finds duplicate ids in the registry", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const firstManagedRepoPath = path.join(tempHome, "repos", "alpha-one.git");
+    const secondManagedRepoPath = path.join(tempHome, "repos", "alpha-two.git");
+
+    writeFileSync(
+      path.join(tempHome, "repos.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          repos: [
+            makeRepoRecord({
+              id: "alpha",
+              managedRepoPath: firstManagedRepoPath,
+            }),
+            makeRepoRecord({
+              id: "alpha",
+              managedRepoPath: secondManagedRepoPath,
+              sourceRepoPath: "/tmp/alpha-two",
+              remoteUrl: "https://example.com/alpha-two.git",
+            }),
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "show", "alpha"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Unknown command: Duplicate repo id in registry: alpha",
     );
   });
 
@@ -579,7 +808,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Unknown command: Repository has multiple remotes (origin, upstream). Remote selection is not implemented yet.",
+      "Unknown command: Repository has multiple remotes (origin, upstream). Remote selection is not implemented yet; it will require --remote <name>.",
     );
   });
 
