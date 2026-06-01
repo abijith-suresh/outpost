@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.10
+
+### Patch Changes
+
+- 9e9e19c: Add repo health diagnostics to `repo list` output.
+
 ## 0.0.9
 
 ### Patch Changes
