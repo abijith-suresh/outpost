@@ -1,6 +1,6 @@
 {
   "name": "@abijith-suresh/outpost",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "CLI for managing local repository workspaces.",
   "type": "module",
   "bin": {
