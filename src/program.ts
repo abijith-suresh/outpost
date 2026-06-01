@@ -1,14 +1,19 @@
+import process from "node:process";
+
 import * as FileSystem from "@effect/platform/FileSystem";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
 
+import { runCreate } from "./commands/create.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
 import { runRepoShow } from "./commands/repo-show.js";
+import { runWorkspaceList } from "./commands/workspace-list.js";
+import { runWorkspaceShow } from "./commands/workspace-show.js";
 import type { CommandOutput } from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
@@ -33,14 +38,20 @@ Usage:
 
 Commands:
   help                 Show this help output
+  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]
+                         Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
   repo add <path> [--remote <name>]
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
-                       Fetch all managed mirror repositories
+                        Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
   repo show <id>       Show one imported repository by id
+  workspace list [--json]
+                        List created ticket workspaces
+  workspace show <ticket> [--json]
+                        Show one created ticket workspace
   demo list [--json]   Show placeholder command output structure
 
 Global options:
@@ -103,6 +114,62 @@ function printCommandOutput(
         Console.log(`outpost home: ${String(output.data.outpostHome)}`),
         Console.log(`repos root: ${String(output.data.reposRoot)}`),
         Console.log(`worktrees root: ${String(output.data.worktreesRoot)}`),
+      ]).pipe(Effect.asVoid);
+    case "create":
+      return Effect.all([
+        Console.log("outpost create"),
+        Console.log(`ticket: ${String(output.data.ticket)}`),
+        Console.log(`branch: ${String(output.data.branch)}`),
+        ...(typeof output.data.dryRun === "boolean" && output.data.dryRun
+          ? [Console.log("dry run: true")]
+          : []),
+        Console.log(
+          `workspace directory: ${String(output.data.ticketDirectory)}`,
+        ),
+        Console.log(
+          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`,
+        ),
+        ...(Array.isArray(output.data.worktrees)
+          ? output.data.worktrees.flatMap((worktree) => {
+              const repoId =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "repoId" in worktree
+                  ? String(worktree.repoId)
+                  : "";
+              const repoName =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "repoName" in worktree
+                  ? String(worktree.repoName)
+                  : "";
+              const worktreePath =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "path" in worktree
+                  ? String(worktree.path)
+                  : "";
+              const branch =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "branch" in worktree
+                  ? String(worktree.branch)
+                  : "";
+              const base =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "base" in worktree
+                  ? String(worktree.base)
+                  : "";
+
+              return [
+                Console.log(`- ${repoName} (id: ${repoId})`),
+                Console.log(`  path: ${worktreePath}`),
+                Console.log(`  branch: ${branch}`),
+                Console.log(`  base: ${base}`),
+              ];
+            })
+          : []),
       ]).pipe(Effect.asVoid);
     case "demo list":
       return Effect.all([
@@ -259,6 +326,73 @@ function printCommandOutput(
         Console.log(`imported at: ${String(output.data.importedAt)}`),
         Console.log(`last fetched at: ${String(output.data.lastFetchedAt)}`),
       ]).pipe(Effect.asVoid);
+    case "workspace show":
+      return Effect.all([
+        Console.log("outpost workspace show"),
+        Console.log(`ticket: ${String(output.data.ticket)}`),
+        Console.log(
+          `workspace directory: ${String(output.data.ticketDirectory)}`,
+        ),
+        Console.log(
+          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`,
+        ),
+        ...(Array.isArray(output.data.worktrees)
+          ? output.data.worktrees.flatMap((worktree) => {
+              const repoName =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "repoName" in worktree
+                  ? String(worktree.repoName)
+                  : "";
+              const worktreePath =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "path" in worktree
+                  ? String(worktree.path)
+                  : "";
+
+              return [
+                Console.log(`- ${repoName}`),
+                Console.log(`  path: ${worktreePath}`),
+              ];
+            })
+          : []),
+      ]).pipe(Effect.asVoid);
+    case "workspace list":
+      return Effect.all([
+        Console.log("outpost workspace list"),
+        Console.log(
+          `workspaces: ${Array.isArray(output.data.workspaces) ? output.data.workspaces.length : 0}`,
+        ),
+        ...(Array.isArray(output.data.workspaces)
+          ? output.data.workspaces.flatMap((workspace) => {
+              const ticket =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "ticket" in workspace
+                  ? String(workspace.ticket)
+                  : "";
+              const ticketDirectory =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "ticketDirectory" in workspace
+                  ? String(workspace.ticketDirectory)
+                  : "";
+              const worktreeCount =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "worktreeCount" in workspace
+                  ? String(workspace.worktreeCount)
+                  : "0";
+
+              return [
+                Console.log(`- ${ticket}`),
+                Console.log(`  workspace directory: ${ticketDirectory}`),
+                Console.log(`  worktrees: ${worktreeCount}`),
+              ];
+            })
+          : []),
+      ]).pipe(Effect.asVoid);
     default:
       return Console.log(JSON.stringify(output));
   }
@@ -277,10 +411,13 @@ function printError(message: string): Effect.Effect<number> {
 
 function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
   return (
+    positionalArgs[0] === "create" ||
     positionalArgs[0] === "doctor" ||
     positionalArgs[0] === "init" ||
     (positionalArgs[0] === "repo" &&
       ["add", "fetch", "list", "show"].includes(positionalArgs[1] ?? "")) ||
+    (positionalArgs[0] === "workspace" &&
+      ["list", "show"].includes(positionalArgs[1] ?? "")) ||
     (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
   );
 }
@@ -358,6 +495,7 @@ function resolveRepoAddArgs(
 
 function resolveCommand(
   positionalArgs: ReadonlyArray<string>,
+  options: { interactive: boolean },
 ): Effect.Effect<
   CommandOutput,
   CliError,
@@ -365,6 +503,14 @@ function resolveCommand(
 > {
   if (positionalArgs[0] === "doctor") {
     return runDoctor();
+  }
+
+  if (positionalArgs[0] === "create") {
+    return runCreate(positionalArgs.slice(1), {
+      interactive: options.interactive,
+    }).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
   }
 
   if (positionalArgs[0] === "init") {
@@ -396,6 +542,18 @@ function resolveCommand(
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "show") {
     return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "show") {
+    return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "list") {
+    return runWorkspaceList().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
@@ -439,6 +597,8 @@ export function run(
     }
 
     const asJson = input.argv.includes("--json");
+    const interactive =
+      !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
     const positionalArgs = input.argv.filter(
       (arg) => arg !== "--json" && arg !== "--version",
     );
@@ -448,7 +608,7 @@ export function run(
       return 0;
     }
 
-    const output = yield* resolveCommand(positionalArgs).pipe(
+    const output = yield* resolveCommand(positionalArgs, { interactive }).pipe(
       Effect.matchEffect({
         onFailure: (error) =>
           isKnownCommand(positionalArgs)
