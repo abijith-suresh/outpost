@@ -403,6 +403,7 @@ describe("run", () => {
 
     const managedRepoPathOne = path.join(tempHome, "repos", "alpha.git");
     const managedRepoPathTwo = path.join(tempHome, "repos", "beta.git");
+    mkdirSync(managedRepoPathOne, { recursive: true });
 
     writeFileSync(
       path.join(tempHome, "repos.json"),
@@ -446,11 +447,15 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo list");
     expect(infoSpy).toHaveBeenNthCalledWith(2, "repos: 2");
+    expect(infoSpy).toHaveBeenNthCalledWith(3, "missing repos: 1");
     expect(infoSpy).toHaveBeenNthCalledWith(
-      3,
-      `- alpha: ${managedRepoPathOne}`,
+      4,
+      `- alpha [ok]: ${managedRepoPathOne}`,
     );
-    expect(infoSpy).toHaveBeenNthCalledWith(4, `- beta: ${managedRepoPathTwo}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      5,
+      `- beta [missing]: ${managedRepoPathTwo}`,
+    );
   });
 
   it("prints repo list output as json", async () => {
@@ -469,6 +474,7 @@ describe("run", () => {
       remoteUrl: "https://example.com/alpha.git",
       sourceRepoPath: "/tmp/alpha",
     };
+    mkdirSync(repoRecord.managedRepoPath, { recursive: true });
 
     writeFileSync(
       path.join(tempHome, "repos.json"),
@@ -484,11 +490,13 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo list"');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"repos": [');
     expect(infoSpy.mock.calls[0]?.[0]).toContain(`"id": "${repoRecord.id}"`);
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
       `"managedRepoPath": "${repoRecord.managedRepoPath}"`,
     );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "ok"');
   });
 
   it("updates an existing registry record when repo add is rerun", async () => {

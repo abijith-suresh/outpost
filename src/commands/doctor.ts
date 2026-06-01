@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import {
   buildInitialConfig,
   emptyRepoRegistry,
+  getRepoHealthDiagnostics,
   getConfigFilePath,
   getRepoRegistryFilePath,
   loadConfig,
@@ -49,19 +50,9 @@ export function runDoctor(): Effect.Effect<
     const repoRegistry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.catchAll(() => Effect.succeed(emptyRepoRegistry)),
     );
-    const missingRepos = yield* Effect.forEach(repoRegistry.repos, (repo) =>
-      fs.exists(repo.managedRepoPath).pipe(
-        Effect.orElseSucceed(() => false),
-        Effect.map((exists) => (exists ? null : repo.managedRepoPath)),
-      ),
-    ).pipe(
-      Effect.map((paths) =>
-        [
-          ...new Set(paths.filter((path): path is string => path !== null)),
-        ].sort(),
-      ),
+    const { missingRepoCount, missingRepos } = yield* getRepoHealthDiagnostics(
+      repoRegistry.repos,
     );
-    const missingRepoCount = missingRepos.length;
 
     return {
       command: "doctor",

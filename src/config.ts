@@ -34,12 +34,59 @@ export const RepoRecordSchema = Schema.Struct({
 
 export type RepoRecord = Schema.Schema.Type<typeof RepoRecordSchema>;
 
+export type RepoHealthStatus = "ok" | "missing";
+
+export type RepoRecordWithStatus = RepoRecord & {
+  status: RepoHealthStatus;
+};
+
 export const RepoRegistrySchema = Schema.Struct({
   repos: Schema.Array(RepoRecordSchema),
   version: Schema.Literal(1),
 });
 
 export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
+
+export function getRepoHealthDiagnostics(
+  repos: ReadonlyArray<RepoRecord>,
+): Effect.Effect<
+  {
+    missingRepoCount: number;
+    missingRepos: Array<string>;
+    repos: Array<RepoRecordWithStatus>;
+  },
+  never,
+  FileSystem.FileSystem
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const reposWithStatus = yield* Effect.forEach(repos, (repo) =>
+      fs.exists(repo.managedRepoPath).pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.map(
+          (exists) =>
+            ({
+              ...repo,
+              status: exists ? "ok" : "missing",
+            }) satisfies RepoRecordWithStatus,
+        ),
+      ),
+    );
+    const missingRepos = [
+      ...new Set(
+        reposWithStatus
+          .filter((repo) => repo.status === "missing")
+          .map((repo) => repo.managedRepoPath),
+      ),
+    ].sort();
+
+    return {
+      missingRepoCount: missingRepos.length,
+      missingRepos,
+      repos: reposWithStatus,
+    };
+  });
+}
 
 export function getDefaultOutpostHome(): Effect.Effect<
   string,
