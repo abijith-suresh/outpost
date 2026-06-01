@@ -11,6 +11,7 @@ import {
   resolveOutpostHome,
   writeRepoRegistry,
 } from "../config.js";
+import { cloneBareRepository, fetchBareRepository } from "./repo-mirror.js";
 import type { CommandOutput } from "../types.js";
 
 export class RepoAddError extends Schema.TaggedError<RepoAddError>()(
@@ -39,15 +40,6 @@ type RepoAddOptions = {
   remoteName?: string;
 };
 
-function gitCommand(...args: ReadonlyArray<string>) {
-  return Command.make("git", ...args).pipe(
-    Command.env({
-      GCM_INTERACTIVE: "never",
-      GIT_TERMINAL_PROMPT: "0",
-    }),
-  );
-}
-
 function getRepoName(
   repoPath: string,
 ): Effect.Effect<string, never, Path.Path> {
@@ -69,7 +61,11 @@ function checkGitRepository(
   repoPath: string,
 ): Effect.Effect<boolean, PlatformError, CommandExecutor.CommandExecutor> {
   return Command.exitCode(
-    gitCommand("rev-parse", "--is-inside-work-tree").pipe(
+    Command.make("git", "rev-parse", "--is-inside-work-tree").pipe(
+      Command.env({
+        GCM_INTERACTIVE: "never",
+        GIT_TERMINAL_PROMPT: "0",
+      }),
       Command.workingDirectory(repoPath),
     ),
   ).pipe(Effect.map((exitCode) => exitCode === 0));
@@ -83,7 +79,13 @@ function getRemoteNames(
   CommandExecutor.CommandExecutor
 > {
   return Command.string(
-    gitCommand("remote").pipe(Command.workingDirectory(repoPath)),
+    Command.make("git", "remote").pipe(
+      Command.env({
+        GCM_INTERACTIVE: "never",
+        GIT_TERMINAL_PROMPT: "0",
+      }),
+      Command.workingDirectory(repoPath),
+    ),
   ).pipe(
     Effect.map((output) =>
       output
@@ -99,7 +101,11 @@ function getRemoteUrl(
   remoteName: string,
 ): Effect.Effect<string, PlatformError, CommandExecutor.CommandExecutor> {
   return Command.string(
-    gitCommand("remote", "get-url", remoteName).pipe(
+    Command.make("git", "remote", "get-url", remoteName).pipe(
+      Command.env({
+        GCM_INTERACTIVE: "never",
+        GIT_TERMINAL_PROMPT: "0",
+      }),
       Command.workingDirectory(repoPath),
     ),
   ).pipe(Effect.map((output) => output.trim()));
@@ -140,49 +146,6 @@ function getManagedRepoPath(
     const path = yield* Path.Path;
     return path.join(reposRoot, `${sanitizeRemoteUrl(remoteUrl)}.git`);
   });
-}
-
-function cloneBareRepository(
-  remoteUrl: string,
-  managedRepoPath: string,
-): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
-    gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
-  ).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
-        ? Effect.void
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "clone",
-            message: `git clone --mirror failed for ${remoteUrl}`,
-          } as PlatformError),
-    ),
-  );
-}
-
-function fetchBareRepository(
-  managedRepoPath: string,
-): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
-    gitCommand("fetch", "--all", "--prune", "--tags").pipe(
-      Command.workingDirectory(managedRepoPath),
-    ),
-  ).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
-        ? Effect.void
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "fetch",
-            message: `git fetch failed for ${managedRepoPath}`,
-          } as PlatformError),
-    ),
-  );
 }
 
 export function runRepoAdd(
