@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.16
+
+### Patch Changes
+
+- 318f63e: Add `outpost repo fetch --all [--json]` with per-repo results, partial failure reporting, and fetch exit codes.
+
 ## 0.0.15
 
 ### Patch Changes
