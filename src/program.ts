@@ -345,16 +345,18 @@ export function run(
       return 0;
     }
 
-    const asJson = input.argv.includes("--json");
-    const positionalArgs = input.argv.filter((arg) => arg !== "--json");
-
-    if (positionalArgs.length === 0 || positionalArgs[0] === "help") {
-      yield* Console.log(printHelp(input.version));
+    if (input.argv.includes("--version")) {
+      yield* Console.log(input.version);
       return 0;
     }
 
-    if (positionalArgs.length === 1 && positionalArgs[0] === "--version") {
-      yield* Console.log(input.version);
+    const asJson = input.argv.includes("--json");
+    const positionalArgs = input.argv.filter(
+      (arg) => arg !== "--json" && arg !== "--version",
+    );
+
+    if (positionalArgs.length === 0 || positionalArgs[0] === "help") {
+      yield* Console.log(printHelp(input.version));
       return 0;
     }
 
