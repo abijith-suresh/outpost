@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.13
+
+### Patch Changes
+
+- a54e1a1: Print plain error messages for known command failures while keeping unknown-command guidance unchanged.
+
 ## 0.0.12
 
 ### Patch Changes
