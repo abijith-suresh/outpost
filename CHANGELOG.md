@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.15
+
+### Patch Changes
+
+- 7e5e458: Make `--version` work as a global flag anywhere in argv while keeping `--help` precedence.
+
 ## 0.0.14
 
 ### Patch Changes
