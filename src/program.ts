@@ -34,7 +34,8 @@ Commands:
   help                 Show this help output
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
-  repo add <path>      Validate a local repository for Outpost registration
+  repo add <path> [--remote <name>]
+                       Validate a local repository for Outpost registration
   repo list [--json]   List imported repositories
   repo show <id>       Show one imported repository by id
   demo list [--json]   Show placeholder command output structure
@@ -197,6 +198,68 @@ function runDemoList(): Effect.Effect<CommandOutput> {
   });
 }
 
+function resolveRepoAddArgs(
+  args: ReadonlyArray<string>,
+): Effect.Effect<{ inputPath: string; remoteName?: string }, CliError> {
+  if (args.length === 0) {
+    return Effect.fail(
+      new CliError({
+        message: "Usage: outpost repo add <path> [--remote <name>]",
+      }),
+    );
+  }
+
+  const inputPath = args[0];
+
+  if (!inputPath) {
+    return Effect.fail(
+      new CliError({
+        message: "Usage: outpost repo add <path> [--remote <name>]",
+      }),
+    );
+  }
+
+  let remoteName: string | undefined;
+  let index = 1;
+
+  while (index < args.length) {
+    const arg = args[index];
+
+    if (arg !== "--remote") {
+      return Effect.fail(
+        new CliError({
+          message: "Usage: outpost repo add <path> [--remote <name>]",
+        }),
+      );
+    }
+
+    if (remoteName) {
+      return Effect.fail(
+        new CliError({
+          message:
+            "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
+        }),
+      );
+    }
+
+    const value = args[index + 1];
+
+    if (!value || value.startsWith("--")) {
+      return Effect.fail(
+        new CliError({
+          message:
+            "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
+        }),
+      );
+    }
+
+    remoteName = value;
+    index += 2;
+  }
+
+  return Effect.succeed({ inputPath, remoteName });
+}
+
 function resolveCommand(
   positionalArgs: ReadonlyArray<string>,
 ): Effect.Effect<
@@ -215,7 +278,10 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "add") {
-    return runRepoAdd(positionalArgs[2]).pipe(
+    return resolveRepoAddArgs(positionalArgs.slice(2)).pipe(
+      Effect.flatMap(({ inputPath, remoteName }) =>
+        runRepoAdd(inputPath, { remoteName }),
+      ),
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
