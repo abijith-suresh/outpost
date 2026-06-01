@@ -129,11 +129,18 @@ function printCommandOutput(
         Console.log(
           `repos: ${Array.isArray(output.data.repos) ? output.data.repos.length : 0}`,
         ),
+        Console.log(
+          `missing repos: ${typeof output.data.missingRepoCount === "number" ? output.data.missingRepoCount : 0}`,
+        ),
         ...(Array.isArray(output.data.repos)
           ? output.data.repos.map((repo) => {
               const name =
                 typeof repo === "object" && repo !== null && "name" in repo
                   ? String(repo.name)
+                  : "";
+              const status =
+                typeof repo === "object" && repo !== null && "status" in repo
+                  ? String(repo.status)
                   : "";
               const managedRepoPath =
                 typeof repo === "object" &&
@@ -142,7 +149,7 @@ function printCommandOutput(
                   ? String(repo.managedRepoPath)
                   : "";
 
-              return Console.log(`- ${name}: ${managedRepoPath}`);
+              return Console.log(`- ${name} [${status}]: ${managedRepoPath}`);
             })
           : []),
       ]).pipe(Effect.asVoid);
