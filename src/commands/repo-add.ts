@@ -217,7 +217,7 @@ export function runRepoAdd(
     if (remoteNames.length > 1) {
       return yield* Effect.fail(
         new RepoAddError({
-          message: `Repository has multiple remotes (${remoteNames.join(", ")}). Remote selection is not implemented yet.`,
+          message: `Repository has multiple remotes (${remoteNames.join(", ")}). Remote selection is not implemented yet; it will require --remote <name>.`,
         }),
       );
     }

@@ -7,6 +7,7 @@ import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoList } from "./commands/repo-list.js";
+import { runRepoShow } from "./commands/repo-show.js";
 import type { CommandOutput } from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
@@ -35,6 +36,7 @@ Commands:
   init [--json]        Initialize Outpost home and worktrees roots
   repo add <path>      Validate a local repository for Outpost registration
   repo list [--json]   List imported repositories
+  repo show <id>       Show one imported repository by id
   demo list [--json]   Show placeholder command output structure
 
 Global options:
@@ -138,6 +140,10 @@ function printCommandOutput(
                 typeof repo === "object" && repo !== null && "name" in repo
                   ? String(repo.name)
                   : "";
+              const id =
+                typeof repo === "object" && repo !== null && "id" in repo
+                  ? String(repo.id)
+                  : "";
               const status =
                 typeof repo === "object" && repo !== null && "status" in repo
                   ? String(repo.status)
@@ -149,9 +155,26 @@ function printCommandOutput(
                   ? String(repo.managedRepoPath)
                   : "";
 
-              return Console.log(`- ${name} [${status}]: ${managedRepoPath}`);
+              return Console.log(
+                `- ${name} (id: ${id}) [${status}]: ${managedRepoPath}`,
+              );
             })
           : []),
+      ]).pipe(Effect.asVoid);
+    case "repo show":
+      return Effect.all([
+        Console.log("outpost repo show"),
+        Console.log(`id: ${String(output.data.id)}`),
+        Console.log(`name: ${String(output.data.name)}`),
+        Console.log(`status: ${String(output.data.status)}`),
+        Console.log(
+          `managed repo path: ${String(output.data.managedRepoPath)}`,
+        ),
+        Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
+        Console.log(`remote name: ${String(output.data.remoteName)}`),
+        Console.log(`remote url: ${String(output.data.remoteUrl)}`),
+        Console.log(`imported at: ${String(output.data.importedAt)}`),
+        Console.log(`last fetched at: ${String(output.data.lastFetchedAt)}`),
       ]).pipe(Effect.asVoid);
     default:
       return Console.log(JSON.stringify(output));
@@ -199,6 +222,12 @@ function resolveCommand(
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "list") {
     return runRepoList().pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "repo" && positionalArgs[1] === "show") {
+    return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
