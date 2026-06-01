@@ -1,5 +1,12 @@
 # @abijith-suresh/outpost
 
+## 0.0.17
+
+### Patch Changes
+
+- 5c6e78e: Add the `outpost create` command for planning and creating managed ticket worktrees, including interactive prompting and dry-run support.
+- 5c6e78e: Add `workspace show` and `workspace list` for inspecting created ticket workspaces.
+
 ## 0.0.16
 
 ### Patch Changes
