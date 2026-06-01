@@ -95,6 +95,45 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledWith(version);
   });
 
+  it("prints the current version when --version follows repo list", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list", "--version"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith(version);
+  });
+
+  it("prints the current version when --version precedes repo list", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["--version", "repo", "list"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith(version);
+  });
+
+  it("prints the current version instead of doctor json output", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor", "--json", "--version"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith(version);
+  });
+
   it("prints help for a top-level --help flag", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
@@ -160,6 +199,20 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
+  });
+
+  it("prints help when both --help and --version are present", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["--help", "--version"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Global options:");
+    expect(infoSpy.mock.calls[0]?.[0]).not.toBe(version);
   });
 
   it("prints doctor output", async () => {
