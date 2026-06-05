@@ -11,6 +11,7 @@ import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
+import { runRepoRemove } from "./commands/repo-remove.js";
 import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
@@ -47,6 +48,7 @@ Commands:
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
+  repo remove <id>     Remove an imported repository
   repo show <id>       Show one imported repository by id
   workspace list [--json]
                         List created ticket workspaces
@@ -311,6 +313,17 @@ function printCommandOutput(
             })
           : []),
       ]).pipe(Effect.asVoid);
+    case "repo remove":
+      return Effect.all([
+        Console.log("outpost repo remove"),
+        Console.log(`id: ${String(output.data.id)}`),
+        Console.log(`name: ${String(output.data.name)}`),
+        Console.log(
+          `managed repo path: ${String(output.data.managedRepoPath)}`,
+        ),
+        Console.log(`remote url: ${String(output.data.remoteUrl)}`),
+        Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
+      ]).pipe(Effect.asVoid);
     case "repo show":
       return Effect.all([
         Console.log("outpost repo show"),
@@ -415,7 +428,9 @@ function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
     positionalArgs[0] === "doctor" ||
     positionalArgs[0] === "init" ||
     (positionalArgs[0] === "repo" &&
-      ["add", "fetch", "list", "show"].includes(positionalArgs[1] ?? "")) ||
+      ["add", "fetch", "list", "remove", "show"].includes(
+        positionalArgs[1] ?? "",
+      )) ||
     (positionalArgs[0] === "workspace" &&
       ["list", "show"].includes(positionalArgs[1] ?? "")) ||
     (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
@@ -542,6 +557,12 @@ function resolveCommand(
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "show") {
     return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "repo" && positionalArgs[1] === "remove") {
+    return runRepoRemove(positionalArgs[2]).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
