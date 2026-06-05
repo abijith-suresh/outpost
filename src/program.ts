@@ -318,7 +318,9 @@ function printCommandOutput(
         Console.log("outpost repo remove"),
         Console.log(`id: ${String(output.data.id)}`),
         Console.log(`name: ${String(output.data.name)}`),
-        Console.log(`managed repo path: ${String(output.data.managedRepoPath)}`),
+        Console.log(
+          `managed repo path: ${String(output.data.managedRepoPath)}`,
+        ),
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
       ]).pipe(Effect.asVoid);
@@ -426,7 +428,9 @@ function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
     positionalArgs[0] === "doctor" ||
     positionalArgs[0] === "init" ||
     (positionalArgs[0] === "repo" &&
-      ["add", "fetch", "list", "remove", "show"].includes(positionalArgs[1] ?? "")) ||
+      ["add", "fetch", "list", "remove", "show"].includes(
+        positionalArgs[1] ?? "",
+      )) ||
     (positionalArgs[0] === "workspace" &&
       ["list", "show"].includes(positionalArgs[1] ?? "")) ||
     (positionalArgs[0] === "demo" && positionalArgs[1] === "list")

@@ -2326,9 +2326,10 @@ describe("run", () => {
         `source repo path: ${sourceRepoPath}`,
       );
 
-      const nextRegistry = JSON.parse(
-        readFileSync(registryPath, "utf8"),
-      ) as { version: number; repos: Array<unknown> };
+      const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+        version: number;
+        repos: Array<unknown>;
+      };
 
       expect(nextRegistry.repos).toEqual([]);
       expect(existsSync(managedRepoPath)).toBe(false);
