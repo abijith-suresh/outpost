@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.18
+
+### Patch Changes
+
+- ded46a8: feat: add repo remove command to delete an imported repository
+
 ## 0.0.17
 
 ### Patch Changes
