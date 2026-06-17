@@ -1,8 +1,10 @@
+import * as Command from "@effect/platform/Command";
+import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Effect, Schema } from "effect";
+import { Console, Effect, Schema } from "effect";
 
-import { loadConfig, resolveOutpostHome } from "../config.js";
+import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
@@ -12,13 +14,22 @@ export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveErro
   },
 ) {}
 
+function gitCommand(...args: ReadonlyArray<string>) {
+  return Command.make("git", ...args).pipe(
+    Command.env({
+      GCM_INTERACTIVE: "never",
+      GIT_TERMINAL_PROMPT: "0",
+    }),
+  );
+}
+
 export function runWorkspaceRemove(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
-  FileSystem.FileSystem | Path.Path
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > {
   return Effect.gen(function* () {
     if (!ticket || extraArgs.length > 0) {
@@ -64,6 +75,38 @@ export function runWorkspaceRemove(
     const worktreeNames = [...entries].sort((left, right) =>
       left.localeCompare(right),
     );
+
+    const registry = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message }),
+      ),
+    );
+
+    for (const entry of entries) {
+      const repo = registry.repos.find((r) => r.name === entry);
+      if (!repo) continue;
+
+      const worktreePath = path.join(ticketDirectory, entry);
+      yield* Command.exitCode(
+        gitCommand(
+          "--git-dir",
+          repo.managedRepoPath,
+          "worktree",
+          "remove",
+          "--force",
+          worktreePath,
+        ),
+      ).pipe(
+        Effect.catchAll(() => Effect.succeed(1)),
+        Effect.flatMap((exitCode) =>
+          exitCode === 0
+            ? Effect.void
+            : Console.log(
+                `Warning: failed to prune worktree ${worktreePath} from ${repo.managedRepoPath}`,
+              ),
+        ),
+      );
+    }
 
     yield* fs
       .remove(ticketDirectory, { recursive: true })
