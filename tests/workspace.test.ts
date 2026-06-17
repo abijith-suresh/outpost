@@ -5,6 +5,7 @@ import {
   existsSync,
   os,
   path,
+  readRegistry,
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
@@ -318,6 +319,74 @@ describe("run", () => {
         1,
         "Usage: outpost workspace remove <ticket> [--json]",
       );
+    });
+
+    it("prunes git worktree entries from bare repos when removing a workspace", async () => {
+      const { execFileSync } = await import("node:child_process");
+      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "REMOVE-123",
+        "--type",
+        "feat",
+        "--repo",
+        sanitizeRemoteUrl(alpha.tempRemote),
+      ]);
+
+      const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");
+      expect(existsSync(ticketDirectory)).toBe(true);
+
+      const registry = readRegistry(tempHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+
+      const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
+      expect(exitCode).toBe(0);
+
+      const worktreeList = execFileSync(
+        "git",
+        ["--git-dir", managedRepoPath, "worktree", "list"],
+        { encoding: "utf8" },
+      );
+      expect(worktreeList).not.toContain("REMOVE-123");
+    });
+
+    it("workspace remove succeeds even when managed repo directory is missing", async () => {
+      const { rmSync } = await import("node:fs");
+      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "REMOVE-123",
+        "--type",
+        "feat",
+        "--repo",
+        sanitizeRemoteUrl(alpha.tempRemote),
+      ]);
+
+      const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");
+      expect(existsSync(ticketDirectory)).toBe(true);
+
+      const registry = readRegistry(tempHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+
+      rmSync(managedRepoPath, { recursive: true, force: true });
+
+      const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
+      expect(exitCode).toBe(0);
+      expect(existsSync(ticketDirectory)).toBe(false);
     });
   });
 });
