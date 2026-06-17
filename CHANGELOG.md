@@ -1,5 +1,14 @@
 # @abijith-suresh/outpost
 
+## 0.0.21
+
+### Patch Changes
+
+- d206768: Clean up temp test directories between tests to prevent stale state collisions
+- 6d3a5b4: Remove demo list command from README commands table
+- d7627cf: Add config schema version migration path with clear error for future versions
+- 32010bb: Update CONTRIBUTING.md project structure with missing files
+
 ## 0.0.20
 
 ### Patch Changes
