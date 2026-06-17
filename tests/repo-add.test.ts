@@ -155,13 +155,11 @@ describe("run", () => {
     const tempRepo = trackTempDir(
       path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
     );
-    const tempOriginRemote = path.join(
-      os.tmpdir(),
-      `outpost-origin-remote-${Date.now()}.git`,
+    const tempOriginRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
     );
-    const tempUpstreamRemote = path.join(
-      os.tmpdir(),
-      `outpost-upstream-remote-${Date.now()}.git`,
+    const tempUpstreamRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
     );
     process.env.OUTPOST_HOME = tempHome;
 
@@ -230,13 +228,11 @@ describe("run", () => {
     const tempRepo = trackTempDir(
       path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
     );
-    const tempOriginRemote = path.join(
-      os.tmpdir(),
-      `outpost-origin-remote-${Date.now()}.git`,
+    const tempOriginRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
     );
-    const tempUpstreamRemote = path.join(
-      os.tmpdir(),
-      `outpost-upstream-remote-${Date.now()}.git`,
+    const tempUpstreamRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
     );
     process.env.OUTPOST_HOME = tempHome;
 
@@ -271,13 +267,11 @@ describe("run", () => {
     const tempRepo = trackTempDir(
       path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
     );
-    const tempOriginRemote = path.join(
-      os.tmpdir(),
-      `outpost-origin-remote-${Date.now()}.git`,
+    const tempOriginRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
     );
-    const tempUpstreamRemote = path.join(
-      os.tmpdir(),
-      `outpost-upstream-remote-${Date.now()}.git`,
+    const tempUpstreamRemote = trackTempDir(
+      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
     );
     process.env.OUTPOST_HOME = tempHome;
 
