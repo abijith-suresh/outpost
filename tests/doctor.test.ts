@@ -9,6 +9,7 @@ import {
   setupAfterEach,
   trackTempDir,
   writeRegistry,
+  writeFileSync,
 } from "./helpers.ts";
 import { Effect } from "effect";
 import { migrateConfig, CURRENT_CONFIG_VERSION } from "../src/config.js";
@@ -191,6 +192,126 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 1');
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
       `"missingRepos": [\n      "${missingManagedRepoPath}"`,
+    );
+  });
+
+  it("prints error doctor output when config JSON is invalid", async () => {
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const configPath = path.join(tempHome, "config.json");
+    writeFileSync(configPath, "{invalid json\n");
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
+    expect(infoSpy.mock.calls[1]?.[0]).toContain("status: error:");
+    expect(infoSpy.mock.calls[1]?.[0]).toContain(
+      `Invalid JSON in config file ${configPath}`,
+    );
+  });
+
+  it("prints error doctor output as json when config JSON is invalid", async () => {
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const configPath = path.join(tempHome, "config.json");
+    writeFileSync(configPath, "{invalid json\n");
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor", "--json"]);
+    const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
+      data: {
+        diagnostics: Array<string>;
+        initialized: boolean;
+        status: string;
+      };
+    };
+
+    expect(exitCode).toBe(0);
+    expect(output.data.initialized).toBe(true);
+    expect(output.data.status).toContain("error:");
+    expect(output.data.status).not.toBe("ok");
+    expect(output.data.diagnostics).toHaveLength(1);
+    expect(output.data.diagnostics[0]).toContain(
+      `Invalid JSON in config file ${configPath}`,
+    );
+  });
+
+  it("prints error doctor output when repo registry JSON is invalid", async () => {
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const registryPath = path.join(tempHome, "repos.json");
+    writeFileSync(registryPath, "{invalid json\n");
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy.mock.calls[1]?.[0]).toContain("status: error:");
+    expect(infoSpy.mock.calls[1]?.[0]).toContain(
+      `Invalid JSON in repo registry ${registryPath}`,
+    );
+  });
+
+  it("prints error doctor output as json when repo registry shape is invalid", async () => {
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const registryPath = path.join(tempHome, "repos.json");
+    writeFileSync(
+      registryPath,
+      `${JSON.stringify({ version: 1, repos: [{ id: "alpha" }] }, null, 2)}\n`,
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor", "--json"]);
+    const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
+      data: {
+        diagnostics: Array<string>;
+        initialized: boolean;
+        status: string;
+      };
+    };
+
+    expect(exitCode).toBe(0);
+    expect(output.data.initialized).toBe(true);
+    expect(output.data.status).toContain("error:");
+    expect(output.data.status).not.toBe("ok");
+    expect(output.data.diagnostics).toHaveLength(1);
+    expect(output.data.diagnostics[0]).toContain(
+      `Invalid repo registry ${registryPath}`,
     );
   });
 
