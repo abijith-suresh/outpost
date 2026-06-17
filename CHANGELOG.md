@@ -1,5 +1,13 @@
 # @abijith-suresh/outpost
 
+## 0.0.19
+
+### Patch Changes
+
+- a042f63: Add workspace remove command to delete ticket workspaces and their worktrees
+- 6f267c7: Split monolithic test file into focused files per command domain and extract shared helpers
+- 3a7f812: Use PAT for changesets step so CI triggers run on generated release PRs
+
 ## 0.0.18
 
 ### Patch Changes
