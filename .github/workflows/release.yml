@@ -62,7 +62,7 @@ jobs:
           publish: npm run publish:release
           title: "chore: version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Trigger CI on changeset release branch
         if: steps.changesets.outputs.hasChangesets == 'true'
