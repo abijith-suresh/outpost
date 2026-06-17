@@ -1,5 +1,12 @@
 # @abijith-suresh/outpost
 
+## 0.0.22
+
+### Patch Changes
+
+- 906b6a3: Report corrupt doctor config or repo registry state as an error instead of ok.
+- 0a7e811: Reject unsafe workspace ticket arguments before resolving show or remove paths.
+
 ## 0.0.21
 
 ### Patch Changes
