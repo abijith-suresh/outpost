@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createManagedRepoFixture,
   existsSync,
+  mkdirSync,
   os,
   path,
   readRegistry,
@@ -10,6 +11,7 @@ import {
   sanitizeRemoteUrl,
   setupAfterEach,
   trackTempDir,
+  writeFileSync,
 } from "./helpers.ts";
 
 setupAfterEach();
@@ -205,6 +207,39 @@ describe("run", () => {
     );
   });
 
+  it("rejects workspace show tickets with path traversal before reading outside worktrees", async () => {
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const outsideWorktreesDirectory = path.join(
+      tempHome,
+      "repos",
+      "outside-worktrees",
+    );
+    mkdirSync(outsideWorktreesDirectory, { recursive: true });
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["workspace", "show", "../repos"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "--ticket may not contain path separators.",
+    );
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(existsSync(outsideWorktreesDirectory)).toBe(true);
+  });
+
   describe("workspace remove", () => {
     it("removes a workspace and its worktree directories", async () => {
       const tempHome = trackTempDir(
@@ -317,6 +352,33 @@ describe("run", () => {
         1,
         "Unknown workspace ticket: missing",
       );
+    });
+
+    it("rejects workspace remove tickets with path traversal before removing outside worktrees", async () => {
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const reposRoot = path.join(tempHome, "repos");
+      const outsideWorktreesFile = path.join(reposRoot, "keep.txt");
+      writeFileSync(outsideWorktreesFile, "keep\n");
+
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      const exitCode = await runCli(["workspace", "remove", "../repos"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenNthCalledWith(
+        1,
+        "--ticket may not contain path separators.",
+      );
+      expect(existsSync(reposRoot)).toBe(true);
+      expect(existsSync(outsideWorktreesFile)).toBe(true);
     });
 
     it("returns an error when workspace remove is missing the ticket", async () => {
