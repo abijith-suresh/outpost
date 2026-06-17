@@ -37,16 +37,35 @@ function parsePromptedRepoIds(value: string): Array<string> {
   ];
 }
 
+function validateNoPathSeparators(
+  label: string,
+  value: string,
+): string | undefined {
+  if (value.includes("/") || value.includes("\\")) {
+    return `${label} must not contain path separators (/ or \\)`;
+  }
+}
+
 async function promptForRequiredValue(
   ask: (question: string) => Promise<string>,
   label: string,
+  validate?: (value: string) => string | undefined,
+  log?: (message: string) => void,
 ): Promise<string> {
   while (true) {
     const answer = (await ask(label)).trim();
 
-    if (answer.length > 0) {
-      return answer;
+    if (answer.length === 0) {
+      continue;
     }
+
+    const error = validate?.(answer);
+    if (error) {
+      log?.(error);
+      continue;
+    }
+
+    return answer;
   }
 }
 
@@ -95,10 +114,20 @@ export async function promptForMissingCreateArgs(
     const log = options.log ?? console.log;
     const ticket =
       input.ticket ??
-      (await promptForRequiredValue(options.ask, "Ticket id: "));
+      (await promptForRequiredValue(
+        options.ask,
+        "Ticket id: ",
+        validateNoPathSeparators.bind(null, "Ticket"),
+        log,
+      ));
     const type =
       input.type ??
-      (await promptForRequiredValue(options.ask, "Branch type: "));
+      (await promptForRequiredValue(
+        options.ask,
+        "Branch type: ",
+        validateNoPathSeparators.bind(null, "Branch type"),
+        log,
+      ));
     const repoIds =
       input.repoIds.length > 0
         ? input.repoIds
@@ -117,13 +146,37 @@ export async function promptForMissingCreateArgs(
     output: process.stdout,
   });
 
+  let cancelled = false;
+
+  readline.on("SIGINT", () => {
+    cancelled = true;
+    readline.close();
+  });
+
   try {
-    const ask = (question: string) => readline.question(question);
+    const ask = async (question: string) => {
+      if (cancelled) throw new Error("Cancelled by user");
+      const answer = await readline.question(question);
+      if (cancelled) throw new Error("Cancelled by user");
+      return answer;
+    };
     const log = (message: string) => console.log(message);
     const ticket =
-      input.ticket ?? (await promptForRequiredValue(ask, "Ticket id: "));
+      input.ticket ??
+      (await promptForRequiredValue(
+        ask,
+        "Ticket id: ",
+        validateNoPathSeparators.bind(null, "Ticket"),
+        log,
+      ));
     const type =
-      input.type ?? (await promptForRequiredValue(ask, "Branch type: "));
+      input.type ??
+      (await promptForRequiredValue(
+        ask,
+        "Branch type: ",
+        validateNoPathSeparators.bind(null, "Branch type"),
+        log,
+      ));
     const repoIds =
       input.repoIds.length > 0
         ? input.repoIds

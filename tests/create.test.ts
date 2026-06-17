@@ -404,6 +404,159 @@ describe("run", () => {
     }
   });
 
+  it("rejects ticket with path separator during interactive prompt", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "ticket/with/slash",
+      type: "feat",
+      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+    });
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await runCli(["create"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenNthCalledWith(
+        1,
+        "--ticket may not contain path separators.",
+      );
+    } finally {
+      restoreTtyProperty(process.stdin, stdinDescriptor);
+      restoreTtyProperty(process.stdout, stdoutDescriptor);
+    }
+  });
+
+  it("rejects type with path separator during interactive prompt", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "TICKET-456",
+      type: "feat/something",
+      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+    });
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await runCli(["create"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenNthCalledWith(
+        1,
+        "--type may not contain path separators.",
+      );
+    } finally {
+      restoreTtyProperty(process.stdin, stdinDescriptor);
+      restoreTtyProperty(process.stdout, stdoutDescriptor);
+    }
+  });
+
+  it("accepts valid ticket and type without path separators", async () => {
+    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "VALID-123",
+      type: "feat",
+      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+    });
+
+    try {
+      const exitCode = await runCli(["create"]);
+      const worktreePath = path.join(
+        tempHome,
+        "worktrees",
+        "VALID-123",
+        path.basename(alpha.tempRepo),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(await currentBranch(worktreePath)).toBe("feat/VALID-123");
+    } finally {
+      restoreTtyProperty(process.stdin, stdinDescriptor);
+      restoreTtyProperty(process.stdout, stdoutDescriptor);
+    }
+  });
+
   it("re-prompts for repo ids when interactive create input includes unknown repos", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const ask = vi
