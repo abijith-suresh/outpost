@@ -7,6 +7,7 @@ import {
   path,
   runCli,
   setupAfterEach,
+  trackTempDir,
   writeRegistry,
 } from "./helpers.ts";
 
@@ -14,7 +15,9 @@ setupAfterEach();
 
 describe("run", () => {
   it("prints repo list output", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -67,7 +70,9 @@ describe("run", () => {
   });
 
   it("prints repo show output", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -120,7 +125,9 @@ describe("run", () => {
   });
 
   it("prints repo show output as json", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -150,7 +157,9 @@ describe("run", () => {
   });
 
   it("returns repo show status missing when managed repo is gone", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -173,7 +182,9 @@ describe("run", () => {
   });
 
   it("returns an error when repo show uses an unknown id", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -220,7 +231,9 @@ describe("run", () => {
   });
 
   it("returns an error when repo show finds duplicate ids in the registry", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -256,7 +269,9 @@ describe("run", () => {
   });
 
   it("prints repo list output as json", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);

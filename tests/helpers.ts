@@ -1,6 +1,12 @@
 import { createRequire } from "node:module";
 import os from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 import { afterEach, vi } from "vitest";
@@ -20,8 +26,8 @@ export {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
   runCli,
+  writeFileSync,
 };
 
 export function sanitizeRemoteUrl(remoteUrl: string): string {
@@ -129,12 +135,15 @@ export async function createManagedRepoFixture(options?: {
         `outpost-create-repo-${timestamp}`,
         options.repoName,
       )
-    : path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`);
-  const tempRemote = path.join(
-    os.tmpdir(),
-    `outpost-create-remote-${timestamp}.git`,
+    : trackTempDir(path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`));
+  const tempRemote = trackTempDir(
+    path.join(os.tmpdir(), `outpost-create-remote-${timestamp}.git`),
   );
   const defaultBranch = options?.defaultBranch ?? "main";
+
+  if (options?.repoName) {
+    trackTempDir(path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`));
+  }
 
   mkdirSync(tempRepo, { recursive: true });
   await initBareGitRepo(tempRemote);
@@ -200,9 +209,32 @@ export function readRegistry(tempHome: string): {
   return JSON.parse(readFileSync(registryPath, "utf8"));
 }
 
+const tempDirsKey = "__outpost_temp_dirs__";
+
+function getTempDirs(): Set<string> {
+  if (!(globalThis as Record<string, unknown>)[tempDirsKey]) {
+    (globalThis as Record<string, unknown>)[tempDirsKey] = new Set<string>();
+  }
+  return (globalThis as Record<string, unknown>)[tempDirsKey] as Set<string>;
+}
+
+export function trackTempDir(dir: string): string {
+  getTempDirs().add(dir);
+  return dir;
+}
+
 export function setupAfterEach(): void {
   afterEach(() => {
     vi.restoreAllMocks();
     process.env = { ...ORIGINAL_ENV };
+    const dirs = getTempDirs();
+    for (const dir of dirs) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
+    dirs.clear();
   });
 }

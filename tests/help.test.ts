@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { os, path, runCli, setupAfterEach, version } from "./helpers.ts";
+import {
+  os,
+  path,
+  runCli,
+  setupAfterEach,
+  trackTempDir,
+  version,
+} from "./helpers.ts";
 
 setupAfterEach();
 
@@ -57,7 +64,9 @@ describe("run", () => {
   });
 
   it("prints the current version instead of doctor json output", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     const infoSpy = vi

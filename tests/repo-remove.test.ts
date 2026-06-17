@@ -10,6 +10,7 @@ import {
   readFileSync,
   runCli,
   setupAfterEach,
+  trackTempDir,
   writeRegistry,
 } from "./helpers.ts";
 
@@ -18,7 +19,9 @@ setupAfterEach();
 describe("run", () => {
   describe("repo remove", () => {
     it("removes a repo from the registry and deletes the managed repo", async () => {
-      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -73,7 +76,9 @@ describe("run", () => {
     });
 
     it("prints repo remove output as json", async () => {
-      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -113,7 +118,9 @@ describe("run", () => {
     });
 
     it("returns an error for unknown repo id", async () => {
-      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -141,7 +148,9 @@ describe("run", () => {
     });
 
     it("returns an error when repo remove is missing the id", async () => {
-      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -160,7 +169,9 @@ describe("run", () => {
     });
 
     it("returns an error when repo remove is run before init", async () => {
-      const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+      const tempHome = trackTempDir(
+        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+      );
       process.env.OUTPOST_HOME = tempHome;
 
       const errorSpy = vi

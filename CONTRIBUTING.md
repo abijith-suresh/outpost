@@ -62,20 +62,35 @@ This runs formatting, linting, type-checking, and tests in sequence.
 
 ```
 src/
-  commands/     CLI command implementations — one file per command
-  config.ts     Config file I/O and Effect Schema definitions
-  program.ts    CLI routing, argument parsing, output formatting
+  commands/             CLI command implementations
+    create-prompt.ts    Interactive prompt logic
+    create.ts
+    doctor.ts
+    init.ts
+    repo-add.ts
+    repo-fetch.ts
+    repo-list.ts
+    repo-mirror.ts      Git clone/fetch mirror operations
+    repo-remove.ts
+    repo-show.ts
+    workspace-list.ts
+    workspace-remove.ts
+    workspace-show.ts
+  config.ts             Config file I/O and Effect Schema definitions
+  index.ts              Package entry point
+  program.ts            CLI routing, argument parsing, output formatting
+  types.ts              Shared type definitions
 tests/
-  helpers.ts    Shared fixtures, git helpers, registry utilities
+  helpers.ts            Shared fixtures, git helpers, registry utilities
+  create.test.ts
   doctor.test.ts
+  help.test.ts
+  misc.test.ts          Edge-case and error-handling tests
   repo-add.test.ts
   repo-fetch.test.ts
   repo-list.test.ts
   repo-remove.test.ts
-  create.test.ts
   workspace.test.ts
-  help.test.ts
-  misc.test.ts   Edge-case and error-handling tests
 ```
 
 - `src/commands/` — Each file exports a single command function wired up in `program.ts`.
