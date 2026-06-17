@@ -10,6 +10,8 @@ import {
   trackTempDir,
   writeRegistry,
 } from "./helpers.ts";
+import { Effect } from "effect";
+import { migrateConfig, CURRENT_CONFIG_VERSION } from "../src/config.js";
 
 setupAfterEach();
 
@@ -219,5 +221,54 @@ describe("run", () => {
     const registry = readRegistry(tempHome);
 
     expect(registry).toEqual({ repos: [], version: 1 });
+  });
+});
+
+describe("migrateConfig", () => {
+  it("loads current version config", async () => {
+    const raw = {
+      version: CURRENT_CONFIG_VERSION,
+      outpostHome: "/tmp/outpost",
+      reposRoot: "/tmp/outpost/repos",
+      worktreesRoot: "/tmp/outpost/worktrees",
+    };
+
+    const result = await Effect.runPromise(migrateConfig(raw));
+
+    expect(result).toEqual(raw);
+  });
+
+  it("rejects future version config with clear error", async () => {
+    const raw = {
+      version: 2,
+      outpostHome: "/tmp/outpost",
+      reposRoot: "/tmp/outpost/repos",
+      worktreesRoot: "/tmp/outpost/worktrees",
+    };
+
+    await expect(Effect.runPromise(migrateConfig(raw))).rejects.toThrow(
+      `Config version 2 is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`,
+    );
+  });
+
+  it("sets version to current when version field is missing", async () => {
+    const raw = {
+      outpostHome: "/tmp/outpost",
+      reposRoot: "/tmp/outpost/repos",
+      worktreesRoot: "/tmp/outpost/worktrees",
+    };
+
+    const result = await Effect.runPromise(migrateConfig(raw));
+
+    expect(result).toEqual({
+      ...raw,
+      version: CURRENT_CONFIG_VERSION,
+    });
+  });
+
+  it("passes through non-object values unchanged", async () => {
+    const result = await Effect.runPromise(migrateConfig("not an object"));
+
+    expect(result).toBe("not an object");
   });
 });
