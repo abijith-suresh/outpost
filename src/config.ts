@@ -4,6 +4,7 @@ import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
+export const CURRENT_CONFIG_VERSION = 1;
 
 export class ConfigError extends Schema.TaggedError<ConfigError>()(
   "ConfigError",
@@ -20,6 +21,29 @@ export const OutpostConfigSchema = Schema.Struct({
 });
 
 export type OutpostConfig = Schema.Schema.Type<typeof OutpostConfigSchema>;
+
+export function migrateConfig(
+  raw: unknown,
+): Effect.Effect<unknown, ConfigError> {
+  return Effect.gen(function* () {
+    if (typeof raw !== "object" || raw === null) {
+      return raw;
+    }
+    const obj = raw as Record<string, unknown>;
+    const version =
+      typeof obj.version === "number" ? obj.version : CURRENT_CONFIG_VERSION;
+
+    if (version > CURRENT_CONFIG_VERSION) {
+      return yield* Effect.fail(
+        new ConfigError({
+          message: `Config version ${version} is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`,
+        }),
+      );
+    }
+
+    return { ...obj, version: CURRENT_CONFIG_VERSION };
+  });
+}
 
 export const RepoRecordSchema = Schema.Struct({
   id: Schema.String,
@@ -262,7 +286,16 @@ export function loadConfig(
         }),
     });
 
-    return yield* Schema.decodeUnknown(OutpostConfigSchema)(parsedJson).pipe(
+    const migrated = yield* migrateConfig(parsedJson).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigError({
+            message: `Invalid config file ${configFilePath}: ${error.message}`,
+          }),
+      ),
+    );
+
+    return yield* Schema.decodeUnknown(OutpostConfigSchema)(migrated).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
