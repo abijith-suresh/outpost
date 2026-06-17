@@ -27,11 +27,6 @@ export class CliError extends Schema.TaggedError<CliError>()("CliError", {
   message: Schema.String,
 }) {}
 
-const demoItems = [
-  { id: "workspace-bootstrap", title: "Workspace bootstrap", status: "ready" },
-  { id: "effect-foundation", title: "Effect foundation", status: "ready" },
-] as const;
-
 function printHelp(version: string): string {
   return `outpost ${version}
 
@@ -57,8 +52,6 @@ Commands:
                          Remove a ticket workspace and all its worktrees
   workspace show <ticket> [--json]
                          Show one created ticket workspace
-  demo list [--json]   Show placeholder command output structure
-
 Global options:
   --help               Show help output
   --version            Show CLI version
@@ -175,13 +168,6 @@ function printCommandOutput(
               ];
             })
           : []),
-      ]).pipe(Effect.asVoid);
-    case "demo list":
-      return Effect.all([
-        Console.log("outpost demo list"),
-        ...demoItems.map((item) =>
-          Console.log(`- ${item.id}: ${item.title} [${item.status}]`),
-        ),
       ]).pipe(Effect.asVoid);
     case "repo add":
       return Effect.all([
@@ -453,18 +439,8 @@ function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
         positionalArgs[1] ?? "",
       )) ||
     (positionalArgs[0] === "workspace" &&
-      ["list", "remove", "show"].includes(positionalArgs[1] ?? "")) ||
-    (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
+      ["list", "remove", "show"].includes(positionalArgs[1] ?? ""))
   );
-}
-
-function runDemoList(): Effect.Effect<CommandOutput> {
-  return Effect.succeed({
-    command: "demo list",
-    data: {
-      items: demoItems,
-    },
-  });
 }
 
 function resolveRepoAddArgs(
@@ -604,10 +580,6 @@ function resolveCommand(
     return runWorkspaceList().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
-  }
-
-  if (positionalArgs[0] === "demo" && positionalArgs[1] === "list") {
-    return runDemoList();
   }
 
   return Effect.fail(new CliError({ message: positionalArgs.join(" ") }));

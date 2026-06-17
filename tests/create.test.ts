@@ -21,25 +21,6 @@ import {
 setupAfterEach();
 
 describe("run", () => {
-  it("prints demo list output", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-
-    const exitCode = await runCli(["demo", "list"]);
-
-    expect(exitCode).toBe(0);
-    expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost demo list");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      2,
-      "- workspace-bootstrap: Workspace bootstrap [ready]",
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      3,
-      "- effect-foundation: Effect foundation [ready]",
-    );
-  });
-
   it("creates worktrees for repeated --repo selections", async () => {
     const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
     process.env.OUTPOST_HOME = tempHome;
