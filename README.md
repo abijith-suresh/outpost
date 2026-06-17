@@ -34,7 +34,6 @@ outpost workspace remove PROJ-123     # clean up when done
 | `workspace list`   | `outpost workspace list [--json]`                                                                               | List created ticket workspaces                       |
 | `workspace remove` | `outpost workspace remove <ticket> [--json]`                                                                    | Remove a ticket workspace and all its worktrees      |
 | `workspace show`   | `outpost workspace show <ticket> [--json]`                                                                      | Show one created ticket workspace                    |
-| `demo list`        | `outpost demo list [--json]`                                                                                    | Show placeholder command output structure            |
 
 ## Environment
 
