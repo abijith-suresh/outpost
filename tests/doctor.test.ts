@@ -7,6 +7,7 @@ import {
   readRegistry,
   runCli,
   setupAfterEach,
+  trackTempDir,
   writeRegistry,
 } from "./helpers.ts";
 
@@ -14,7 +15,9 @@ setupAfterEach();
 
 describe("run", () => {
   it("prints doctor output", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     const infoSpy = vi
@@ -35,7 +38,9 @@ describe("run", () => {
   });
 
   it("prints doctor output as json", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     const infoSpy = vi
@@ -57,7 +62,9 @@ describe("run", () => {
   });
 
   it("prints initialized doctor output", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -97,7 +104,9 @@ describe("run", () => {
   });
 
   it("prints degraded doctor output when managed repos are missing", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -145,7 +154,9 @@ describe("run", () => {
   });
 
   it("prints degraded doctor output as json when managed repos are missing", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -182,7 +193,9 @@ describe("run", () => {
   });
 
   it("initializes outpost home and worktrees root", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     const infoSpy = vi

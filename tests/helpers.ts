@@ -1,6 +1,12 @@
 import { createRequire } from "node:module";
 import os from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 import { afterEach, vi } from "vitest";
@@ -20,8 +26,8 @@ export {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
   runCli,
+  writeFileSync,
 };
 
 export function sanitizeRemoteUrl(remoteUrl: string): string {
@@ -124,15 +130,16 @@ export async function createManagedRepoFixture(options?: {
 }) {
   const timestamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const tempRepo = options?.repoName
-    ? path.join(
-        os.tmpdir(),
-        `outpost-create-repo-${timestamp}`,
-        options.repoName,
+    ? trackTempDir(
+        path.join(
+          os.tmpdir(),
+          `outpost-create-repo-${timestamp}`,
+          options.repoName,
+        ),
       )
-    : path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`);
-  const tempRemote = path.join(
-    os.tmpdir(),
-    `outpost-create-remote-${timestamp}.git`,
+    : trackTempDir(path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`));
+  const tempRemote = trackTempDir(
+    path.join(os.tmpdir(), `outpost-create-remote-${timestamp}.git`),
   );
   const defaultBranch = options?.defaultBranch ?? "main";
 
@@ -200,9 +207,24 @@ export function readRegistry(tempHome: string): {
   return JSON.parse(readFileSync(registryPath, "utf8"));
 }
 
+const tempDirs: Set<string> = new Set();
+
+export function trackTempDir(dir: string): string {
+  tempDirs.add(dir);
+  return dir;
+}
+
 export function setupAfterEach(): void {
   afterEach(() => {
     vi.restoreAllMocks();
     process.env = { ...ORIGINAL_ENV };
+    for (const dir of tempDirs) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* ignore cleanup failures */
+      }
+    }
+    tempDirs.clear();
   });
 }

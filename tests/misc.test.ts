@@ -8,13 +8,16 @@ import {
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
+  trackTempDir,
 } from "./helpers.ts";
 
 setupAfterEach();
 
 describe("run", () => {
   it("fails before creating anything when selected repos would share a worktree path", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
