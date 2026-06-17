@@ -9,6 +9,7 @@ function gitCommand(...args: ReadonlyArray<string>) {
       GCM_INTERACTIVE: "never",
       GIT_TERMINAL_PROMPT: "0",
     }),
+    Command.stderr("inherit"),
   );
 }
 
@@ -27,7 +28,7 @@ export function cloneBareRepository(
             reason: "Unknown",
             module: "Command",
             method: "clone",
-            message: `git clone --mirror failed for ${remoteUrl}`,
+            message: `git clone --mirror failed for ${remoteUrl} (see stderr above)`,
           } as PlatformError),
     ),
   );
@@ -49,7 +50,7 @@ export function fetchBareRepository(
             reason: "Unknown",
             module: "Command",
             method: "fetch",
-            message: `git fetch failed for ${managedRepoPath}`,
+            message: `git fetch failed for ${managedRepoPath} (see stderr above)`,
           } as PlatformError),
     ),
   );
