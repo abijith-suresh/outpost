@@ -1,5 +1,15 @@
 # @abijith-suresh/outpost
 
+## 0.0.20
+
+### Patch Changes
+
+- dce190c: Validate ticket and type inputs in interactive create prompt and handle SIGINT gracefully
+- 531f8f5: Prune git worktree entries from bare repos when removing a workspace
+- 5f6c619: Rewrite README with install instructions, usage, and command reference
+- 7693fc6: Show git clone and fetch stderr output for better error diagnosis
+- d20caec: Remove demo list command stub
+
 ## 0.0.19
 
 ### Patch Changes
