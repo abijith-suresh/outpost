@@ -14,6 +14,7 @@ import { runRepoList } from "./commands/repo-list.js";
 import { runRepoRemove } from "./commands/repo-remove.js";
 import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
+import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
 import type { CommandOutput } from "./types.js";
 
@@ -51,9 +52,11 @@ Commands:
   repo remove <id>     Remove an imported repository
   repo show <id>       Show one imported repository by id
   workspace list [--json]
-                        List created ticket workspaces
+                         List created ticket workspaces
+  workspace remove <ticket> [--json]
+                         Remove a ticket workspace and all its worktrees
   workspace show <ticket> [--json]
-                        Show one created ticket workspace
+                         Show one created ticket workspace
   demo list [--json]   Show placeholder command output structure
 
 Global options:
@@ -371,6 +374,24 @@ function printCommandOutput(
             })
           : []),
       ]).pipe(Effect.asVoid);
+    case "workspace remove":
+      return Effect.all([
+        Console.log("outpost workspace remove"),
+        ...(typeof output.data.ticket === "string"
+          ? [Console.log(`ticket: ${output.data.ticket}`)]
+          : []),
+        ...(typeof output.data.ticketDirectory === "string"
+          ? [Console.log(`workspace directory: ${output.data.ticketDirectory}`)]
+          : []),
+        Console.log(
+          `worktrees: ${typeof output.data.worktreeCount === "number" ? output.data.worktreeCount : 0}`,
+        ),
+        ...(Array.isArray(output.data.worktreeNames)
+          ? output.data.worktreeNames.map((name) =>
+              Console.log(`  - ${String(name)}`),
+            )
+          : []),
+      ]).pipe(Effect.asVoid);
     case "workspace list":
       return Effect.all([
         Console.log("outpost workspace list"),
@@ -432,7 +453,7 @@ function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
         positionalArgs[1] ?? "",
       )) ||
     (positionalArgs[0] === "workspace" &&
-      ["list", "show"].includes(positionalArgs[1] ?? "")) ||
+      ["list", "remove", "show"].includes(positionalArgs[1] ?? "")) ||
     (positionalArgs[0] === "demo" && positionalArgs[1] === "list")
   );
 }
@@ -569,6 +590,12 @@ function resolveCommand(
 
   if (positionalArgs[0] === "workspace" && positionalArgs[1] === "show") {
     return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+      Effect.mapError((error) => new CliError({ message: error.message })),
+    );
+  }
+
+  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "remove") {
+    return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
