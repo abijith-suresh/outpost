@@ -65,13 +65,23 @@ src/
   commands/     CLI command implementations — one file per command
   config.ts     Config file I/O and Effect Schema definitions
   program.ts    CLI routing, argument parsing, output formatting
-tests/          Integration tests using Vitest with real temp Git repos
+tests/
+  helpers.ts    Shared fixtures, git helpers, registry utilities
+  doctor.test.ts
+  repo-add.test.ts
+  repo-fetch.test.ts
+  repo-list.test.ts
+  repo-remove.test.ts
+  create.test.ts
+  workspace.test.ts
+  help.test.ts
+  misc.test.ts   Edge-case and error-handling tests
 ```
 
 - `src/commands/` — Each file exports a single command function wired up in `program.ts`.
 - `src/config.ts` — Reads/writes the Outpost config file. Uses `Schema.TaggedError` for typed errors.
 - `src/program.ts` — Parses raw `argv`, maps to commands, handles formatting and exit codes.
-- `tests/` — Tests create real temporary directories and Git repositories to exercise the full CLI end-to-end, then assert against expected stdout/stderr output.
+- `tests/` — Integration tests split per CLI command domain. Tests create real temporary directories and Git repositories to exercise the full CLI end-to-end, then assert against expected stdout/stderr output. Shared fixtures live in `helpers.ts`.
 
 ## Code Style
 
@@ -89,3 +99,5 @@ npm run test:watch  # Watch mode
 ```
 
 Tests use Vitest and operate on real temporary directories. Each test scaffolds a minimal Git repository, runs Outpost against it, and compares the output. This means tests are slower than unit tests but provide high confidence in CLI behavior.
+
+Test files are organized by CLI command domain. When adding a new command, create a corresponding test file (e.g. `tests/my-command.test.ts`) that imports shared helpers from `tests/helpers.ts`.

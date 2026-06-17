@@ -18,6 +18,6 @@ For the full contributing guide, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 - **Runtime:** Node.js >= 22.14.0
 - **Effects system:** Effect-TS (v3.21.2) — all side effects return `Effect.Effect`
 - **Config/Schema:** `Schema.TaggedError` for errors, `Schema.Struct` for config validation
-- **Testing:** Vitest (integration tests with real temp Git repos)
+- **Testing:** Vitest (integration tests with real temp Git repos, split per command domain in `tests/`, shared helpers in `tests/helpers.ts`)
 - **CI:** GitHub Actions (format:check, lint, typecheck, test, build)
 - **Changeset enforcement:** [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs, documented in CONTRIBUTING.md
