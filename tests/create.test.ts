@@ -16,13 +16,16 @@ import {
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
+  trackTempDir,
 } from "./helpers.ts";
 
 setupAfterEach();
 
 describe("run", () => {
   it("creates worktrees for repeated --repo selections", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -77,7 +80,9 @@ describe("run", () => {
   });
 
   it("uses an explicit --base override for all selected repos", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -141,7 +146,9 @@ describe("run", () => {
   });
 
   it("fails before creating anything when a repo id is unknown", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -231,7 +238,9 @@ describe("run", () => {
   });
 
   it("prompts for all missing create inputs on an interactive tty", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -297,7 +306,9 @@ describe("run", () => {
   });
 
   it("fails clearly when interactive create has no repos to choose from", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -339,7 +350,9 @@ describe("run", () => {
   });
 
   it("prompts only for missing create inputs on an interactive tty", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -405,7 +418,9 @@ describe("run", () => {
   });
 
   it("rejects ticket with path separator during interactive prompt", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -456,7 +471,9 @@ describe("run", () => {
   });
 
   it("rejects type with path separator during interactive prompt", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -507,7 +524,9 @@ describe("run", () => {
   });
 
   it("accepts valid ticket and type without path separators", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -588,7 +607,9 @@ describe("run", () => {
   });
 
   it("fails before creating anything when the ticket directory already exists", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -621,7 +642,9 @@ describe("run", () => {
   });
 
   it("creates the expected worktree path and branch layout", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -651,7 +674,9 @@ describe("run", () => {
   });
 
   it("prints create output as json", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -694,7 +719,9 @@ describe("run", () => {
   });
 
   it("plans create worktrees without creating anything when --dry-run is used", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -729,7 +756,9 @@ describe("run", () => {
   });
 
   it("prints create dry run output as json", async () => {
-    const tempHome = path.join(os.tmpdir(), `outpost-test-${Date.now()}`);
+    const tempHome = trackTempDir(
+      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
+    );
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
