@@ -12,6 +12,28 @@ export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()
   },
 ) {}
 
+function validateTicket(
+  ticket: string,
+): Effect.Effect<void, WorkspaceShowError> {
+  if (ticket.includes("/") || ticket.includes("\\")) {
+    return Effect.fail(
+      new WorkspaceShowError({
+        message: "--ticket may not contain path separators.",
+      }),
+    );
+  }
+
+  if (ticket === "." || ticket === "..") {
+    return Effect.fail(
+      new WorkspaceShowError({
+        message: "--ticket may not contain path traversal.",
+      }),
+    );
+  }
+
+  return Effect.void;
+}
+
 export function runWorkspaceShow(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
@@ -28,6 +50,8 @@ export function runWorkspaceShow(
         }),
       );
     }
+
+    yield* validateTicket(ticket);
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;

@@ -23,6 +23,28 @@ function gitCommand(...args: ReadonlyArray<string>) {
   );
 }
 
+function validateTicket(
+  ticket: string,
+): Effect.Effect<void, WorkspaceRemoveError> {
+  if (ticket.includes("/") || ticket.includes("\\")) {
+    return Effect.fail(
+      new WorkspaceRemoveError({
+        message: "--ticket may not contain path separators.",
+      }),
+    );
+  }
+
+  if (ticket === "." || ticket === "..") {
+    return Effect.fail(
+      new WorkspaceRemoveError({
+        message: "--ticket may not contain path traversal.",
+      }),
+    );
+  }
+
+  return Effect.void;
+}
+
 export function runWorkspaceRemove(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
@@ -39,6 +61,8 @@ export function runWorkspaceRemove(
         }),
       );
     }
+
+    yield* validateTicket(ticket);
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
