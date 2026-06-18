@@ -103,7 +103,10 @@ export function runWorkspaceList(): Effect.Effect<
     }
 
     const managedTicketSet = new Set(managedTickets);
-    const unmanagedDirs = yield* scanWorktreesRoot(config.worktreesRoot).pipe(
+    const unmanagedDirs = yield* scanWorktreesRoot(
+      config.worktreesRoot,
+      outpostHome,
+    ).pipe(
       Effect.mapError(
         (error) => new WorkspaceListError({ message: error.message }),
       ),

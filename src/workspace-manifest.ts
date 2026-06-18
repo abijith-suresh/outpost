@@ -381,6 +381,34 @@ export function writeManifest(
       }
     }
 
+    if (path.isAbsolute(manifest.workspacePath)) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: "workspacePath must not be an absolute path",
+        }),
+      );
+    }
+
+    for (let i = 0; i < manifest.repositories.length; i++) {
+      const repo = manifest.repositories[i];
+
+      if (path.isAbsolute(repo.managedPath)) {
+        return yield* Effect.fail(
+          new ManifestError({
+            message: `managedPath must not be an absolute path: ${repo.managedPath}`,
+          }),
+        );
+      }
+
+      if (path.isAbsolute(repo.worktreePath)) {
+        return yield* Effect.fail(
+          new ManifestError({
+            message: `worktreePath must not be an absolute path: ${repo.worktreePath}`,
+          }),
+        );
+      }
+    }
+
     yield* writeJsonFileAtomic(manifestFilePath, manifest).pipe(
       Effect.mapError(
         (error) =>
@@ -599,6 +627,7 @@ export function deriveWorkspaceStatus(
 
 export function scanWorktreesRoot(
   worktreesRoot: string,
+  outpostHome: string,
 ): Effect.Effect<
   ReadonlyArray<string>,
   PlatformError,
@@ -626,7 +655,6 @@ export function scanWorktreesRoot(
         continue;
       }
 
-      const outpostHome = path.dirname(worktreesRoot);
       const manifestFilePath = path.join(
         outpostHome,
         "workspaces",

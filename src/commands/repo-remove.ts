@@ -137,6 +137,7 @@ export function runRepoRemove(
 
     const unmanagedTickets = yield* scanWorktreesRoot(
       config.worktreesRoot,
+      outpostHome,
     ).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message }),

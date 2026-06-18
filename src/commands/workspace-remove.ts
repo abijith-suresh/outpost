@@ -165,7 +165,7 @@ export function runWorkspaceRemove(
 
               const porcelainOutput = yield* Command.string(
                 gitCommand("-C", resolvedWorktreePath, "status", "--porcelain"),
-              ).pipe(Effect.catchAll(() => Effect.succeed("")));
+              ).pipe(Effect.mapError(toMapError));
 
               if (porcelainOutput.trim().length > 0) {
                 return yield* Effect.fail(
