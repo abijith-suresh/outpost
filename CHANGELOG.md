@@ -1,5 +1,12 @@
 # @abijith-suresh/outpost
 
+## 0.0.23
+
+### Patch Changes
+
+- 3fe3877: Write config and repository registry state atomically, and centralize create and workspace path containment checks.
+- c9cc085: Replace collision-prone repository IDs with canonical network and local identities, hierarchical managed paths, and duplicate registry validation.
+
 ## 0.0.22
 
 ### Patch Changes
