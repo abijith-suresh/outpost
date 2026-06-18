@@ -85,10 +85,18 @@ describe("run", () => {
     expect(calls[0]).toBe("outpost workspace show");
     expect(calls[1]).toBe("ticket: SHOW-123");
     expect(calls[2]).toBe(`workspace directory: ${ticketDirectory}`);
-    expect(calls[3]).toBe("status: unmanaged");
-    expect(calls[4]).toBe("worktrees: 1");
-    expect(calls[5]).toBe(`- ${path.basename(alpha.tempRepo)}`);
-    expect(calls[6]).toBe(`  path: ${worktreePath}`);
+    expect(calls[3]).toBe("type: feat");
+    expect(calls[4]).toBe("branch: feat/SHOW-123");
+    // calls[5] is "created at: ..." (timestamp varies)
+    expect(calls[6]).toBe("workspace path: SHOW-123");
+    expect(calls[7]).toBe("status: ready");
+    // calls[8] is "manifest: ..."
+    expect(calls[9]).toBe("worktrees: 1");
+    expect(calls[10]).toBe(
+      `- ${path.basename(alpha.tempRepo)} (id: ${localRepoId(alpha.tempRemote)})`,
+    );
+    expect(calls[11]).toBe(`  path: ${worktreePath}`);
+    expect(calls[12]).toBe("  base: main");
   });
 
   it("prints workspace show output as json", async () => {
@@ -124,8 +132,8 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(output).toContain('"command": "workspace show"');
     expect(output).toContain('"ticket": "SHOW-JSON-456"');
-    expect(output).toContain('"status": "unmanaged"');
-    expect(output).toContain(`"repoName": "${path.basename(alpha.tempRepo)}"`);
+    expect(output).toContain('"status": "ready"');
+    expect(output).toContain(`"name": "${path.basename(alpha.tempRepo)}"`);
   });
 
   it("prints workspace list output", async () => {
@@ -167,12 +175,15 @@ describe("run", () => {
     const calls = infoSpy.mock.calls.map((call) => call[0]);
     expect(calls[0]).toBe("outpost workspace list");
     expect(calls[1]).toBe("workspaces: 2");
-    expect(calls[2]).toContain("- LIST-123");
+    expect(calls[2]).toContain("- LIST-123 [ready]");
     expect(calls[3]).toBe(
       `  workspace directory: ${path.join(tempHome, "worktrees", "LIST-123")}`,
     );
-    expect(calls[4]).toBe("  worktrees: 1");
-    expect(calls[5]).toContain("- LIST-456");
+    expect(calls[4]).toBe("  type: feat");
+    expect(calls[5]).toBe("  branch: feat/LIST-123");
+    // calls[6] is "  created at: ..." (timestamp varies)
+    expect(calls[7]).toBe("  worktrees: 1");
+    expect(calls[8]).toContain("- LIST-456");
   });
 
   it("prints workspace list output as json", async () => {
@@ -203,7 +214,7 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(output).toContain('"command": "workspace list"');
     expect(output).toContain('"ticket": "LIST-JSON-789"');
-    expect(output).toContain('"status": "unmanaged"');
+    expect(output).toContain('"status": "ready"');
     expect(output).toContain('"worktreeCount": 1');
   });
 
@@ -1237,6 +1248,29 @@ describe("run", () => {
         "--repo",
         localRepoId(alpha.tempRemote),
       ]);
+
+      const registry = readRegistry(tempHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+      const reposRoot = path.join(tempHome, "repos");
+
+      writeManifestFixture(
+        tempHome,
+        reposRoot,
+        "NO-MANIFEST-123",
+        "feat",
+        "feat/NO-MANIFEST-123",
+        [
+          {
+            id: registry.repos[0].id,
+            name: registry.repos[0].name,
+            base: "main",
+            bareRepoPath: managedRepoPath,
+          },
+        ],
+      );
+
+      const { rmSync } = await import("node:fs");
+      rmSync(path.join(tempHome, "workspaces", "NO-MANIFEST-123.json"));
 
       const errorSpy = vi
         .spyOn(console, "error")
