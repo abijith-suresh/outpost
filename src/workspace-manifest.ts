@@ -221,9 +221,13 @@ export function readManifest(
       Effect.mapError((error) => new ManifestError({ message: error.message })),
     );
 
-    yield* validatePathSegment("workspacePath", manifest.workspacePath).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message })),
-    );
+    if (path.isAbsolute(manifest.workspacePath)) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: "workspacePath must not be an absolute path",
+        }),
+      );
+    }
 
     const workspaceDir = yield* resolveWorkspacePath(
       config.worktreesRoot,
@@ -256,6 +260,22 @@ export function readManifest(
           (error) => new ManifestError({ message: error.message }),
         ),
       );
+
+      if (path.isAbsolute(repo.managedPath)) {
+        return yield* Effect.fail(
+          new ManifestError({
+            message: `managedPath must not be an absolute path: ${repo.managedPath}`,
+          }),
+        );
+      }
+
+      if (path.isAbsolute(repo.worktreePath)) {
+        return yield* Effect.fail(
+          new ManifestError({
+            message: `worktreePath must not be an absolute path: ${repo.worktreePath}`,
+          }),
+        );
+      }
 
       const resolvedManagedPath = yield* resolveManagedPath(
         config.reposRoot,
@@ -317,6 +337,8 @@ export function writeManifest(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const manifestFilePath = yield* getManifestFilePath(
       outpostHome,
       manifest.ticket,
@@ -330,6 +352,34 @@ export function writeManifest(
           }),
       ),
     );
+
+    const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
+    const allEntries = yield* fs.readDirectory(stateRoot).pipe(
+      Effect.mapError(
+        (error) =>
+          new ManifestError({
+            message: `Failed to read workspace state directory ${stateRoot}: ${error.message}`,
+          }),
+      ),
+    );
+
+    const manifestFiles = allEntries.filter((entry) => entry.endsWith(".json"));
+    const targetFileName = path.basename(manifestFilePath);
+    const targetKey = yield* getCanonicalPortablePathKey(manifestFilePath);
+
+    for (const file of manifestFiles) {
+      if (file === targetFileName) continue;
+      const candidatePath = path.join(stateRoot, file);
+      const candidateKey = yield* getCanonicalPortablePathKey(candidatePath);
+
+      if (candidateKey === targetKey) {
+        return yield* Effect.fail(
+          new ManifestError({
+            message: `Ticket identity collision detected for ${manifest.ticket}: manifest ${file} has the same canonical path identity`,
+          }),
+        );
+      }
+    }
 
     yield* writeJsonFileAtomic(manifestFilePath, manifest).pipe(
       Effect.mapError(
@@ -450,29 +500,29 @@ export function deriveWorkspaceStatus(
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
     const manifestFileExists = yield* fs.exists(manifestFilePath);
 
-    const workspaceDirResult = yield* Effect.either(
-      resolvePathWithinRoot(config.worktreesRoot, ticket),
-    );
-
-    const workspaceDir = Either.getOrNull(workspaceDirResult);
-    let workspaceDirExists = false;
-
-    if (workspaceDir !== null) {
-      workspaceDirExists = yield* fs.exists(workspaceDir);
-    }
-
     if (!manifestFileExists) {
-      if (workspaceDir !== null && workspaceDirExists) {
+      const workspaceDirResult = yield* Effect.either(
+        resolvePathWithinRoot(config.worktreesRoot, ticket),
+      );
+
+      if (Either.isLeft(workspaceDirResult)) {
+        return "missing";
+      }
+
+      const workspaceDir = workspaceDirResult.right;
+      const workspaceDirExists = yield* fs.exists(workspaceDir);
+
+      if (workspaceDirExists) {
         const stat = yield* fs.stat(workspaceDir);
 
         if (stat.type === "Directory") {
           return "unmanaged";
         }
       }
+
       return "missing";
     }
 
@@ -487,25 +537,46 @@ export function deriveWorkspaceStatus(
 
     const manifest = manifestResult.manifest;
 
+    const workspaceDirResult = yield* Effect.either(
+      resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath),
+    );
+
+    if (Either.isLeft(workspaceDirResult)) {
+      return "invalid";
+    }
+
+    const workspaceDir = workspaceDirResult.right;
+    const workspaceDirExists = yield* fs.exists(workspaceDir);
+
+    if (!workspaceDirExists) {
+      return "missing";
+    }
+
     for (const repo of manifest.repositories) {
-      const resolvedManagedPath = path.resolve(
-        config.reposRoot,
-        repo.managedPath,
+      const resolvedManagedPathResult = yield* Effect.either(
+        resolveManagedPath(config.reposRoot, repo.managedPath),
       );
+
+      if (Either.isLeft(resolvedManagedPathResult)) {
+        return "invalid";
+      }
+
+      const resolvedManagedPath = resolvedManagedPathResult.right;
       const managedExists = yield* fs.exists(resolvedManagedPath);
 
       if (!managedExists) {
         return "missing";
       }
 
-      const resolvedWorktreePath = Either.getOrElse(
-        workspaceDirResult,
-        () => "",
+      const resolvedWorktreePathResult = yield* Effect.either(
+        resolveWorktreePath(workspaceDir, repo.worktreePath),
       );
-      const resolvedWorktree = path.resolve(
-        resolvedWorktreePath,
-        repo.worktreePath,
-      );
+
+      if (Either.isLeft(resolvedWorktreePathResult)) {
+        return "invalid";
+      }
+
+      const resolvedWorktree = resolvedWorktreePathResult.right;
       const worktreeExists = yield* fs.exists(resolvedWorktree);
 
       if (!worktreeExists) {
@@ -596,15 +667,6 @@ export function acquireTicketLock(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const lockFilePath = yield* getLockFilePath(outpostHome, ticket);
-    const exists = yield* fs.exists(lockFilePath);
-
-    if (exists) {
-      return yield* Effect.fail(
-        new LockError({
-          message: `Ticket ${ticket} is already locked. Another operation may be in progress.`,
-        }),
-      );
-    }
 
     yield* ensureWorkspaceStateRoot(outpostHome).pipe(
       Effect.mapError(
@@ -615,7 +677,7 @@ export function acquireTicketLock(
       ),
     );
 
-    yield* fs.writeFileString(lockFilePath, "").pipe(
+    yield* fs.writeFileString(lockFilePath, "", { flag: "wx" }).pipe(
       Effect.mapError(
         (error) =>
           new LockError({
