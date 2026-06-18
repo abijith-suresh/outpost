@@ -208,6 +208,28 @@ describe("run", () => {
     );
   });
 
+  it("preserves git validation for traversal-only ticket values", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      ".",
+      "--type",
+      "feat",
+      "--repo",
+      "alpha",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Invalid create branch name: feat/.",
+    );
+  });
+
   it("rejects create branch names that are not valid git branches", async () => {
     const errorSpy = vi
       .spyOn(console, "error")

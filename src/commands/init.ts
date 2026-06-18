@@ -10,6 +10,7 @@ import {
   getRepoRegistryFilePath,
   resolveOutpostHome,
 } from "../config.js";
+import { writeJsonFileAtomic } from "../store.js";
 import type { CommandOutput } from "../types.js";
 
 export class InitError extends Schema.TaggedError<InitError>()("InitError", {
@@ -36,7 +37,6 @@ export function runInit(): Effect.Effect<
     }
 
     const config = yield* buildInitialConfig(outpostHome);
-    const configJson = JSON.stringify(config, null, 2);
 
     yield* fs.makeDirectory(outpostHome, { recursive: true }).pipe(
       Effect.mapError(
@@ -65,7 +65,7 @@ export function runInit(): Effect.Effect<
       ),
     );
 
-    yield* fs.writeFileString(configFilePath, `${configJson}\n`).pipe(
+    yield* writeJsonFileAtomic(configFilePath, config).pipe(
       Effect.mapError(
         (error) =>
           new InitError({
@@ -74,19 +74,14 @@ export function runInit(): Effect.Effect<
       ),
     );
 
-    yield* fs
-      .writeFileString(
-        repoRegistryFilePath,
-        `${JSON.stringify(emptyRepoRegistry, null, 2)}\n`,
-      )
-      .pipe(
-        Effect.mapError(
-          (error) =>
-            new InitError({
-              message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
-            }),
-        ),
-      );
+    yield* writeJsonFileAtomic(repoRegistryFilePath, emptyRepoRegistry).pipe(
+      Effect.mapError(
+        (error) =>
+          new InitError({
+            message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
+          }),
+      ),
+    );
 
     return {
       command: "init",

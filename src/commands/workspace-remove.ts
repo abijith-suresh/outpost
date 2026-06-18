@@ -5,6 +5,7 @@ import * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
 
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
@@ -21,28 +22,6 @@ function gitCommand(...args: ReadonlyArray<string>) {
       GIT_TERMINAL_PROMPT: "0",
     }),
   );
-}
-
-function validateTicket(
-  ticket: string,
-): Effect.Effect<void, WorkspaceRemoveError> {
-  if (ticket.includes("/") || ticket.includes("\\")) {
-    return Effect.fail(
-      new WorkspaceRemoveError({
-        message: "--ticket may not contain path separators.",
-      }),
-    );
-  }
-
-  if (ticket === "." || ticket === "..") {
-    return Effect.fail(
-      new WorkspaceRemoveError({
-        message: "--ticket may not contain path traversal.",
-      }),
-    );
-  }
-
-  return Effect.void;
 }
 
 export function runWorkspaceRemove(
@@ -62,7 +41,11 @@ export function runWorkspaceRemove(
       );
     }
 
-    yield* validateTicket(ticket);
+    yield* validatePathSegment("--ticket", ticket).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message }),
+      ),
+    );
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -72,7 +55,14 @@ export function runWorkspaceRemove(
         (error) => new WorkspaceRemoveError({ message: error.message }),
       ),
     );
-    const ticketDirectory = path.join(config.worktreesRoot, ticket);
+    const ticketDirectory = yield* resolvePathWithinRoot(
+      config.worktreesRoot,
+      ticket,
+    ).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message }),
+      ),
+    );
     const exists = yield* fs
       .exists(ticketDirectory)
       .pipe(

@@ -3,6 +3,8 @@ import type { PlatformError } from "@effect/platform/Error";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
+import { writeJsonFileAtomic } from "./store.js";
+
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
 export const CURRENT_CONFIG_VERSION = 1;
 
@@ -232,22 +234,16 @@ export function writeRepoRegistry(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
-    yield* fs
-      .writeFileString(
-        registryFilePath,
-        `${JSON.stringify(registry, null, 2)}\n`,
-      )
-      .pipe(
-        Effect.mapError(
-          (error) =>
-            new ConfigError({
-              message: `Failed to write repo registry ${registryFilePath}: ${error.message}`,
-            }),
-        ),
-      );
+    yield* writeJsonFileAtomic(registryFilePath, registry).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigError({
+            message: `Failed to write repo registry ${registryFilePath}: ${error.message}`,
+          }),
+      ),
+    );
   });
 }
 

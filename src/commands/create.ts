@@ -8,6 +8,7 @@ import { Effect, Schema } from "effect";
 import * as CreatePrompt from "./create-prompt.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
 import type { RepoRecord } from "../config.js";
+import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()(
@@ -215,21 +216,6 @@ function requireCreateArgs(
   });
 }
 
-function validatePathSegment(
-  label: "--ticket" | "--type",
-  value: string,
-): Effect.Effect<void, CreateError> {
-  if (value.includes("/") || value.includes("\\")) {
-    return Effect.fail(
-      new CreateError({
-        message: `${label} may not contain path separators.`,
-      }),
-    );
-  }
-
-  return Effect.void;
-}
-
 function validateBranchName(
   branchName: string,
 ): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
@@ -253,8 +239,16 @@ function validateCreateArgs(
   parsedArgs: CreateArgs,
 ): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
   return Effect.gen(function* () {
-    yield* validatePathSegment("--ticket", parsedArgs.ticket);
-    yield* validatePathSegment("--type", parsedArgs.type);
+    yield* validatePathSegment("--ticket", parsedArgs.ticket, {
+      allowTraversalSegments: true,
+    }).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message })),
+    );
+    yield* validatePathSegment("--type", parsedArgs.type, {
+      allowTraversalSegments: true,
+    }).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message })),
+    );
     yield* validateBranchName(`${parsedArgs.type}/${parsedArgs.ticket}`);
   });
 }
@@ -411,8 +405,7 @@ function localBranchExists(
 
 function buildCreatePlan(
   repo: RepoRecord,
-  worktreesRoot: string,
-  ticket: string,
+  ticketDirectory: string,
   branchName: string,
   base: string | undefined,
 ): Effect.Effect<
@@ -421,7 +414,6 @@ function buildCreatePlan(
   Path.Path | CommandExecutor.CommandExecutor
 > {
   return Effect.gen(function* () {
-    const path = yield* Path.Path;
     const baseBranch = yield* base
       ? Effect.succeed(base)
       : resolveRemoteHeadBaseBranch(repo).pipe(
@@ -456,12 +448,19 @@ function buildCreatePlan(
       );
     }
 
+    const worktreePath = yield* resolvePathWithinRoot(
+      ticketDirectory,
+      repo.name,
+    ).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message })),
+    );
+
     return {
       repoId: repo.id,
       repoName: repo.name,
       managedRepoPath: repo.managedRepoPath,
       remoteName: repo.remoteName,
-      worktreePath: path.join(worktreesRoot, ticket, repo.name),
+      worktreePath,
       branch: branchName,
       base: baseBranch,
       startPoint: baseBranch,
@@ -507,7 +506,6 @@ export function runCreate(
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const parsedArgsInput = yield* parseCreateArgsInput(args);
 
     let parsedArgs: CreateArgs;
@@ -548,7 +546,12 @@ export function runCreate(
       registry.repos,
       parsedArgs.repoIds,
     );
-    const ticketDirectory = path.join(config.worktreesRoot, parsedArgs.ticket);
+    const ticketDirectory = yield* resolvePathWithinRoot(
+      config.worktreesRoot,
+      parsedArgs.ticket,
+    ).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message })),
+    );
     const ticketDirectoryExists = yield* fs
       .exists(ticketDirectory)
       .pipe(
@@ -565,13 +568,7 @@ export function runCreate(
 
     const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
-      buildCreatePlan(
-        repo,
-        config.worktreesRoot,
-        parsedArgs.ticket,
-        branchName,
-        parsedArgs.base,
-      ),
+      buildCreatePlan(repo, ticketDirectory, branchName, parsedArgs.base),
     );
 
     yield* ensureUniqueWorktreePaths(plans);

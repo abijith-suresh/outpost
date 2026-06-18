@@ -3,6 +3,7 @@ import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()(
@@ -11,28 +12,6 @@ export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()
     message: Schema.String,
   },
 ) {}
-
-function validateTicket(
-  ticket: string,
-): Effect.Effect<void, WorkspaceShowError> {
-  if (ticket.includes("/") || ticket.includes("\\")) {
-    return Effect.fail(
-      new WorkspaceShowError({
-        message: "--ticket may not contain path separators.",
-      }),
-    );
-  }
-
-  if (ticket === "." || ticket === "..") {
-    return Effect.fail(
-      new WorkspaceShowError({
-        message: "--ticket may not contain path traversal.",
-      }),
-    );
-  }
-
-  return Effect.void;
-}
 
 export function runWorkspaceShow(
   ticket: string | undefined,
@@ -51,7 +30,11 @@ export function runWorkspaceShow(
       );
     }
 
-    yield* validateTicket(ticket);
+    yield* validatePathSegment("--ticket", ticket).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message }),
+      ),
+    );
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -61,7 +44,14 @@ export function runWorkspaceShow(
         (error) => new WorkspaceShowError({ message: error.message }),
       ),
     );
-    const ticketDirectory = path.join(config.worktreesRoot, ticket);
+    const ticketDirectory = yield* resolvePathWithinRoot(
+      config.worktreesRoot,
+      ticket,
+    ).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message }),
+      ),
+    );
     const exists = yield* fs
       .exists(ticketDirectory)
       .pipe(
