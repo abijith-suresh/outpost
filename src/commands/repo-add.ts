@@ -11,8 +11,16 @@ import {
   resolveOutpostHome,
   writeRepoRegistry,
 } from "../config.js";
-import { cloneBareRepository, fetchBareRepository } from "./repo-mirror.js";
+import {
+  getManagedRepoPath,
+  resolveRemoteIdentity,
+} from "../remote-identity.js";
 import type { CommandOutput } from "../types.js";
+import {
+  cloneBareRepository,
+  fetchBareRepository,
+  updateBareRepositoryRemote,
+} from "./repo-mirror.js";
 
 export class RepoAddError extends Schema.TaggedError<RepoAddError>()(
   "RepoAddError",
@@ -39,23 +47,6 @@ type RepoImportResult = {
 type RepoAddOptions = {
   remoteName?: string;
 };
-
-function getRepoName(
-  repoPath: string,
-): Effect.Effect<string, never, Path.Path> {
-  return Effect.gen(function* () {
-    const path = yield* Path.Path;
-    return path.basename(repoPath);
-  });
-}
-
-function sanitizeRemoteUrl(remoteUrl: string): string {
-  return remoteUrl
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
 
 function checkGitRepository(
   repoPath: string,
@@ -138,16 +129,6 @@ function selectRemoteName(
   return Effect.succeed(remoteNames[0] as string);
 }
 
-function getManagedRepoPath(
-  reposRoot: string,
-  remoteUrl: string,
-): Effect.Effect<string, never, Path.Path> {
-  return Effect.gen(function* () {
-    const path = yield* Path.Path;
-    return path.join(reposRoot, `${sanitizeRemoteUrl(remoteUrl)}.git`);
-  });
-}
-
 export function runRepoAdd(
   inputPath: string | undefined,
   options: RepoAddOptions = {},
@@ -172,7 +153,6 @@ export function runRepoAdd(
       Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );
     const sourceRepoPath = path.resolve(inputPath);
-    const repoName = yield* getRepoName(sourceRepoPath);
     const exists = yield* fs
       .exists(sourceRepoPath)
       .pipe(
@@ -215,10 +195,26 @@ export function runRepoAdd(
     const remoteUrl = yield* getRemoteUrl(sourceRepoPath, remoteName).pipe(
       Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );
-    const managedRepoPath = yield* getManagedRepoPath(
-      config.reposRoot,
+    const identity = yield* resolveRemoteIdentity(
       remoteUrl,
+      sourceRepoPath,
+    ).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );
+    const derivedManagedRepoPath = yield* getManagedRepoPath(
+      config.reposRoot,
+      identity,
+    ).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+    const registry = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+    const existingRecord = registry.repos.find(
+      (repo) => repo.id === identity.id,
+    );
+    const managedRepoPath =
+      existingRecord?.managedRepoPath ?? derivedManagedRepoPath;
     const managedRepoExists = yield* fs
       .exists(managedRepoPath)
       .pipe(
@@ -228,13 +224,30 @@ export function runRepoAdd(
       );
 
     if (managedRepoExists) {
+      yield* updateBareRepositoryRemote(
+        managedRepoPath,
+        identity.transportUrl,
+      ).pipe(
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message }),
+        ),
+      );
       yield* fetchBareRepository(managedRepoPath).pipe(
         Effect.mapError(
           (error) => new RepoAddError({ message: error.message }),
         ),
       );
     } else {
-      yield* cloneBareRepository(remoteUrl, managedRepoPath).pipe(
+      yield* fs
+        .makeDirectory(path.dirname(managedRepoPath), {
+          recursive: true,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) => new RepoAddError({ message: error.message }),
+          ),
+        );
+      yield* cloneBareRepository(identity.transportUrl, managedRepoPath).pipe(
         Effect.mapError(
           (error) => new RepoAddError({ message: error.message }),
         ),
@@ -242,27 +255,21 @@ export function runRepoAdd(
     }
 
     const now = new Date().toISOString();
-    const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message })),
-    );
-    const existingRecord = registry.repos.find(
-      (repo) => repo.managedRepoPath === managedRepoPath,
-    );
     const updatedRecord = {
-      id: sanitizeRemoteUrl(remoteUrl),
+      id: identity.id,
       importedAt: existingRecord?.importedAt ?? now,
       lastFetchedAt: now,
       managedRepoPath,
-      name: repoName,
+      name: identity.name,
       remoteName,
-      remoteUrl,
+      remoteUrl: identity.transportUrl,
       sourceRepoPath,
     };
     const nextRegistry = {
       ...registry,
       repos: existingRecord
         ? registry.repos.map((repo) =>
-            repo.managedRepoPath === managedRepoPath ? updatedRecord : repo,
+            repo.id === identity.id ? updatedRecord : repo,
           )
         : [...registry.repos, updatedRecord],
     };
@@ -275,9 +282,9 @@ export function runRepoAdd(
       action: managedRepoExists ? "fetched" : "cloned",
       registryAction: existingRecord ? "updated" : "created",
       remoteName,
-      remoteUrl,
+      remoteUrl: identity.transportUrl,
       sourceRepoPath,
-      repoName,
+      repoName: identity.name,
       repoPath: managedRepoPath,
       outpostHome: config.outpostHome,
       reposRoot: config.reposRoot,

@@ -53,7 +53,6 @@ describe("run", () => {
 
     const registryPath = path.join(tempHome, "repos.json");
     const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-      version: number;
       repos: Array<ReturnType<typeof makeRepoRecord>>;
     };
     const previousLastFetchedAt = "2026-02-01T00:00:00.000Z";
@@ -65,7 +64,6 @@ describe("run", () => {
 
     const exitCode = await runCli(["repo", "fetch", "--all"]);
     const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-      version: number;
       repos: Array<ReturnType<typeof makeRepoRecord>>;
     };
 
@@ -95,7 +93,6 @@ describe("run", () => {
 
     const registryPath = path.join(tempHome, "repos.json");
     const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-      version: number;
       repos: Array<ReturnType<typeof makeRepoRecord>>;
     };
     registry.repos.push(
@@ -157,7 +154,6 @@ describe("run", () => {
 
     const registryPath = path.join(tempHome, "repos.json");
     const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-      version: number;
       repos: Array<ReturnType<typeof makeRepoRecord>>;
     };
     registry.repos.push(
@@ -217,9 +213,8 @@ describe("run", () => {
 
     const registry = JSON.parse(
       readFileSync(path.join(tempHome, "repos.json"), "utf8"),
-    ) as { version: number; repos: Array<unknown> };
+    ) as { repos: Array<unknown> };
 
-    expect(registry.version).toBe(1);
     expect(registry.repos).toHaveLength(1);
   });
 });

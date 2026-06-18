@@ -1,3 +1,5 @@
+import { symlinkSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,7 +9,7 @@ import {
   path,
   readRegistry,
   runCli,
-  sanitizeRemoteUrl,
+  localRepoId,
   setupAfterEach,
   createTempDir,
   writeFileSync,
@@ -31,7 +33,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
 
     const infoSpy = vi
@@ -75,7 +77,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
 
     const infoSpy = vi
@@ -116,7 +118,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
     await runCli([
       "create",
@@ -125,7 +127,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(beta.tempRemote),
+      localRepoId(beta.tempRemote),
     ]);
 
     const infoSpy = vi
@@ -161,7 +163,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
 
     const infoSpy = vi
@@ -243,7 +245,7 @@ describe("run", () => {
         "--type",
         "feat",
         "--repo",
-        sanitizeRemoteUrl(alpha.tempRemote),
+        localRepoId(alpha.tempRemote),
       ]);
 
       const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");
@@ -286,7 +288,7 @@ describe("run", () => {
         "--type",
         "feat",
         "--repo",
-        sanitizeRemoteUrl(alpha.tempRemote),
+        localRepoId(alpha.tempRemote),
       ]);
 
       const infoSpy = vi
@@ -395,7 +397,7 @@ describe("run", () => {
         "--type",
         "feat",
         "--repo",
-        sanitizeRemoteUrl(alpha.tempRemote),
+        localRepoId(alpha.tempRemote),
       ]);
 
       const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");
@@ -415,6 +417,94 @@ describe("run", () => {
       expect(worktreeList).not.toContain("REMOVE-123");
     });
 
+    it("prunes the correct mirror when registry repos share a short name", async () => {
+      const { execFileSync } = await import("node:child_process");
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const first = await createManagedRepoFixture({
+        defaultBranch: "main",
+        repoName: "shared-repo",
+      });
+      const second = await createManagedRepoFixture({
+        defaultBranch: "main",
+        repoName: "shared-repo",
+      });
+      await runCli(["repo", "add", first.tempRepo]);
+      await runCli(["repo", "add", second.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "REMOVE-SHARED-123",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(second.tempRemote),
+      ]);
+
+      const registry = readRegistry(tempHome);
+      const secondManagedRepoPath = registry.repos.find(
+        (repo) => repo.id === localRepoId(second.tempRemote),
+      )?.managedRepoPath as string;
+
+      const exitCode = await runCli([
+        "workspace",
+        "remove",
+        "REMOVE-SHARED-123",
+      ]);
+      const secondWorktreeList = execFileSync(
+        "git",
+        ["--git-dir", secondManagedRepoPath, "worktree", "list"],
+        { encoding: "utf8" },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(secondWorktreeList).not.toContain("REMOVE-SHARED-123");
+    });
+
+    it("matches worktree metadata through a symlinked Outpost home", async () => {
+      const { execFileSync } = await import("node:child_process");
+      const root = createTempDir("outpost-linked-home-");
+      const realHome = path.join(root, "real-home");
+      const linkedHome = path.join(root, "linked-home");
+      mkdirSync(realHome, { recursive: true });
+      symlinkSync(realHome, linkedHome, "dir");
+      process.env.OUTPOST_HOME = linkedHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "REMOVE-LINKED-123",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const registry = readRegistry(linkedHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+
+      const exitCode = await runCli([
+        "workspace",
+        "remove",
+        "REMOVE-LINKED-123",
+      ]);
+      const worktreeList = execFileSync(
+        "git",
+        ["--git-dir", managedRepoPath, "worktree", "list"],
+        { encoding: "utf8" },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(worktreeList).not.toContain("REMOVE-LINKED-123");
+    });
+
     it("workspace remove succeeds even when managed repo directory is missing", async () => {
       const { rmSync } = await import("node:fs");
       const tempHome = createTempDir("outpost-test-");
@@ -431,7 +521,7 @@ describe("run", () => {
         "--type",
         "feat",
         "--repo",
-        sanitizeRemoteUrl(alpha.tempRemote),
+        localRepoId(alpha.tempRemote),
       ]);
 
       const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");

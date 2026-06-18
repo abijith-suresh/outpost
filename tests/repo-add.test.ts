@@ -1,16 +1,22 @@
+import { renameSync, symlinkSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
   addGitRemote,
   initBareGitRepo,
   initGitRepo,
+  localManagedRepoPath,
+  localRepoId,
+  localTransportUrl,
   mkdirSync,
   path,
   readFileSync,
   runCli,
-  sanitizeRemoteUrl,
   setupAfterEach,
   createTempDir,
+  writeFileSync,
 } from "./helpers.ts";
 
 setupAfterEach();
@@ -35,20 +41,19 @@ describe("run", () => {
       .mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "add", tempRepo]);
-    const expectedManagedRepoPath = path.join(
-      tempHome,
-      "repos",
-      `${sanitizeRemoteUrl(tempRemote)}.git`,
-    );
+    const expectedManagedRepoPath = localManagedRepoPath(tempHome, tempRemote);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo add");
     expect(infoSpy).toHaveBeenNthCalledWith(2, `source repo path: ${tempRepo}`);
     expect(infoSpy).toHaveBeenNthCalledWith(3, "remote name: origin");
-    expect(infoSpy).toHaveBeenNthCalledWith(4, `remote url: ${tempRemote}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(
+      4,
+      `remote url: ${localTransportUrl(tempRemote)}`,
+    );
     expect(infoSpy).toHaveBeenNthCalledWith(
       5,
-      `repo name: ${path.basename(tempRepo)}`,
+      `repo name: ${path.basename(tempRemote)}`,
     );
     expect(infoSpy).toHaveBeenNthCalledWith(
       6,
@@ -61,8 +66,8 @@ describe("run", () => {
     const registry = JSON.parse(
       readFileSync(path.join(tempHome, "repos.json"), "utf8"),
     ) as {
-      version: number;
       repos: Array<{
+        id: string;
         managedRepoPath: string;
         name: string;
         remoteName: string;
@@ -71,13 +76,14 @@ describe("run", () => {
       }>;
     };
 
-    expect(registry.version).toBe(1);
     expect(registry.repos).toHaveLength(1);
+    expect(registry).not.toHaveProperty("version");
     expect(registry.repos[0]).toMatchObject({
+      id: localRepoId(tempRemote),
       managedRepoPath: expectedManagedRepoPath,
-      name: path.basename(tempRepo),
+      name: path.basename(tempRemote),
       remoteName: "origin",
-      remoteUrl: tempRemote,
+      remoteUrl: localTransportUrl(tempRemote),
       sourceRepoPath: tempRepo,
     });
   });
@@ -159,17 +165,16 @@ describe("run", () => {
       "--remote",
       "upstream",
     ]);
-    const expectedManagedRepoPath = path.join(
+    const expectedManagedRepoPath = localManagedRepoPath(
       tempHome,
-      "repos",
-      `${sanitizeRemoteUrl(tempUpstreamRemote)}.git`,
+      tempUpstreamRemote,
     );
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(3, "remote name: upstream");
     expect(infoSpy).toHaveBeenNthCalledWith(
       4,
-      `remote url: ${tempUpstreamRemote}`,
+      `remote url: ${localTransportUrl(tempUpstreamRemote)}`,
     );
     expect(infoSpy).toHaveBeenNthCalledWith(
       6,
@@ -179,7 +184,6 @@ describe("run", () => {
     const registry = JSON.parse(
       readFileSync(path.join(tempHome, "repos.json"), "utf8"),
     ) as {
-      version: number;
       repos: Array<{
         managedRepoPath: string;
         remoteName: string;
@@ -187,13 +191,117 @@ describe("run", () => {
       }>;
     };
 
-    expect(registry.version).toBe(1);
     expect(registry.repos).toHaveLength(1);
     expect(registry.repos[0]).toMatchObject({
       managedRepoPath: expectedManagedRepoPath,
       remoteName: "upstream",
-      remoteUrl: tempUpstreamRemote,
+      remoteUrl: localTransportUrl(tempUpstreamRemote),
     });
+  });
+
+  it("resolves a relative local remote for clone and stored metadata", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const root = createTempDir("outpost-relative-");
+    const tempRepo = path.join(root, "source");
+    const tempRemote = path.join(root, "remotes", "Relative.git");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    mkdirSync(tempRepo, { recursive: true });
+    mkdirSync(path.dirname(tempRemote), { recursive: true });
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", "../remotes/Relative.git");
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as {
+      repos: Array<{
+        id: string;
+        managedRepoPath: string;
+        name: string;
+        remoteUrl: string;
+      }>;
+    };
+
+    expect(exitCode).toBe(0);
+    expect(registry.repos[0]).toMatchObject({
+      id: localRepoId(tempRemote),
+      managedRepoPath: localManagedRepoPath(tempHome, tempRemote),
+      name: "Relative",
+      remoteUrl: localTransportUrl(tempRemote),
+    });
+  });
+
+  it("updates the mirror remote and preserves importedAt and managed path on re-add", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const root = createTempDir("outpost-readd-");
+    const tempRepo = path.join(root, "source");
+    const tempRemote = path.join(root, "remotes", "Repo.git");
+    const remoteLink = path.join(root, "links", "Repo.git");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    mkdirSync(tempRepo, { recursive: true });
+    mkdirSync(path.dirname(tempRemote), { recursive: true });
+    mkdirSync(path.dirname(remoteLink), { recursive: true });
+    await initBareGitRepo(tempRemote);
+    symlinkSync(tempRemote, remoteLink);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", remoteLink);
+    await runCli(["repo", "add", tempRepo]);
+
+    const registryPath = path.join(tempHome, "repos.json");
+    const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+      repos: Array<{
+        id: string;
+        importedAt: string;
+        managedRepoPath: string;
+        remoteUrl: string;
+      }>;
+    };
+    const importedAt = registry.repos[0]?.importedAt as string;
+    const derivedManagedPath = registry.repos[0]?.managedRepoPath as string;
+    const preservedManagedPath = path.join(
+      tempHome,
+      "repos",
+      "legacy",
+      "Repo.git",
+    );
+    mkdirSync(path.dirname(preservedManagedPath), { recursive: true });
+    renameSync(derivedManagedPath, preservedManagedPath);
+    registry.repos[0] = {
+      ...(registry.repos[0] as (typeof registry.repos)[number]),
+      managedRepoPath: preservedManagedPath,
+    };
+    writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync(
+      "git",
+      ["remote", "set-url", "origin", pathToFileURL(tempRemote).href],
+      { cwd: tempRepo },
+    );
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+    const nextRegistry = JSON.parse(
+      readFileSync(registryPath, "utf8"),
+    ) as typeof registry;
+    const mirrorRemote = execFileSync("git", ["remote", "get-url", "origin"], {
+      cwd: preservedManagedPath,
+      encoding: "utf8",
+    }).trim();
+
+    expect(exitCode).toBe(0);
+    expect(nextRegistry.repos).toHaveLength(1);
+    expect(nextRegistry.repos[0]).toMatchObject({
+      id: localRepoId(tempRemote),
+      importedAt,
+      managedRepoPath: preservedManagedPath,
+      remoteUrl: localTransportUrl(tempRemote),
+    });
+    expect(mirrorRemote).toBe(localTransportUrl(tempRemote));
   });
 
   it("returns an error when a multi-remote repo add omits --remote", async () => {

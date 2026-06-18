@@ -55,3 +55,26 @@ export function fetchBareRepository(
     ),
   );
 }
+
+export function updateBareRepositoryRemote(
+  managedRepoPath: string,
+  remoteUrl: string,
+): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
+  return Command.exitCode(
+    gitCommand("remote", "set-url", "origin", remoteUrl).pipe(
+      Command.workingDirectory(managedRepoPath),
+    ),
+  ).pipe(
+    Effect.flatMap((exitCode) =>
+      exitCode === 0
+        ? Effect.void
+        : Effect.fail({
+            _tag: "SystemError",
+            reason: "Unknown",
+            module: "Command",
+            method: "remote set-url",
+            message: `git remote set-url failed for ${managedRepoPath} (see stderr above)`,
+          } as PlatformError),
+    ),
+  );
+}
