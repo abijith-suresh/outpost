@@ -40,7 +40,7 @@ describe("run", () => {
       "--ticket",
       "PATH-123",
       "--type",
-      "feat test",
+      "feat",
       "--repo",
       localRepoId(alpha.tempRemote),
       "--repo",
