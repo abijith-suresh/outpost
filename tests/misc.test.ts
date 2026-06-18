@@ -3,21 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createManagedRepoFixture,
   existsSync,
-  os,
   path,
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
-  trackTempDir,
+  createTempDir,
 } from "./helpers.ts";
 
 setupAfterEach();
 
 describe("run", () => {
   it("fails before creating anything when selected repos would share a worktree path", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);

@@ -5,28 +5,21 @@ import {
   initBareGitRepo,
   initGitRepo,
   mkdirSync,
-  os,
   path,
   readFileSync,
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
-  trackTempDir,
+  createTempDir,
 } from "./helpers.ts";
 
 setupAfterEach();
 
 describe("run", () => {
   it("imports the current repo into the managed bare repo store", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -90,12 +83,8 @@ describe("run", () => {
   });
 
   it("returns an error when repo add is run before init", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
     process.env.OUTPOST_HOME = tempHome;
 
     mkdirSync(tempRepo, { recursive: true });
@@ -115,15 +104,9 @@ describe("run", () => {
   });
 
   it("prints repo add output as json", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -149,18 +132,10 @@ describe("run", () => {
   });
 
   it("imports a selected remote from a multi-remote repository", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempOriginRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
-    );
-    const tempUpstreamRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempOriginRemote = createTempDir("outpost-origin-remote-");
+    const tempUpstreamRemote = createTempDir("outpost-upstream-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -222,18 +197,10 @@ describe("run", () => {
   });
 
   it("returns an error when a multi-remote repo add omits --remote", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempOriginRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
-    );
-    const tempUpstreamRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempOriginRemote = createTempDir("outpost-origin-remote-");
+    const tempUpstreamRemote = createTempDir("outpost-upstream-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -261,18 +228,10 @@ describe("run", () => {
   });
 
   it("returns an error when repo add receives an unknown remote name", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempOriginRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-origin-remote-${Date.now()}.git`),
-    );
-    const tempUpstreamRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-upstream-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempOriginRemote = createTempDir("outpost-origin-remote-");
+    const tempUpstreamRemote = createTempDir("outpost-upstream-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);

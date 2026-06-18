@@ -4,13 +4,12 @@ import {
   createManagedRepoFixture,
   existsSync,
   mkdirSync,
-  os,
   path,
   readRegistry,
   runCli,
   sanitizeRemoteUrl,
   setupAfterEach,
-  trackTempDir,
+  createTempDir,
   writeFileSync,
 } from "./helpers.ts";
 
@@ -18,9 +17,7 @@ setupAfterEach();
 
 describe("run", () => {
   it("prints workspace show output", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -64,9 +61,7 @@ describe("run", () => {
   });
 
   it("prints workspace show output as json", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -105,9 +100,7 @@ describe("run", () => {
   });
 
   it("prints workspace list output", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -154,9 +147,7 @@ describe("run", () => {
   });
 
   it("prints workspace list output as json", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -187,9 +178,7 @@ describe("run", () => {
   });
 
   it("returns an error when workspace show uses an unknown ticket", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -208,9 +197,7 @@ describe("run", () => {
   });
 
   it("rejects workspace show tickets with path traversal before reading outside worktrees", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -242,9 +229,7 @@ describe("run", () => {
 
   describe("workspace remove", () => {
     it("removes a workspace and its worktree directories", async () => {
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -287,9 +272,7 @@ describe("run", () => {
     });
 
     it("prints workspace remove output as json", async () => {
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -334,9 +317,7 @@ describe("run", () => {
     });
 
     it("returns an error for unknown ticket", async () => {
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -355,9 +336,7 @@ describe("run", () => {
     });
 
     it("rejects workspace remove tickets with path traversal before removing outside worktrees", async () => {
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -382,9 +361,7 @@ describe("run", () => {
     });
 
     it("returns an error when workspace remove is missing the ticket", async () => {
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -404,9 +381,7 @@ describe("run", () => {
 
     it("prunes git worktree entries from bare repos when removing a workspace", async () => {
       const { execFileSync } = await import("node:child_process");
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);
@@ -442,9 +417,7 @@ describe("run", () => {
 
     it("workspace remove succeeds even when managed repo directory is missing", async () => {
       const { rmSync } = await import("node:fs");
-      const tempHome = trackTempDir(
-        path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-      );
+      const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
       await runCli(["init"]);

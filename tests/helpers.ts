@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import {
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -128,29 +129,24 @@ export async function createManagedRepoFixture(options?: {
   defaultBranch?: string;
   repoName?: string;
 }) {
-  const timestamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tempRepoRoot = createTempDir("outpost-create-repo-");
   const tempRepo = options?.repoName
-    ? path.join(
-        os.tmpdir(),
-        `outpost-create-repo-${timestamp}`,
-        options.repoName,
-      )
-    : trackTempDir(path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`));
-  const tempRemote = trackTempDir(
-    path.join(os.tmpdir(), `outpost-create-remote-${timestamp}.git`),
-  );
+    ? path.join(tempRepoRoot, options.repoName)
+    : tempRepoRoot;
+  const tempRemote = createTempDir("outpost-create-remote-");
   const defaultBranch = options?.defaultBranch ?? "main";
-
-  if (options?.repoName) {
-    trackTempDir(path.join(os.tmpdir(), `outpost-create-repo-${timestamp}`));
-  }
 
   mkdirSync(tempRepo, { recursive: true });
   await initBareGitRepo(tempRemote);
   await initGitRepo(tempRepo);
   await configureGitIdentity(tempRepo);
   await addGitRemote(tempRepo, "origin", tempRemote);
-  await commitFile(tempRepo, "README.md", `# ${timestamp}\n`, "initial");
+  await commitFile(
+    tempRepo,
+    "README.md",
+    `# ${path.basename(tempRepoRoot)}\n`,
+    "initial",
+  );
 
   if (defaultBranch !== "master") {
     const { execFileSync } = await import("node:child_process");
@@ -221,6 +217,10 @@ function getTempDirs(): Set<string> {
 export function trackTempDir(dir: string): string {
   getTempDirs().add(dir);
   return dir;
+}
+
+export function createTempDir(prefix = "outpost-test-"): string {
+  return trackTempDir(mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 export function setupAfterEach(): void {
