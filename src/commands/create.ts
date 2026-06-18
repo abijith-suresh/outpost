@@ -235,9 +235,9 @@ function validateBranchName(
   );
 }
 
-function validateCreateArgs(
+function validateCreatePathArgs(
   parsedArgs: CreateArgs,
-): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, CreateError> {
   return Effect.gen(function* () {
     yield* validatePathSegment("--ticket", parsedArgs.ticket, {
       allowTraversalSegments: true,
@@ -249,7 +249,6 @@ function validateCreateArgs(
     }).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message })),
     );
-    yield* validateBranchName(`${parsedArgs.type}/${parsedArgs.ticket}`);
   });
 }
 
@@ -341,6 +340,28 @@ function getSelectedRepos(
       (repoId) =>
         registryRepos.find((repo) => repo.id === repoId) as RepoRecord,
     ),
+  ).pipe(
+    Effect.flatMap((selectedRepos) => {
+      const repoIdsByName = new Map<string, Array<string>>();
+
+      for (const repo of selectedRepos) {
+        const ids = repoIdsByName.get(repo.name) ?? [];
+        ids.push(repo.id);
+        repoIdsByName.set(repo.name, ids);
+      }
+
+      const duplicateName = [...repoIdsByName.entries()].find(
+        ([, ids]) => ids.length > 1,
+      );
+
+      return duplicateName
+        ? Effect.fail(
+            new CreateError({
+              message: `Selected repos share the same name ${duplicateName[0]}: ${duplicateName[1].join(", ")}.`,
+            }),
+          )
+        : Effect.succeed(selectedRepos);
+    }),
   );
 }
 
@@ -512,7 +533,7 @@ export function runCreate(
 
     if (!hasMissingCreateArgs(parsedArgsInput)) {
       parsedArgs = yield* requireCreateArgs(parsedArgsInput);
-      yield* validateCreateArgs(parsedArgs);
+      yield* validateCreatePathArgs(parsedArgs);
     } else {
       if (!options.interactive) {
         yield* requireCreateArgs(parsedArgsInput);
@@ -532,7 +553,12 @@ export function runCreate(
           name: repo.name,
         })),
       });
-      yield* validateCreateArgs(parsedArgs);
+      yield* validateCreatePathArgs(parsedArgs);
+    }
+
+    const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
+    if (parsedArgs.repoIds.length === 1) {
+      yield* validateBranchName(branchName);
     }
 
     const outpostHome = yield* resolveOutpostHome();
@@ -546,6 +572,9 @@ export function runCreate(
       registry.repos,
       parsedArgs.repoIds,
     );
+    if (parsedArgs.repoIds.length > 1) {
+      yield* validateBranchName(branchName);
+    }
     const ticketDirectory = yield* resolvePathWithinRoot(
       config.worktreesRoot,
       parsedArgs.ticket,
@@ -566,7 +595,6 @@ export function runCreate(
       );
     }
 
-    const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
       buildCreatePlan(repo, ticketDirectory, branchName, parsedArgs.base),
     );

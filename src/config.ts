@@ -3,6 +3,7 @@ import type { PlatformError } from "@effect/platform/Error";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
+import { getCanonicalPortablePathKey } from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
@@ -68,7 +69,6 @@ export type RepoRecordWithStatus = RepoRecord & {
 
 export const RepoRegistrySchema = Schema.Struct({
   repos: Schema.Array(RepoRecordSchema),
-  version: Schema.Literal(1),
 });
 
 export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
@@ -176,8 +176,41 @@ export function buildInitialConfig(
 
 export const emptyRepoRegistry: RepoRegistry = {
   repos: [],
-  version: 1,
 };
+
+function validateRepoRegistryUniqueness(
+  registry: RepoRegistry,
+): Effect.Effect<RepoRegistry, ConfigError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const ids = new Set<string>();
+    const managedRepoPaths = new Set<string>();
+
+    for (const repo of registry.repos) {
+      if (ids.has(repo.id)) {
+        return yield* Effect.fail(
+          new ConfigError({
+            message: `Repo registry contains duplicate id: ${repo.id}`,
+          }),
+        );
+      }
+      ids.add(repo.id);
+
+      const managedRepoPathKey = yield* getCanonicalPortablePathKey(
+        repo.managedRepoPath,
+      );
+      if (managedRepoPaths.has(managedRepoPathKey)) {
+        return yield* Effect.fail(
+          new ConfigError({
+            message: `Repo registry contains duplicate managed path: ${repo.managedRepoPath}`,
+          }),
+        );
+      }
+      managedRepoPaths.add(managedRepoPathKey);
+    }
+
+    return registry;
+  });
+}
 
 export function loadRepoRegistry(
   outpostHome: string,
@@ -214,7 +247,9 @@ export function loadRepoRegistry(
         }),
     });
 
-    return yield* Schema.decodeUnknown(RepoRegistrySchema)(parsedJson).pipe(
+    const registry = yield* Schema.decodeUnknown(RepoRegistrySchema)(
+      parsedJson,
+    ).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
@@ -222,6 +257,8 @@ export function loadRepoRegistry(
           }),
       ),
     );
+
+    return yield* validateRepoRegistryUniqueness(registry);
   });
 }
 

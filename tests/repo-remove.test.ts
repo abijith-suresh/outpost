@@ -28,7 +28,6 @@ describe("run", () => {
 
       const registryPath = path.join(tempHome, "repos.json");
       const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-        version: number;
         repos: Array<{
           id: string;
           name: string;
@@ -64,7 +63,6 @@ describe("run", () => {
       );
 
       const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-        version: number;
         repos: Array<unknown>;
       };
 
@@ -83,7 +81,6 @@ describe("run", () => {
 
       const registryPath = path.join(tempHome, "repos.json");
       const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-        version: number;
         repos: Array<{
           id: string;
           managedRepoPath: string;

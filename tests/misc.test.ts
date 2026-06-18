@@ -5,7 +5,7 @@ import {
   existsSync,
   path,
   runCli,
-  sanitizeRemoteUrl,
+  localRepoId,
   setupAfterEach,
   createTempDir,
 } from "./helpers.ts";
@@ -40,17 +40,17 @@ describe("run", () => {
       "--ticket",
       "PATH-123",
       "--type",
-      "feat",
+      "feat test",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--repo",
-      sanitizeRemoteUrl(beta.tempRemote),
+      localRepoId(beta.tempRemote),
     ]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `Selected repos would create the same worktree path: ${path.join(tempHome, "worktrees", "PATH-123", "shared-repo")} (repo ids: ${sanitizeRemoteUrl(alpha.tempRemote)}, ${sanitizeRemoteUrl(beta.tempRemote)}).`,
+      `Selected repos share the same name shared-repo: ${localRepoId(alpha.tempRemote)}, ${localRepoId(beta.tempRemote)}.`,
     );
     expect(existsSync(path.join(tempHome, "worktrees", "PATH-123"))).toBe(
       false,

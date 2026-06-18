@@ -250,9 +250,82 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Duplicate repo id in registry: alpha",
+      "Repo registry contains duplicate id: alpha",
     );
     expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects duplicate managed paths in the registry", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const managedRepoPath = path.join(tempHome, "repos", "shared.git");
+    writeRegistry(tempHome, [
+      makeRepoRecord({
+        id: "example.com/one/alpha",
+        managedRepoPath,
+      }),
+      makeRepoRecord({
+        id: "example.com/two/beta",
+        managedRepoPath,
+      }),
+    ]);
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      `Repo registry contains duplicate managed path: ${managedRepoPath}`,
+    );
+  });
+
+  it("rejects managed paths that differ only by case", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const upperManagedRepoPath = path.join(
+      tempHome,
+      "repos",
+      "Group",
+      "Repo.git",
+    );
+    const lowerManagedRepoPath = path.join(
+      tempHome,
+      "repos",
+      "group",
+      "repo.git",
+    );
+    writeRegistry(tempHome, [
+      makeRepoRecord({
+        id: "example.com/Group/Repo",
+        managedRepoPath: upperManagedRepoPath,
+      }),
+      makeRepoRecord({
+        id: "example.com/group/repo",
+        managedRepoPath: lowerManagedRepoPath,
+      }),
+    ]);
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      `Repo registry contains duplicate managed path: ${lowerManagedRepoPath}`,
+    );
   });
 
   it("prints repo list output as json", async () => {

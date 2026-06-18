@@ -5,15 +5,21 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterEach, vi } from "vitest";
 
 import { runCli } from "../src/index.ts";
 import type { RepoRecord } from "../src/config.js";
+import {
+  encodeManagedPathSegment,
+  getFileManagedPathSegments,
+} from "../src/remote-identity.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -31,12 +37,29 @@ export {
   writeFileSync,
 };
 
-export function sanitizeRemoteUrl(remoteUrl: string): string {
-  return remoteUrl
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+export function localRepoId(remotePath: string): string {
+  const realPath = realpathSync(remotePath);
+  const canonicalPath = realPath.endsWith(".git")
+    ? realPath.slice(0, -4)
+    : realPath;
+  return pathToFileURL(canonicalPath).href;
+}
+
+export function localManagedRepoPath(
+  tempHome: string,
+  remotePathOrId: string,
+): string {
+  const id = remotePathOrId.startsWith("file://")
+    ? remotePathOrId
+    : localRepoId(remotePathOrId);
+  const segments = getFileManagedPathSegments(id).map(encodeManagedPathSegment);
+  const repoName = segments.pop() as string;
+
+  return path.join(tempHome, "repos", ...segments, `${repoName}.git`);
+}
+
+export function localTransportUrl(remotePath: string): string {
+  return pathToFileURL(realpathSync(remotePath)).href;
 }
 
 export function makeRepoRecord(repo: {
@@ -133,7 +156,11 @@ export async function createManagedRepoFixture(options?: {
   const tempRepo = options?.repoName
     ? path.join(tempRepoRoot, options.repoName)
     : tempRepoRoot;
-  const tempRemote = createTempDir("outpost-create-remote-");
+  const tempRemoteRoot = createTempDir("outpost-create-remote-");
+  const tempRemote = path.join(
+    tempRemoteRoot,
+    `${path.basename(tempRepo)}.git`,
+  );
   const defaultBranch = options?.defaultBranch ?? "main";
 
   mkdirSync(tempRepo, { recursive: true });
@@ -193,12 +220,11 @@ export function restoreTtyProperty(
 
 export function writeRegistry(tempHome: string, repos: RepoRecord[]): void {
   const registryPath = path.join(tempHome, "repos.json");
-  const json = JSON.stringify({ version: 1, repos }, null, 2);
+  const json = JSON.stringify({ repos }, null, 2);
   writeFileSync(registryPath, `${json}\n`);
 }
 
 export function readRegistry(tempHome: string): {
-  version: number;
   repos: RepoRecord[];
 } {
   const registryPath = path.join(tempHome, "repos.json");

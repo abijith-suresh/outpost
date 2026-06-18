@@ -3,6 +3,7 @@ import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  getPortablePathKey,
   resolvePathWithinRoot,
   validatePathSegment,
 } from "../src/path-safety.ts";
@@ -44,5 +45,20 @@ describe("path safety", () => {
         "--ticket may not contain path separators.",
       );
     }
+  });
+
+  it("normalizes case and trailing Windows-aliased characters", async () => {
+    const upper = await Effect.runPromise(
+      getPortablePathKey("/tmp/repos/Group/Repo.git").pipe(
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    const lowerAliased = await Effect.runPromise(
+      getPortablePathKey("/tmp/repos/group/repo.git. ").pipe(
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+
+    expect(upper).toBe(lowerAliased);
   });
 });

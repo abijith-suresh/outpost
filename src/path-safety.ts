@@ -1,3 +1,4 @@
+import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
@@ -55,5 +56,31 @@ export function resolvePathWithinRoot(
     }
 
     return resolvedPath;
+  });
+}
+
+export function getPortablePathKey(
+  value: string,
+): Effect.Effect<string, never, Path.Path> {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    return path
+      .resolve(value)
+      .split(/[\\/]/)
+      .map((segment) => segment.replace(/[ .]+$/g, "").toLowerCase())
+      .join("/");
+  });
+}
+
+export function getCanonicalPortablePathKey(
+  value: string,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const canonicalPath = yield* fs
+      .realPath(value)
+      .pipe(Effect.orElseSucceed(() => value));
+
+    return yield* getPortablePathKey(canonicalPath);
   });
 }

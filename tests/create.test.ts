@@ -13,7 +13,7 @@ import {
   pushBranch,
   restoreTtyProperty,
   runCli,
-  sanitizeRemoteUrl,
+  localRepoId,
   setupAfterEach,
   createTempDir,
 } from "./helpers.ts";
@@ -44,9 +44,9 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--repo",
-      sanitizeRemoteUrl(beta.tempRemote),
+      localRepoId(beta.tempRemote),
     ]);
     const alphaPath = path.join(
       tempHome,
@@ -108,9 +108,9 @@ describe("run", () => {
       "--base",
       "release",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--repo",
-      sanitizeRemoteUrl(beta.tempRemote),
+      localRepoId(beta.tempRemote),
     ]);
     const alphaPath = path.join(
       tempHome,
@@ -160,7 +160,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--repo",
       "missing",
     ]);
@@ -284,7 +284,7 @@ describe("run", () => {
       .mockResolvedValue({
         ticket: "PROMPT-123",
         type: "feat",
-        repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+        repoIds: [localRepoId(alpha.tempRemote)],
       });
 
     try {
@@ -305,7 +305,7 @@ describe("run", () => {
         base: undefined,
         availableRepos: [
           {
-            id: sanitizeRemoteUrl(alpha.tempRemote),
+            id: localRepoId(alpha.tempRemote),
             name: path.basename(alpha.tempRepo),
           },
         ],
@@ -392,7 +392,7 @@ describe("run", () => {
       .mockResolvedValue({
         ticket: "PARTIAL-456",
         type: "fix",
-        repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+        repoIds: [localRepoId(alpha.tempRemote)],
       });
 
     try {
@@ -413,7 +413,7 @@ describe("run", () => {
         base: undefined,
         availableRepos: [
           {
-            id: sanitizeRemoteUrl(alpha.tempRemote),
+            id: localRepoId(alpha.tempRemote),
             name: path.basename(alpha.tempRepo),
           },
         ],
@@ -456,7 +456,7 @@ describe("run", () => {
     vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
       ticket: "ticket/with/slash",
       type: "feat",
-      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+      repoIds: [localRepoId(alpha.tempRemote)],
     });
 
     const errorSpy = vi
@@ -507,7 +507,7 @@ describe("run", () => {
     vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
       ticket: "TICKET-456",
       type: "feat/something",
-      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+      repoIds: [localRepoId(alpha.tempRemote)],
     });
 
     const errorSpy = vi
@@ -521,6 +521,57 @@ describe("run", () => {
       expect(errorSpy).toHaveBeenNthCalledWith(
         1,
         "--type may not contain path separators.",
+      );
+    } finally {
+      restoreTtyProperty(process.stdin, stdinDescriptor);
+      restoreTtyProperty(process.stdout, stdoutDescriptor);
+    }
+  });
+
+  it("rejects invalid branch names from an interactive prompt", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdin,
+      "isTTY",
+    );
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "VALID-123",
+      type: "feat test",
+      repoIds: [localRepoId(alpha.tempRemote)],
+    });
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await runCli(["create"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenNthCalledWith(
+        1,
+        "Invalid create branch name: feat test/VALID-123",
       );
     } finally {
       restoreTtyProperty(process.stdin, stdinDescriptor);
@@ -558,7 +609,7 @@ describe("run", () => {
     vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
       ticket: "VALID-123",
       type: "feat",
-      repoIds: [sanitizeRemoteUrl(alpha.tempRemote)],
+      repoIds: [localRepoId(alpha.tempRemote)],
     });
 
     try {
@@ -632,7 +683,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
 
     expect(exitCode).toBe(1);
@@ -658,7 +709,7 @@ describe("run", () => {
       "--type",
       "chore",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
     ]);
     const expectedPath = path.join(
       tempHome,
@@ -692,7 +743,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--json",
     ]);
     const output = infoSpy.mock.calls[0]?.[0] as string;
@@ -705,9 +756,7 @@ describe("run", () => {
     expect(output).toContain(
       `"ticketDirectory": "${path.join(tempHome, "worktrees", "JSON-42")}"`,
     );
-    expect(output).toContain(
-      `"repoId": "${sanitizeRemoteUrl(alpha.tempRemote)}"`,
-    );
+    expect(output).toContain(`"repoId": "${localRepoId(alpha.tempRemote)}"`);
     expect(output).toContain(
       `"path": "${path.join(tempHome, "worktrees", "JSON-42", path.basename(alpha.tempRepo))}"`,
     );
@@ -735,7 +784,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--dry-run",
     ]);
     const ticketDirectory = path.join(tempHome, "worktrees", "DRY-101");
@@ -770,7 +819,7 @@ describe("run", () => {
       "--type",
       "feat",
       "--repo",
-      sanitizeRemoteUrl(alpha.tempRemote),
+      localRepoId(alpha.tempRemote),
       "--dry-run",
       "--json",
     ]);

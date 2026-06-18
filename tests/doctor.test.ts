@@ -270,7 +270,7 @@ describe("run", () => {
     const registryPath = path.join(tempHome, "repos.json");
     writeFileSync(
       registryPath,
-      `${JSON.stringify({ version: 1, repos: [{ id: "alpha" }] }, null, 2)}\n`,
+      `${JSON.stringify({ repos: [{ id: "alpha" }] }, null, 2)}\n`,
     );
 
     const infoSpy = vi
@@ -320,7 +320,7 @@ describe("run", () => {
 
     const registry = readRegistry(tempHome);
 
-    expect(registry).toEqual({ repos: [], version: 1 });
+    expect(registry).toEqual({ repos: [] });
   });
 });
 

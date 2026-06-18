@@ -5,7 +5,11 @@ import * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
 
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
-import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
+import {
+  getCanonicalPortablePathKey,
+  resolvePathWithinRoot,
+  validatePathSegment,
+} from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
@@ -22,6 +26,50 @@ function gitCommand(...args: ReadonlyArray<string>) {
       GIT_TERMINAL_PROMPT: "0",
     }),
   );
+}
+
+function resolveManagedRepoPath(
+  worktreePath: string,
+): Effect.Effect<
+  string,
+  WorkspaceRemoveError,
+  FileSystem.FileSystem | Path.Path
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const gitFilePath = path.join(worktreePath, ".git");
+    const gitFile = yield* fs.readFileString(gitFilePath).pipe(
+      Effect.mapError(
+        (error) =>
+          new WorkspaceRemoveError({
+            message: `Failed to read worktree metadata ${gitFilePath}: ${error.message}`,
+          }),
+      ),
+    );
+    const match = /^gitdir:\s*(.+)\s*$/m.exec(gitFile);
+
+    if (!match?.[1]) {
+      return yield* Effect.fail(
+        new WorkspaceRemoveError({
+          message: `Invalid worktree metadata ${gitFilePath}`,
+        }),
+      );
+    }
+
+    const gitDirectory = path.resolve(worktreePath, match[1]);
+    const worktreesDirectory = path.dirname(gitDirectory);
+
+    if (path.basename(worktreesDirectory) !== "worktrees") {
+      return yield* Effect.fail(
+        new WorkspaceRemoveError({
+          message: `Invalid worktree git directory ${gitDirectory}`,
+        }),
+      );
+    }
+
+    return path.dirname(worktreesDirectory);
+  });
 }
 
 export function runWorkspaceRemove(
@@ -95,12 +143,31 @@ export function runWorkspaceRemove(
         (error) => new WorkspaceRemoveError({ message: error.message }),
       ),
     );
+    const registryReposWithPathKeys = yield* Effect.forEach(
+      registry.repos,
+      (repo) =>
+        getCanonicalPortablePathKey(repo.managedRepoPath).pipe(
+          Effect.map((managedRepoPathKey) => ({
+            managedRepoPathKey,
+            repo,
+          })),
+        ),
+    );
 
     for (const entry of entries) {
-      const repo = registry.repos.find((r) => r.name === entry);
+      const worktreePath = path.join(ticketDirectory, entry);
+      const managedRepoPath = yield* resolveManagedRepoPath(worktreePath).pipe(
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+      if (!managedRepoPath) continue;
+
+      const managedRepoPathKey =
+        yield* getCanonicalPortablePathKey(managedRepoPath);
+      const repo = registryReposWithPathKeys.find(
+        (candidate) => candidate.managedRepoPathKey === managedRepoPathKey,
+      )?.repo;
       if (!repo) continue;
 
-      const worktreePath = path.join(ticketDirectory, entry);
       yield* Command.exitCode(
         gitCommand(
           "--git-dir",
