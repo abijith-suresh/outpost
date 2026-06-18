@@ -6,12 +6,11 @@ import {
   initGitRepo,
   makeRepoRecord,
   mkdirSync,
-  os,
   path,
   readFileSync,
   runCli,
   setupAfterEach,
-  trackTempDir,
+  createTempDir,
   writeFileSync,
 } from "./helpers.ts";
 
@@ -19,9 +18,7 @@ setupAfterEach();
 
 describe("run", () => {
   it("succeeds when repo fetch --all runs against an empty registry", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
+    const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -40,15 +37,9 @@ describe("run", () => {
   });
 
   it("updates lastFetchedAt for successful repo fetch --all", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -85,15 +76,9 @@ describe("run", () => {
   });
 
   it("continues across repo fetch failures, reports both results, and exits 1", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -149,15 +134,9 @@ describe("run", () => {
   });
 
   it("prints repo fetch partial failure as json with counts, statuses, and errors", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
@@ -210,15 +189,9 @@ describe("run", () => {
   });
 
   it("updates an existing registry record when repo add is rerun", async () => {
-    const tempHome = trackTempDir(
-      path.join(os.tmpdir(), `outpost-test-${Date.now()}`),
-    );
-    const tempRepo = trackTempDir(
-      path.join(os.tmpdir(), `outpost-repo-${Date.now()}`),
-    );
-    const tempRemote = trackTempDir(
-      path.join(os.tmpdir(), `outpost-remote-${Date.now()}.git`),
-    );
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
