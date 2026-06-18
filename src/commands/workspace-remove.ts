@@ -2,14 +2,21 @@ import * as Command from "@effect/platform/Command";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Console, Effect, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 
-import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import { loadConfig, resolveOutpostHome } from "../config.js";
+import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import {
-  getCanonicalPortablePathKey,
-  resolvePathWithinRoot,
-  validatePathSegment,
-} from "../path-safety.js";
+  acquireTicketLock,
+  deleteManifest,
+  manifestExists,
+  readManifest,
+  releaseTicketLock,
+  resolveManagedPath,
+  resolveWorkspacePath,
+  resolveWorktreePath,
+  verifyWorktreeOwnership,
+} from "../workspace-manifest.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
@@ -28,47 +35,9 @@ function gitCommand(...args: ReadonlyArray<string>) {
   );
 }
 
-function resolveManagedRepoPath(
-  worktreePath: string,
-): Effect.Effect<
-  string,
-  WorkspaceRemoveError,
-  FileSystem.FileSystem | Path.Path
-> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const gitFilePath = path.join(worktreePath, ".git");
-    const gitFile = yield* fs.readFileString(gitFilePath).pipe(
-      Effect.mapError(
-        (error) =>
-          new WorkspaceRemoveError({
-            message: `Failed to read worktree metadata ${gitFilePath}: ${error.message}`,
-          }),
-      ),
-    );
-    const match = /^gitdir:\s*(.+)\s*$/m.exec(gitFile);
-
-    if (!match?.[1]) {
-      return yield* Effect.fail(
-        new WorkspaceRemoveError({
-          message: `Invalid worktree metadata ${gitFilePath}`,
-        }),
-      );
-    }
-
-    const gitDirectory = path.resolve(worktreePath, match[1]);
-    const worktreesDirectory = path.dirname(gitDirectory);
-
-    if (path.basename(worktreesDirectory) !== "worktrees") {
-      return yield* Effect.fail(
-        new WorkspaceRemoveError({
-          message: `Invalid worktree git directory ${gitDirectory}`,
-        }),
-      );
-    }
-
-    return path.dirname(worktreesDirectory);
+function toMapError(error: unknown): WorkspaceRemoveError {
+  return new WorkspaceRemoveError({
+    message: error instanceof Error ? error.message : "Unknown workspace error",
   });
 }
 
@@ -96,30 +65,44 @@ export function runWorkspaceRemove(
     );
 
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
         (error) => new WorkspaceRemoveError({ message: error.message }),
       ),
     );
-    const ticketDirectory = yield* resolvePathWithinRoot(
-      config.worktreesRoot,
-      ticket,
-    ).pipe(
+
+    const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
       Effect.mapError(
         (error) => new WorkspaceRemoveError({ message: error.message }),
       ),
     );
-    const exists = yield* fs
-      .exists(ticketDirectory)
-      .pipe(
-        Effect.mapError(
-          (error) => new WorkspaceRemoveError({ message: error.message }),
-        ),
-      );
 
-    if (!exists) {
+    if (!hasManifest) {
+      const ticketDirResult = yield* resolvePathWithinRoot(
+        config.worktreesRoot,
+        ticket,
+      ).pipe(Effect.either);
+
+      if (Either.isRight(ticketDirResult)) {
+        const ticketDir = ticketDirResult.right;
+        const dirExists = yield* fs
+          .exists(ticketDir)
+          .pipe(
+            Effect.mapError(
+              (error) => new WorkspaceRemoveError({ message: error.message }),
+            ),
+          );
+
+        if (dirExists) {
+          return yield* Effect.fail(
+            new WorkspaceRemoveError({
+              message: `No manifest found for ticket ${ticket}. The workspace directory exists at ${ticketDir} but is unmanaged. Managed removal requires a manifest.`,
+            }),
+          );
+        }
+      }
+
       return yield* Effect.fail(
         new WorkspaceRemoveError({
           message: `Unknown workspace ticket: ${ticket}`,
@@ -127,84 +110,182 @@ export function runWorkspaceRemove(
       );
     }
 
-    const entries = yield* fs
-      .readDirectory(ticketDirectory)
-      .pipe(
-        Effect.mapError(
-          (error) => new WorkspaceRemoveError({ message: error.message }),
+    const result = yield* Effect.scoped(
+      Effect.acquireRelease(
+        acquireTicketLock(outpostHome, ticket).pipe(
+          Effect.mapError(toMapError),
         ),
-      );
-    const worktreeNames = [...entries].sort((left, right) =>
-      left.localeCompare(right),
-    );
+        () =>
+          releaseTicketLock(outpostHome, ticket).pipe(
+            Effect.catchAll(() => Effect.void),
+          ),
+      ).pipe(
+        Effect.flatMap(() =>
+          Effect.gen(function* () {
+            const manifest = yield* readManifest(outpostHome, ticket).pipe(
+              Effect.mapError(toMapError),
+            );
 
-    const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceRemoveError({ message: error.message }),
+            const workspaceDir = yield* resolveWorkspacePath(
+              config.worktreesRoot,
+              manifest.workspacePath,
+            ).pipe(Effect.mapError(toMapError));
+
+            for (const repo of manifest.repositories) {
+              const resolvedWorktreePath = yield* resolveWorktreePath(
+                workspaceDir,
+                repo.worktreePath,
+              ).pipe(Effect.mapError(toMapError));
+
+              const worktreeExists = yield* fs
+                .exists(resolvedWorktreePath)
+                .pipe(Effect.mapError(toMapError));
+
+              if (!worktreeExists) {
+                continue;
+              }
+
+              const resolvedManagedPath = yield* resolveManagedPath(
+                config.reposRoot,
+                repo.managedPath,
+              ).pipe(Effect.mapError(toMapError));
+
+              const ownershipValid = yield* verifyWorktreeOwnership(
+                resolvedWorktreePath,
+                resolvedManagedPath,
+              ).pipe(Effect.mapError(toMapError));
+
+              if (!ownershipValid) {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message: `Worktree ${resolvedWorktreePath} ownership mismatch: its .git does not point to the expected managed repository. Refusing removal to protect data.`,
+                  }),
+                );
+              }
+
+              const porcelainOutput = yield* Command.string(
+                gitCommand("-C", resolvedWorktreePath, "status", "--porcelain"),
+              ).pipe(Effect.catchAll(() => Effect.succeed("")));
+
+              if (porcelainOutput.trim().length > 0) {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message: `Worktree ${resolvedWorktreePath} has uncommitted changes. Refusing removal. Commit or discard changes first.`,
+                  }),
+                );
+              }
+            }
+
+            const completed: Array<string> = [];
+            const remaining: Array<string> = [];
+
+            for (const repo of manifest.repositories) {
+              const resolvedManagedPath = yield* resolveManagedPath(
+                config.reposRoot,
+                repo.managedPath,
+              ).pipe(Effect.mapError(toMapError));
+
+              const resolvedWorktreePath = yield* resolveWorktreePath(
+                workspaceDir,
+                repo.worktreePath,
+              ).pipe(Effect.mapError(toMapError));
+
+              const worktreeExists = yield* fs
+                .exists(resolvedWorktreePath)
+                .pipe(Effect.mapError(toMapError));
+
+              if (!worktreeExists) {
+                completed.push(repo.worktreePath);
+                continue;
+              }
+
+              const exitCode = yield* Command.exitCode(
+                gitCommand(
+                  "--git-dir",
+                  resolvedManagedPath,
+                  "worktree",
+                  "remove",
+                  resolvedWorktreePath,
+                ),
+              ).pipe(Effect.catchAll(() => Effect.succeed(1)));
+
+              if (exitCode === 0) {
+                completed.push(repo.worktreePath);
+                continue;
+              }
+
+              const managedRepoExists = yield* fs
+                .exists(resolvedManagedPath)
+                .pipe(Effect.mapError(toMapError));
+
+              if (!managedRepoExists) {
+                yield* fs
+                  .remove(resolvedWorktreePath, { recursive: true })
+                  .pipe(Effect.mapError(toMapError));
+                completed.push(repo.worktreePath);
+              } else {
+                remaining.push(repo.worktreePath);
+              }
+            }
+
+            if (remaining.length > 0) {
+              return {
+                command: "workspace remove",
+                data: {
+                  ticket,
+                  ticketDirectory: workspaceDir,
+                  worktreeCount: manifest.repositories.length,
+                  worktreeNames: manifest.repositories.map(
+                    (repo) => repo.worktreePath,
+                  ),
+                  completed,
+                  remaining,
+                  status: "partial",
+                },
+              } satisfies CommandOutput;
+            }
+
+            const dirExists = yield* fs
+              .exists(workspaceDir)
+              .pipe(Effect.mapError(toMapError));
+
+            if (dirExists) {
+              const remainingEntries = yield* fs
+                .readDirectory(workspaceDir)
+                .pipe(
+                  Effect.catchAll(() => Effect.succeed([] as Array<string>)),
+                );
+
+              if (remainingEntries.length === 0) {
+                yield* fs
+                  .remove(workspaceDir, { recursive: true })
+                  .pipe(Effect.mapError(toMapError));
+              }
+            }
+
+            yield* deleteManifest(outpostHome, ticket).pipe(
+              Effect.mapError(toMapError),
+            );
+
+            return {
+              command: "workspace remove",
+              data: {
+                ticket,
+                ticketDirectory: workspaceDir,
+                worktreeCount: manifest.repositories.length,
+                worktreeNames: manifest.repositories.map(
+                  (repo) => repo.worktreePath,
+                ),
+                completed,
+                remaining: [],
+                status: "success",
+              },
+            } satisfies CommandOutput;
+          }),
+        ),
       ),
     );
-    const registryReposWithPathKeys = yield* Effect.forEach(
-      registry.repos,
-      (repo) =>
-        getCanonicalPortablePathKey(repo.managedRepoPath).pipe(
-          Effect.map((managedRepoPathKey) => ({
-            managedRepoPathKey,
-            repo,
-          })),
-        ),
-    );
 
-    for (const entry of entries) {
-      const worktreePath = path.join(ticketDirectory, entry);
-      const managedRepoPath = yield* resolveManagedRepoPath(worktreePath).pipe(
-        Effect.catchAll(() => Effect.succeed(undefined)),
-      );
-      if (!managedRepoPath) continue;
-
-      const managedRepoPathKey =
-        yield* getCanonicalPortablePathKey(managedRepoPath);
-      const repo = registryReposWithPathKeys.find(
-        (candidate) => candidate.managedRepoPathKey === managedRepoPathKey,
-      )?.repo;
-      if (!repo) continue;
-
-      yield* Command.exitCode(
-        gitCommand(
-          "--git-dir",
-          repo.managedRepoPath,
-          "worktree",
-          "remove",
-          "--force",
-          worktreePath,
-        ),
-      ).pipe(
-        Effect.catchAll(() => Effect.succeed(1)),
-        Effect.flatMap((exitCode) =>
-          exitCode === 0
-            ? Effect.void
-            : Console.log(
-                `Warning: failed to prune worktree ${worktreePath} from ${repo.managedRepoPath}`,
-              ),
-        ),
-      );
-    }
-
-    yield* fs
-      .remove(ticketDirectory, { recursive: true })
-      .pipe(
-        Effect.mapError(
-          (error) => new WorkspaceRemoveError({ message: error.message }),
-        ),
-      );
-
-    return {
-      command: "workspace remove",
-      data: {
-        ticket,
-        ticketDirectory,
-        worktreeCount: worktreeNames.length,
-        worktreeNames,
-      },
-    } satisfies CommandOutput;
+    return result;
   });
 }

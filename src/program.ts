@@ -332,9 +332,39 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost workspace show"),
         Console.log(`ticket: ${String(output.data.ticket)}`),
-        Console.log(
-          `workspace directory: ${String(output.data.ticketDirectory)}`,
-        ),
+        ...(typeof output.data.ticketDirectory === "string"
+          ? [
+              Console.log(
+                `workspace directory: ${String(output.data.ticketDirectory)}`,
+              ),
+            ]
+          : []),
+        ...(typeof output.data.type === "string"
+          ? [Console.log(`type: ${String(output.data.type)}`)]
+          : []),
+        ...(typeof output.data.branch === "string"
+          ? [Console.log(`branch: ${String(output.data.branch)}`)]
+          : []),
+        ...(typeof output.data.createdAt === "string"
+          ? [Console.log(`created at: ${String(output.data.createdAt)}`)]
+          : []),
+        ...(typeof output.data.workspacePath === "string"
+          ? [
+              Console.log(
+                `workspace path: ${String(output.data.workspacePath)}`,
+              ),
+            ]
+          : []),
+        Console.log(`status: ${String(output.data.status)}`),
+        ...(typeof output.data.manifestPath === "string"
+          ? [Console.log(`manifest: ${String(output.data.manifestPath)}`)]
+          : []),
+        ...(Array.isArray(output.data.diagnostics) &&
+        output.data.diagnostics.length > 0
+          ? output.data.diagnostics.map((diag: unknown) =>
+              Console.log(`diagnostic: ${String(diag)}`),
+            )
+          : []),
         Console.log(
           `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`,
         ),
@@ -345,18 +375,51 @@ function printCommandOutput(
                 worktree !== null &&
                 "repoName" in worktree
                   ? String(worktree.repoName)
+                  : typeof worktree === "object" &&
+                      worktree !== null &&
+                      "name" in worktree
+                    ? String(worktree.name)
+                    : "";
+              const repoId =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "id" in worktree
+                  ? String(worktree.id)
                   : "";
               const worktreePath =
                 typeof worktree === "object" &&
                 worktree !== null &&
                 "path" in worktree
                   ? String(worktree.path)
+                  : typeof worktree === "object" &&
+                      worktree !== null &&
+                      "resolvedWorktreePath" in worktree
+                    ? String(worktree.resolvedWorktreePath)
+                    : "";
+              const base =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "base" in worktree
+                  ? String(worktree.base)
+                  : "";
+              const resolvedManagedPath =
+                typeof worktree === "object" &&
+                worktree !== null &&
+                "resolvedManagedPath" in worktree
+                  ? String(worktree.resolvedManagedPath)
                   : "";
 
-              return [
-                Console.log(`- ${repoName}`),
-                Console.log(`  path: ${worktreePath}`),
+              const lines = [
+                Console.log(`- ${repoName}${repoId ? ` (id: ${repoId})` : ""}`),
               ];
+              if (worktreePath)
+                lines.push(Console.log(`  path: ${worktreePath}`));
+              if (base) lines.push(Console.log(`  base: ${base}`));
+              if (resolvedManagedPath)
+                lines.push(
+                  Console.log(`  managed repo: ${resolvedManagedPath}`),
+                );
+              return lines;
             })
           : []),
       ]).pipe(Effect.asVoid);
@@ -364,17 +427,48 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost workspace remove"),
         ...(typeof output.data.ticket === "string"
-          ? [Console.log(`ticket: ${output.data.ticket}`)]
+          ? [Console.log(`ticket: ${String(output.data.ticket)}`)]
           : []),
         ...(typeof output.data.ticketDirectory === "string"
-          ? [Console.log(`workspace directory: ${output.data.ticketDirectory}`)]
+          ? [
+              Console.log(
+                `workspace directory: ${String(output.data.ticketDirectory)}`,
+              ),
+            ]
+          : []),
+        ...(typeof output.data.status === "string"
+          ? [Console.log(`status: ${String(output.data.status)}`)]
           : []),
         Console.log(
           `worktrees: ${typeof output.data.worktreeCount === "number" ? output.data.worktreeCount : 0}`,
         ),
         ...(Array.isArray(output.data.worktreeNames)
-          ? output.data.worktreeNames.map((name) =>
+          ? output.data.worktreeNames.map((name: unknown) =>
               Console.log(`  - ${String(name)}`),
+            )
+          : []),
+        ...(Array.isArray(output.data.completed) &&
+        output.data.completed.length > 0
+          ? [
+              Console.log("completed:"),
+              ...output.data.completed.map((name: unknown) =>
+                Console.log(`  - ${String(name)}`),
+              ),
+            ]
+          : []),
+        ...(Array.isArray(output.data.remaining) &&
+        output.data.remaining.length > 0
+          ? [
+              Console.log("remaining:"),
+              ...output.data.remaining.map((name: unknown) =>
+                Console.log(`  - ${String(name)}`),
+              ),
+            ]
+          : []),
+        ...(Array.isArray(output.data.diagnostics) &&
+        output.data.diagnostics.length > 0
+          ? output.data.diagnostics.map((diag: unknown) =>
+              Console.log(`diagnostic: ${String(diag)}`),
             )
           : []),
       ]).pipe(Effect.asVoid);
@@ -395,7 +489,8 @@ function printCommandOutput(
               const ticketDirectory =
                 typeof workspace === "object" &&
                 workspace !== null &&
-                "ticketDirectory" in workspace
+                "ticketDirectory" in workspace &&
+                workspace.ticketDirectory != null
                   ? String(workspace.ticketDirectory)
                   : "";
               const worktreeCount =
@@ -404,12 +499,57 @@ function printCommandOutput(
                 "worktreeCount" in workspace
                   ? String(workspace.worktreeCount)
                   : "0";
+              const status =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "status" in workspace
+                  ? String(workspace.status)
+                  : "";
+              const type =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "type" in workspace &&
+                workspace.type != null
+                  ? String(workspace.type)
+                  : "";
+              const branch =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "branch" in workspace &&
+                workspace.branch != null
+                  ? String(workspace.branch)
+                  : "";
+              const createdAt =
+                typeof workspace === "object" &&
+                workspace !== null &&
+                "createdAt" in workspace &&
+                workspace.createdAt != null
+                  ? String(workspace.createdAt)
+                  : "";
 
-              return [
-                Console.log(`- ${ticket}`),
-                Console.log(`  workspace directory: ${ticketDirectory}`),
-                Console.log(`  worktrees: ${worktreeCount}`),
+              const header = [
+                Console.log(`- ${ticket}${status ? ` [${status}]` : ""}`),
               ];
+              if (ticketDirectory)
+                header.push(
+                  Console.log(`  workspace directory: ${ticketDirectory}`),
+                );
+              if (type) header.push(Console.log(`  type: ${type}`));
+              if (branch) header.push(Console.log(`  branch: ${branch}`));
+              if (createdAt)
+                header.push(Console.log(`  created at: ${createdAt}`));
+              header.push(Console.log(`  worktrees: ${worktreeCount}`));
+
+              const w = workspace as Record<string, unknown>;
+              if (Array.isArray(w.diagnostics) && w.diagnostics.length > 0) {
+                header.push(
+                  ...w.diagnostics.map((diag: unknown) =>
+                    Console.log(`  diagnostic: ${String(diag)}`),
+                  ),
+                );
+              }
+
+              return header;
             })
           : []),
       ]).pipe(Effect.asVoid);
