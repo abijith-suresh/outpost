@@ -191,6 +191,7 @@ describe("renderAgentsMarkdown", () => {
 
     // The worktree path should use ./ with forward slash
     expect(content).toContain('"./');
+    expect(content).not.toContain("\\");
   });
 
   it("no absolute paths appear in output", async () => {

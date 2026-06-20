@@ -67,7 +67,9 @@ export function renderAgentsMarkdown(
       ).pipe(
         Effect.mapError((error) => new AgentsError({ message: error.message })),
       );
-      const relativeWorktree = p.relative(workspaceDir, worktreeDir) || ".";
+      const relativeWorktree = (
+        p.relative(workspaceDir, worktreeDir) || "."
+      ).replace(/\\/g, "/");
 
       repoBlocks.push(
         [
