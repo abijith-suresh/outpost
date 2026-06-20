@@ -143,9 +143,20 @@ export function runWorkspaceShow(
     }
 
     const manifestError = manifestResult.left;
-    const isNotFound =
-      manifestError instanceof Error &&
-      manifestError.message?.includes("No manifest found");
+    const isNotFound = manifestError._tag === "ManifestNotFoundError";
+
+    if (!isNotFound) {
+      return {
+        command: "workspace show",
+        data: {
+          ticket,
+          status: "invalid",
+          manifestPath: manifestFilePath,
+          diagnostics: [manifestError.message],
+          worktrees: [],
+        },
+      } satisfies CommandOutput;
+    }
 
     const ticketDirResult = yield* resolvePathWithinRoot(
       config.worktreesRoot,
@@ -179,14 +190,6 @@ export function runWorkspaceShow(
           },
         } satisfies CommandOutput;
       }
-    }
-
-    if (!isNotFound) {
-      return yield* Effect.fail(
-        new WorkspaceShowError({
-          message: `Manifest for ticket ${ticket} is invalid: ${manifestError.message}`,
-        }),
-      );
     }
 
     return yield* Effect.fail(

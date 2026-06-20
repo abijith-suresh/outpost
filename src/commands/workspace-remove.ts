@@ -1,8 +1,10 @@
+import { rmdir } from "node:fs/promises";
+
 import * as Command from "@effect/platform/Command";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Either, Schema, Stream } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
@@ -39,6 +41,30 @@ function toMapError(error: unknown): WorkspaceRemoveError {
   return new WorkspaceRemoveError({
     message: error instanceof Error ? error.message : "Unknown workspace error",
   });
+}
+
+function partialRemovalOutput(
+  ticket: string,
+  workspaceDir: string,
+  worktreeNames: ReadonlyArray<string>,
+  completed: ReadonlyArray<string>,
+  remaining: ReadonlyArray<string>,
+  diagnostics: ReadonlyArray<string>,
+): CommandOutput {
+  return {
+    command: "workspace remove",
+    data: {
+      ticket,
+      ticketDirectory: workspaceDir,
+      worktreeCount: worktreeNames.length,
+      worktreeNames,
+      completed,
+      remaining,
+      diagnostics,
+      status: "partial",
+    },
+    exitCode: 1,
+  };
 }
 
 export function runWorkspaceRemove(
@@ -132,6 +158,11 @@ export function runWorkspaceRemove(
             ).pipe(Effect.mapError(toMapError));
 
             for (const repo of manifest.repositories) {
+              const resolvedManagedPath = yield* resolveManagedPath(
+                config.reposRoot,
+                repo.managedPath,
+              ).pipe(Effect.mapError(toMapError));
+
               const resolvedWorktreePath = yield* resolveWorktreePath(
                 workspaceDir,
                 repo.worktreePath,
@@ -145,10 +176,17 @@ export function runWorkspaceRemove(
                 continue;
               }
 
-              const resolvedManagedPath = yield* resolveManagedPath(
-                config.reposRoot,
-                repo.managedPath,
-              ).pipe(Effect.mapError(toMapError));
+              const managedRepoExists = yield* fs
+                .exists(resolvedManagedPath)
+                .pipe(Effect.mapError(toMapError));
+
+              if (!managedRepoExists) {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message: `Cannot establish cleanliness for worktree ${resolvedWorktreePath}: managed repository ${resolvedManagedPath} is missing. Refusing removal.`,
+                  }),
+                );
+              }
 
               const ownershipValid = yield* verifyWorktreeOwnership(
                 resolvedWorktreePath,
@@ -163,11 +201,33 @@ export function runWorkspaceRemove(
                 );
               }
 
-              const porcelainOutput = yield* Command.string(
-                gitCommand("-C", resolvedWorktreePath, "status", "--porcelain"),
+              const statusCommand = gitCommand(
+                "-C",
+                resolvedWorktreePath,
+                "status",
+                "--porcelain",
+              );
+              const statusResult = yield* Effect.scoped(
+                Effect.gen(function* () {
+                  const process = yield* Command.start(statusCommand);
+                  const output = yield* process.stdout.pipe(
+                    Stream.decodeText(),
+                    Stream.runFold("", (all, chunk) => all + chunk),
+                  );
+                  const exitCode = yield* process.exitCode;
+                  return { exitCode, output };
+                }),
               ).pipe(Effect.mapError(toMapError));
 
-              if (porcelainOutput.trim().length > 0) {
+              if (statusResult.exitCode !== 0) {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message: `Failed to establish cleanliness for worktree ${resolvedWorktreePath}: git status exited with status ${statusResult.exitCode}. Refusing removal.`,
+                  }),
+                );
+              }
+
+              if (statusResult.output.trim().length > 0) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Worktree ${resolvedWorktreePath} has uncommitted changes. Refusing removal. Commit or discard changes first.`,
@@ -178,6 +238,10 @@ export function runWorkspaceRemove(
 
             const completed: Array<string> = [];
             const remaining: Array<string> = [];
+            const diagnostics: Array<string> = [];
+            const worktreeNames = manifest.repositories.map(
+              (repo) => repo.worktreePath,
+            );
 
             for (const repo of manifest.repositories) {
               const resolvedManagedPath = yield* resolveManagedPath(
@@ -199,7 +263,7 @@ export function runWorkspaceRemove(
                 continue;
               }
 
-              const exitCode = yield* Command.exitCode(
+              const removalResult = yield* Command.exitCode(
                 gitCommand(
                   "--git-dir",
                   resolvedManagedPath,
@@ -207,42 +271,30 @@ export function runWorkspaceRemove(
                   "remove",
                   resolvedWorktreePath,
                 ),
-              ).pipe(Effect.catchAll(() => Effect.succeed(1)));
+              ).pipe(Effect.either);
 
-              if (exitCode === 0) {
+              if (Either.isRight(removalResult) && removalResult.right === 0) {
                 completed.push(repo.worktreePath);
                 continue;
               }
 
-              const managedRepoExists = yield* fs
-                .exists(resolvedManagedPath)
-                .pipe(Effect.mapError(toMapError));
-
-              if (!managedRepoExists) {
-                yield* fs
-                  .remove(resolvedWorktreePath, { recursive: true })
-                  .pipe(Effect.mapError(toMapError));
-                completed.push(repo.worktreePath);
-              } else {
-                remaining.push(repo.worktreePath);
-              }
+              remaining.push(repo.worktreePath);
+              diagnostics.push(
+                Either.isLeft(removalResult)
+                  ? `Failed to remove worktree ${resolvedWorktreePath}: ${removalResult.left.message}`
+                  : `Failed to remove worktree ${resolvedWorktreePath}: git exited with status ${removalResult.right}`,
+              );
             }
 
             if (remaining.length > 0) {
-              return {
-                command: "workspace remove",
-                data: {
-                  ticket,
-                  ticketDirectory: workspaceDir,
-                  worktreeCount: manifest.repositories.length,
-                  worktreeNames: manifest.repositories.map(
-                    (repo) => repo.worktreePath,
-                  ),
-                  completed,
-                  remaining,
-                  status: "partial",
-                },
-              } satisfies CommandOutput;
+              return partialRemovalOutput(
+                ticket,
+                workspaceDir,
+                worktreeNames,
+                completed,
+                remaining,
+                diagnostics,
+              );
             }
 
             const dirExists = yield* fs
@@ -250,16 +302,57 @@ export function runWorkspaceRemove(
               .pipe(Effect.mapError(toMapError));
 
             if (dirExists) {
-              const remainingEntries = yield* fs
+              const directoryResult = yield* fs
                 .readDirectory(workspaceDir)
-                .pipe(
-                  Effect.catchAll(() => Effect.succeed([] as Array<string>)),
-                );
+                .pipe(Effect.either);
 
-              if (remainingEntries.length === 0) {
-                yield* fs
-                  .remove(workspaceDir, { recursive: true })
-                  .pipe(Effect.mapError(toMapError));
+              if (Either.isLeft(directoryResult)) {
+                return partialRemovalOutput(
+                  ticket,
+                  workspaceDir,
+                  worktreeNames,
+                  completed,
+                  [],
+                  [
+                    `Failed to inspect workspace directory ${workspaceDir}: ${directoryResult.left.message}`,
+                  ],
+                );
+              }
+
+              const remainingEntries = directoryResult.right;
+              if (remainingEntries.length > 0) {
+                return partialRemovalOutput(
+                  ticket,
+                  workspaceDir,
+                  worktreeNames,
+                  completed,
+                  remainingEntries,
+                  [
+                    `Workspace directory ${workspaceDir} contains unrecognized or residual entries: ${remainingEntries.join(", ")}`,
+                  ],
+                );
+              }
+
+              const removeDirectoryResult = yield* Effect.tryPromise({
+                try: () => rmdir(workspaceDir),
+                catch: (error) =>
+                  new WorkspaceRemoveError({
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+              }).pipe(Effect.either);
+
+              if (Either.isLeft(removeDirectoryResult)) {
+                return partialRemovalOutput(
+                  ticket,
+                  workspaceDir,
+                  worktreeNames,
+                  completed,
+                  [],
+                  [
+                    `Failed to remove empty workspace directory ${workspaceDir}: ${removeDirectoryResult.left.message}`,
+                  ],
+                );
               }
             }
 
@@ -273,9 +366,7 @@ export function runWorkspaceRemove(
                 ticket,
                 ticketDirectory: workspaceDir,
                 worktreeCount: manifest.repositories.length,
-                worktreeNames: manifest.repositories.map(
-                  (repo) => repo.worktreePath,
-                ),
+                worktreeNames,
                 completed,
                 remaining: [],
                 status: "success",

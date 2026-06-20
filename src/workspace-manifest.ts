@@ -83,28 +83,112 @@ export function ensureWorkspaceStateRoot(
   });
 }
 
+function resolveCanonicalPath(
+  value: string,
+): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const suffix: Array<string> = [];
+    let existingAncestor = path.resolve(value);
+
+    while (true) {
+      const exists = yield* fs
+        .exists(existingAncestor)
+        .pipe(
+          Effect.mapError(
+            (error) => new ManifestError({ message: error.message }),
+          ),
+        );
+
+      if (exists) {
+        break;
+      }
+
+      const parent = path.dirname(existingAncestor);
+      if (parent === existingAncestor) {
+        break;
+      }
+
+      suffix.unshift(path.basename(existingAncestor));
+      existingAncestor = parent;
+    }
+
+    const canonicalAncestor = yield* fs.realPath(existingAncestor).pipe(
+      Effect.mapError(
+        (error) =>
+          new ManifestError({
+            message: `Failed to resolve path ${existingAncestor}: ${error.message}`,
+          }),
+      ),
+    );
+
+    return path.resolve(canonicalAncestor, ...suffix);
+  });
+}
+
+function ensureCanonicalPathWithinRoot(
+  root: string,
+  resolvedPath: string,
+): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const canonicalRoot = yield* resolveCanonicalPath(root);
+    const canonicalPath = yield* resolveCanonicalPath(resolvedPath);
+    const relativePath = path.relative(canonicalRoot, canonicalPath);
+    const isOutsideRoot =
+      path.isAbsolute(relativePath) ||
+      relativePath === ".." ||
+      relativePath.startsWith(`..${path.sep}`);
+
+    if (isOutsideRoot) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: `Path must remain within ${canonicalRoot}: ${canonicalPath}`,
+        }),
+      );
+    }
+
+    return resolvedPath;
+  });
+}
+
 export function resolveWorkspacePath(
   worktreesRoot: string,
   workspacePath: string,
-): Effect.Effect<string, ManifestError, Path.Path> {
-  return resolvePathWithinRoot(worktreesRoot, workspacePath).pipe(
-    Effect.mapError((error) => new ManifestError({ message: error.message })),
-  );
+): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const resolvedPath = yield* resolvePathWithinRoot(
+      worktreesRoot,
+      workspacePath,
+    ).pipe(
+      Effect.mapError((error) => new ManifestError({ message: error.message })),
+    );
+
+    return yield* ensureCanonicalPathWithinRoot(worktreesRoot, resolvedPath);
+  });
 }
 
 export function resolveManagedPath(
   reposRoot: string,
   managedPath: string,
-): Effect.Effect<string, ManifestError, Path.Path> {
-  return resolvePathWithinRoot(reposRoot, managedPath).pipe(
-    Effect.mapError((error) => new ManifestError({ message: error.message })),
-  );
+): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const resolvedPath = yield* resolvePathWithinRoot(
+      reposRoot,
+      managedPath,
+    ).pipe(
+      Effect.mapError((error) => new ManifestError({ message: error.message })),
+    );
+
+    return yield* ensureCanonicalPathWithinRoot(reposRoot, resolvedPath);
+  });
 }
 
 export function resolveWorktreePath(
   workspaceDir: string,
   worktreePath: string,
-): Effect.Effect<string, ManifestError, Path.Path> {
+): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const resolved = yield* resolvePathWithinRoot(
@@ -123,7 +207,7 @@ export function resolveWorktreePath(
       );
     }
 
-    return resolved;
+    return yield* ensureCanonicalPathWithinRoot(workspaceDir, resolved);
   });
 }
 
@@ -233,6 +317,21 @@ export function readManifest(
       config.worktreesRoot,
       manifest.workspacePath,
     );
+    const expectedWorkspaceDir = yield* resolveWorkspacePath(
+      config.worktreesRoot,
+      ticket,
+    );
+    const canonicalWorkspaceDir = yield* resolveCanonicalPath(workspaceDir);
+    const canonicalExpectedWorkspaceDir =
+      yield* resolveCanonicalPath(expectedWorkspaceDir);
+
+    if (canonicalWorkspaceDir !== canonicalExpectedWorkspaceDir) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: `Manifest workspacePath ${manifest.workspacePath} does not resolve to the expected ticket directory ${expectedWorkspaceDir}`,
+        }),
+      );
+    }
 
     const repoIds = new Set<string>();
     const managedPathKeys = new Set<string>();
@@ -389,6 +488,29 @@ export function writeManifest(
       );
     }
 
+    const config = yield* loadConfig(outpostHome).pipe(
+      Effect.mapError((error) => new ManifestError({ message: error.message })),
+    );
+    const workspaceDir = yield* resolveWorkspacePath(
+      config.worktreesRoot,
+      manifest.workspacePath,
+    );
+    const expectedWorkspaceDir = yield* resolveWorkspacePath(
+      config.worktreesRoot,
+      manifest.ticket,
+    );
+    const canonicalWorkspaceDir = yield* resolveCanonicalPath(workspaceDir);
+    const canonicalExpectedWorkspaceDir =
+      yield* resolveCanonicalPath(expectedWorkspaceDir);
+
+    if (canonicalWorkspaceDir !== canonicalExpectedWorkspaceDir) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: `Manifest workspacePath ${manifest.workspacePath} does not resolve to the expected ticket directory ${expectedWorkspaceDir}`,
+        }),
+      );
+    }
+
     for (let i = 0; i < manifest.repositories.length; i++) {
       const repo = manifest.repositories[i];
 
@@ -407,6 +529,9 @@ export function writeManifest(
           }),
         );
       }
+
+      yield* resolveManagedPath(config.reposRoot, repo.managedPath);
+      yield* resolveWorktreePath(workspaceDir, repo.worktreePath);
     }
 
     yield* writeJsonFileAtomic(manifestFilePath, manifest).pipe(
@@ -574,11 +699,7 @@ export function deriveWorkspaceStatus(
     }
 
     const workspaceDir = workspaceDirResult.right;
-    const workspaceDirExists = yield* fs.exists(workspaceDir);
-
-    if (!workspaceDirExists) {
-      return "missing";
-    }
+    let hasMissingPath = !(yield* fs.exists(workspaceDir));
 
     for (const repo of manifest.repositories) {
       const resolvedManagedPathResult = yield* Effect.either(
@@ -592,10 +713,6 @@ export function deriveWorkspaceStatus(
       const resolvedManagedPath = resolvedManagedPathResult.right;
       const managedExists = yield* fs.exists(resolvedManagedPath);
 
-      if (!managedExists) {
-        return "missing";
-      }
-
       const resolvedWorktreePathResult = yield* Effect.either(
         resolveWorktreePath(workspaceDir, repo.worktreePath),
       );
@@ -607,8 +724,9 @@ export function deriveWorkspaceStatus(
       const resolvedWorktree = resolvedWorktreePathResult.right;
       const worktreeExists = yield* fs.exists(resolvedWorktree);
 
-      if (!worktreeExists) {
-        return "missing";
+      if (!managedExists || !worktreeExists) {
+        hasMissingPath = true;
+        continue;
       }
 
       const ownershipValid = yield* verifyWorktreeOwnership(
@@ -621,7 +739,7 @@ export function deriveWorkspaceStatus(
       }
     }
 
-    return "ready";
+    return hasMissingPath ? "missing" : "ready";
   });
 }
 
@@ -680,7 +798,8 @@ function getLockFilePath(
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
-    return path.join(stateRoot, `.${ticket}.lock`);
+    const portableTicket = ticket.replace(/[ .]+$/g, "").toLowerCase();
+    return path.join(stateRoot, `.${portableTicket}.lock`);
   });
 }
 

@@ -1,4 +1,4 @@
-import { symlinkSync } from "node:fs";
+import { chmodSync, rmSync, symlinkSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   path,
+  readFileSync,
   readRegistry,
   runCli,
   localRepoId,
@@ -16,6 +17,44 @@ import {
 } from "./helpers.ts";
 
 setupAfterEach();
+
+async function installFailingGitShim(
+  tempHome: string,
+  failure: "status" | "worktree-remove",
+) {
+  const { execFileSync } = await import("node:child_process");
+  const realGit = execFileSync("sh", ["-c", "command -v git"], {
+    encoding: "utf8",
+  }).trim();
+  const binDirectory = path.join(tempHome, "bin");
+  const shimPath = path.join(binDirectory, "git");
+  mkdirSync(binDirectory, { recursive: true });
+  writeFileSync(
+    shimPath,
+    `#!/bin/sh
+if [ "$OUTPOST_TEST_GIT_FAILURE" = "status" ]; then
+  for arg in "$@"; do
+    if [ "$arg" = "status" ]; then
+      exit 42
+    fi
+  done
+fi
+if [ "$OUTPOST_TEST_GIT_FAILURE" = "worktree-remove" ]; then
+  previous=""
+  for arg in "$@"; do
+    if [ "$previous" = "worktree" ] && [ "$arg" = "remove" ]; then
+      exit 43
+    fi
+    previous="$arg"
+  done
+fi
+exec "${realGit}" "$@"
+`,
+  );
+  chmodSync(shimPath, 0o755);
+  process.env.PATH = `${binDirectory}:${process.env.PATH ?? ""}`;
+  process.env.OUTPOST_TEST_GIT_FAILURE = failure;
+}
 
 function writeManifestFixture(
   outpostHome: string,
@@ -235,6 +274,33 @@ describe("run", () => {
       1,
       "Unknown workspace ticket: missing",
     );
+  });
+
+  it("shows a corrupt manifest as invalid without inferring directory contents", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const ticketDirectory = path.join(tempHome, "worktrees", "CORRUPT-SHOW");
+    mkdirSync(ticketDirectory, { recursive: true });
+    writeFileSync(path.join(ticketDirectory, "not-a-worktree"), "keep\n");
+    writeFileSync(
+      path.join(tempHome, "workspaces", "CORRUPT-SHOW.json"),
+      "{invalid json",
+    );
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["workspace", "show", "CORRUPT-SHOW"]);
+    const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain("status: invalid");
+    expect(output).toContain("diagnostic:");
+    expect(output).not.toContain("not-a-worktree");
   });
 
   it("rejects workspace show tickets with path traversal before reading outside worktrees", async () => {
@@ -631,8 +697,7 @@ describe("run", () => {
       expect(worktreeList).not.toContain("REMOVE-LINKED-123");
     });
 
-    it("workspace remove succeeds even when managed repo directory is missing", async () => {
-      const { rmSync } = await import("node:fs");
+    it("refuses removal when the managed repo directory is missing", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
@@ -675,9 +740,376 @@ describe("run", () => {
 
       rmSync(managedRepoPath, { recursive: true, force: true });
 
+      const manifestPath = path.join(tempHome, "workspaces", "REMOVE-123.json");
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
-      expect(exitCode).toBe(0);
-      expect(existsSync(ticketDirectory)).toBe(false);
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "Cannot establish cleanliness",
+      );
+      expect(existsSync(ticketDirectory)).toBe(true);
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("rejects a manifest whose workspacePath targets another ticket directory", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "WRONG-WORKSPACE-PATH",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const expectedDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "WRONG-WORKSPACE-PATH",
+      );
+      const otherDirectory = path.join(tempHome, "worktrees", "OTHER-TICKET");
+      const sentinelPath = path.join(otherDirectory, "keep.txt");
+      mkdirSync(otherDirectory, { recursive: true });
+      writeFileSync(sentinelPath, "keep\n");
+
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "WRONG-WORKSPACE-PATH.json",
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.workspacePath = "OTHER-TICKET";
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli([
+        "workspace",
+        "remove",
+        "WRONG-WORKSPACE-PATH",
+      ]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "does not resolve to the expected ticket directory",
+      );
+      expect(existsSync(expectedDirectory)).toBe(true);
+      expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("rejects a workspacePath symlink escape before cleanup", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "WORKSPACE-SYMLINK",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const outsideDirectory = createTempDir("outpost-outside-workspace-");
+      const sentinelPath = path.join(outsideDirectory, "keep.txt");
+      writeFileSync(sentinelPath, "keep\n");
+      symlinkSync(
+        outsideDirectory,
+        path.join(tempHome, "worktrees", "escape-link"),
+        "dir",
+      );
+
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "WORKSPACE-SYMLINK.json",
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.workspacePath = "escape-link";
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+
+      const expectedDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "WORKSPACE-SYMLINK",
+      );
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli([
+        "workspace",
+        "remove",
+        "WORKSPACE-SYMLINK",
+      ]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "Path must remain within",
+      );
+      expect(existsSync(expectedDirectory)).toBe(true);
+      expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("rejects a managed repository symlink escape before cleanup", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "SYMLINK-ESCAPE",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const registry = readRegistry(tempHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+      const outsideManagedPath = path.join(
+        createTempDir("outpost-outside-managed-"),
+        "outside.git",
+      );
+      mkdirSync(outsideManagedPath, { recursive: true });
+      rmSync(managedRepoPath, { recursive: true, force: true });
+      symlinkSync(outsideManagedPath, managedRepoPath, "dir");
+
+      const ticketDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "SYMLINK-ESCAPE",
+      );
+      const worktreePath = path.join(ticketDirectory, registry.repos[0].name);
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "SYMLINK-ESCAPE.json",
+      );
+
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "SYMLINK-ESCAPE"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "Path must remain within",
+      );
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("rejects a worktree symlink escape before cleanup", async () => {
+      const { execFileSync } = await import("node:child_process");
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "WORKTREE-SYMLINK",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const registry = readRegistry(tempHome);
+      const managedRepoPath = registry.repos[0].managedRepoPath;
+      const worktreePath = path.join(
+        tempHome,
+        "worktrees",
+        "WORKTREE-SYMLINK",
+        registry.repos[0].name,
+      );
+      execFileSync("git", [
+        "--git-dir",
+        managedRepoPath,
+        "worktree",
+        "remove",
+        worktreePath,
+      ]);
+
+      const outsideDirectory = createTempDir("outpost-outside-worktree-");
+      const sentinelPath = path.join(outsideDirectory, "keep.txt");
+      writeFileSync(sentinelPath, "keep\n");
+      symlinkSync(outsideDirectory, worktreePath, "dir");
+
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "WORKTREE-SYMLINK.json",
+      );
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli([
+        "workspace",
+        "remove",
+        "WORKTREE-SYMLINK",
+      ]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "Path must remain within",
+      );
+      expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("preserves residual workspace entries and returns a nonzero partial result", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "RESIDUAL-REMOVE",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      const ticketDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "RESIDUAL-REMOVE",
+      );
+      const residualPath = path.join(ticketDirectory, "keep.txt");
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "RESIDUAL-REMOVE.json",
+      );
+      writeFileSync(residualPath, "keep\n");
+
+      const infoSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "RESIDUAL-REMOVE"]);
+      const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
+
+      expect(exitCode).toBe(1);
+      expect(output).toContain("status: partial");
+      expect(output).toContain("residual entries");
+      expect(readFileSync(residualPath, "utf8")).toBe("keep\n");
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("refuses cleanup when git status fails", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "STATUS-FAILURE",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      await installFailingGitShim(tempHome, "status");
+
+      const ticketDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "STATUS-FAILURE",
+      );
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "STATUS-FAILURE.json",
+      );
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "STATUS-FAILURE"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "Failed to establish cleanliness",
+      );
+      expect(existsSync(ticketDirectory)).toBe(true);
+      expect(existsSync(manifestPath)).toBe(true);
+    });
+
+    it("returns nonzero partial status when git worktree cleanup fails", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "CLEANUP-FAILURE",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+
+      await installFailingGitShim(tempHome, "worktree-remove");
+
+      const ticketDirectory = path.join(
+        tempHome,
+        "worktrees",
+        "CLEANUP-FAILURE",
+      );
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "CLEANUP-FAILURE.json",
+      );
+      const infoSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "CLEANUP-FAILURE"]);
+      const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
+
+      expect(exitCode).toBe(1);
+      expect(output).toContain("status: partial");
+      expect(output).toContain("git exited with status 43");
+      expect(existsSync(ticketDirectory)).toBe(true);
+      expect(existsSync(manifestPath)).toBe(true);
     });
   });
 
@@ -766,6 +1198,76 @@ describe("run", () => {
 
       const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(output).toContain("- MISSING-123 [missing]");
+    });
+
+    it("prioritizes invalid ownership over an earlier missing worktree", async () => {
+      const { execFileSync } = await import("node:child_process");
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      const beta = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli(["repo", "add", beta.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "STATUS-PRIORITY",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+        "--repo",
+        localRepoId(beta.tempRemote),
+      ]);
+
+      const registry = readRegistry(tempHome);
+      const alphaRepo = registry.repos.find(
+        (repo) => repo.id === localRepoId(alpha.tempRemote),
+      ) as NonNullable<(typeof registry.repos)[number]>;
+      const alphaWorktree = path.join(
+        tempHome,
+        "worktrees",
+        "STATUS-PRIORITY",
+        alphaRepo.name,
+      );
+      execFileSync(
+        "git",
+        [
+          "--git-dir",
+          alphaRepo.managedRepoPath,
+          "worktree",
+          "remove",
+          alphaWorktree,
+        ],
+        { encoding: "utf8" },
+      );
+
+      const fakeManagedPath = path.join(tempHome, "repos", "fake.git");
+      execFileSync("git", ["init", "--bare", fakeManagedPath]);
+
+      const manifestPath = path.join(
+        tempHome,
+        "workspaces",
+        "STATUS-PRIORITY.json",
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.repositories[1].managedPath = path.relative(
+        path.join(tempHome, "repos"),
+        fakeManagedPath,
+      );
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+
+      const infoSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "list"]);
+      const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
+
+      expect(exitCode).toBe(0);
+      expect(output).toContain("- STATUS-PRIORITY [invalid]");
     });
 
     it("reports invalid status for corrupt JSON manifest", async () => {
@@ -1178,7 +1680,7 @@ describe("run", () => {
       const exitCode = await runCli(["workspace", "remove", "LOCK-REL-123"]);
       expect(exitCode).toBe(0);
 
-      const lockPath = path.join(tempHome, "workspaces", ".LOCK-REL-123.lock");
+      const lockPath = path.join(tempHome, "workspaces", ".lock-rel-123.lock");
       expect(existsSync(lockPath)).toBe(false);
     });
 
@@ -1227,7 +1729,7 @@ describe("run", () => {
       const exitCode = await runCli(["workspace", "remove", "LOCK-FAIL-123"]);
       expect(exitCode).toBe(1);
 
-      const lockPath = path.join(tempHome, "workspaces", ".LOCK-FAIL-123.lock");
+      const lockPath = path.join(tempHome, "workspaces", ".lock-fail-123.lock");
       expect(existsSync(lockPath)).toBe(false);
     });
 

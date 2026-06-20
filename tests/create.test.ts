@@ -673,9 +673,12 @@ describe("run", () => {
 
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
-    mkdirSync(path.join(tempHome, "worktrees", "TICKET-321"), {
+    const ticketDirectory = path.join(tempHome, "worktrees", "TICKET-321");
+    mkdirSync(ticketDirectory, {
       recursive: true,
     });
+    const sentinelPath = path.join(ticketDirectory, "keep.txt");
+    writeFileSync(sentinelPath, "keep\n");
 
     const errorSpy = vi
       .spyOn(console, "error")
@@ -694,8 +697,9 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `A workspace already exists for ticket TICKET-321: ${path.join(tempHome, "worktrees", "TICKET-321")}\nRemove that workspace directory or choose a different ticket.`,
+      `A workspace already exists for ticket TICKET-321: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`,
     );
+    expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
   });
 
   it("creates the expected worktree path and branch layout", async () => {
@@ -933,7 +937,7 @@ describe("run", () => {
 
     const manifestPath = path.join(tempHome, "workspaces", "DRY-NOTHING.json");
     const ticketDir = path.join(tempHome, "worktrees", "DRY-NOTHING");
-    const lockPath = path.join(tempHome, "workspaces", ".DRY-NOTHING.lock");
+    const lockPath = path.join(tempHome, "workspaces", ".dry-nothing.lock");
 
     expect(existsSync(manifestPath)).toBe(false);
     expect(existsSync(ticketDir)).toBe(false);
@@ -976,7 +980,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
 
     const manifestPath = path.join(tempHome, "workspaces", "ROLLBACK-1.json");
-    const lockPath = path.join(tempHome, "workspaces", ".ROLLBACK-1.lock");
+    const lockPath = path.join(tempHome, "workspaces", ".rollback-1.lock");
 
     expect(existsSync(manifestPath)).toBe(false);
     expect(existsSync(lockPath)).toBe(false);
@@ -1058,6 +1062,49 @@ describe("run", () => {
     expect(errorOutput).toContain("Simulated manifest write failure");
   });
 
+  it("preserves residual files created during a failed create rollback", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const ticketDirectory = path.join(
+      tempHome,
+      "worktrees",
+      "ROLLBACK-RESIDUAL",
+    );
+    const sentinelPath = path.join(ticketDirectory, "keep.txt");
+
+    vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
+      writeFileSync(sentinelPath, "keep\n");
+      return Effect.fail(
+        new WorkspaceManifest.ManifestError({
+          message: "Simulated manifest write failure",
+        }),
+      );
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "ROLLBACK-RESIDUAL",
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+    expect(
+      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
+    ).toBe(false);
+  });
+
   it("rejects concurrent create for the same ticket", async () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
@@ -1097,6 +1144,65 @@ describe("run", () => {
 
     expect(successCodes.length).toBe(1);
     expect(failCodes.length).toBe(1);
+
+    const manifestPath = path.join(tempHome, "workspaces", "CONCURRENT.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const worktreePath = path.join(
+      tempHome,
+      "worktrees",
+      "CONCURRENT",
+      path.basename(alpha.tempRepo),
+    );
+
+    expect(existsSync(worktreePath)).toBe(true);
+    expect(await currentBranch(worktreePath)).toBe(manifest.branch);
+  });
+
+  it("serializes concurrent portable ticket aliases", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const [upperExitCode, lowerExitCode] = await Promise.all([
+      runCli([
+        "create",
+        "--ticket",
+        "PORTABLE-ALIAS",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]),
+      runCli([
+        "create",
+        "--ticket",
+        "portable-alias",
+        "--type",
+        "fix",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]),
+    ]);
+
+    expect([upperExitCode, lowerExitCode].sort()).toEqual([0, 1]);
+
+    const manifests = ["PORTABLE-ALIAS", "portable-alias"].filter((ticket) =>
+      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
+    );
+    expect(manifests).toHaveLength(1);
+
+    const winningTicket = manifests[0];
+    const worktreePath = path.join(
+      tempHome,
+      "worktrees",
+      winningTicket,
+      path.basename(alpha.tempRepo),
+    );
+    expect(existsSync(worktreePath)).toBe(true);
   });
 
   it("reports clear diagnostic when a lock exists for the ticket", async () => {
@@ -1110,7 +1216,7 @@ describe("run", () => {
 
     const workspacesDir = path.join(tempHome, "workspaces");
     mkdirSync(workspacesDir, { recursive: true });
-    const lockPath = path.join(workspacesDir, ".STALE-LOCK.lock");
+    const lockPath = path.join(workspacesDir, ".stale-lock.lock");
     writeFileSync(lockPath, "", { flag: "wx" });
 
     const errorSpy = vi
@@ -1252,33 +1358,45 @@ describe("run", () => {
     expect(errorSpy.mock.calls[0]?.[0]).toContain("already exists for repo");
   });
 
-  it("rejects when repos share the same lock key via portable path collision", async () => {
+  it("rejects repos whose worktree names have a real case collision", async () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
 
-    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    const alpha = await createManagedRepoFixture({
+      defaultBranch: "main",
+      repoName: "CaseRepo",
+    });
+    const beta = await createManagedRepoFixture({
+      defaultBranch: "main",
+      repoName: "caserepo",
+    });
     await runCli(["repo", "add", alpha.tempRepo]);
+    await runCli(["repo", "add", beta.tempRepo]);
 
-    await runCli([
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
       "create",
       "--ticket",
-      "collision-test",
+      "WORKTREE-CASE-COLLISION",
       "--type",
       "feat",
       "--repo",
       localRepoId(alpha.tempRemote),
+      "--repo",
+      localRepoId(beta.tempRemote),
     ]);
 
-    const manifestPath = path.join(
-      tempHome,
-      "workspaces",
-      "collision-test.json",
+    expect(exitCode).toBe(1);
+    expect(errorSpy.mock.calls[0]?.[0]).toContain(
+      "same portable worktree path",
     );
-    expect(existsSync(manifestPath)).toBe(true);
-
-    const lockingWorkspace = path.join(tempHome, "worktrees", "collision-test");
-    expect(existsSync(lockingWorkspace)).toBe(true);
+    expect(
+      existsSync(path.join(tempHome, "worktrees", "WORKTREE-CASE-COLLISION")),
+    ).toBe(false);
   });
 });
