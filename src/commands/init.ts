@@ -12,6 +12,7 @@ import {
 } from "../config.js";
 import { writeJsonFileAtomic } from "../store.js";
 import type { CommandOutput } from "../types.js";
+import { ensureWorkspaceStateRoot } from "../workspace-manifest.js";
 
 export class InitError extends Schema.TaggedError<InitError>()("InitError", {
   message: Schema.String,
@@ -61,6 +62,15 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to create repos root ${config.reposRoot}: ${error.message}`,
+          }),
+      ),
+    );
+
+    yield* ensureWorkspaceStateRoot(outpostHome).pipe(
+      Effect.mapError(
+        (error) =>
+          new InitError({
+            message: `Failed to create workspace state root: ${error.message}`,
           }),
       ),
     );

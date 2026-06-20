@@ -1,3 +1,5 @@
+import { rmdir } from "node:fs/promises";
+
 import * as Command from "@effect/platform/Command";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as FileSystem from "@effect/platform/FileSystem";
@@ -8,8 +10,20 @@ import { Effect, Schema } from "effect";
 import * as CreatePrompt from "./create-prompt.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
 import type { RepoRecord } from "../config.js";
-import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
+import {
+  getCanonicalPortablePathKey,
+  resolvePathWithinRoot,
+  validatePathSegment,
+} from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import {
+  acquireTicketLock,
+  getWorkspaceStateRoot,
+  manifestExists,
+  releaseTicketLock,
+  writeManifest,
+} from "../workspace-manifest.js";
+import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()(
   "CreateError",
@@ -48,33 +62,46 @@ type CreatePlan = {
   startPoint: string;
 };
 
+type CreatedArtifacts = {
+  branches: Array<CreatePlan>;
+  worktrees: Array<CreatePlan>;
+  ticketDirectory: boolean;
+};
+
 function ensureUniqueWorktreePaths(
   plans: ReadonlyArray<CreatePlan>,
-): Effect.Effect<void, CreateError> {
-  const repoIdsByPath = new Map<string, Array<string>>();
+): Effect.Effect<void, CreateError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const pathsByPortableKey = new Map<
+      string,
+      { worktreePath: string; repoIds: Array<string> }
+    >();
 
-  for (const plan of plans) {
-    const repoIds = repoIdsByPath.get(plan.worktreePath);
+    for (const plan of plans) {
+      const portableKey = yield* getCanonicalPortablePathKey(plan.worktreePath);
+      const existing = pathsByPortableKey.get(portableKey);
 
-    if (repoIds) {
-      repoIds.push(plan.repoId);
-      continue;
+      if (existing) {
+        existing.repoIds.push(plan.repoId);
+        continue;
+      }
+
+      pathsByPortableKey.set(portableKey, {
+        worktreePath: plan.worktreePath,
+        repoIds: [plan.repoId],
+      });
     }
 
-    repoIdsByPath.set(plan.worktreePath, [plan.repoId]);
-  }
-
-  for (const [worktreePath, repoIds] of repoIdsByPath.entries()) {
-    if (repoIds.length > 1) {
-      return Effect.fail(
-        new CreateError({
-          message: `Selected repos would create the same worktree path: ${worktreePath} (repo ids: ${repoIds.join(", ")}).`,
-        }),
-      );
+    for (const { worktreePath, repoIds } of pathsByPortableKey.values()) {
+      if (repoIds.length > 1) {
+        return yield* Effect.fail(
+          new CreateError({
+            message: `Selected repos would create the same portable worktree path: ${worktreePath} (repo ids: ${repoIds.join(", ")}).`,
+          }),
+        );
+      }
     }
-  }
-
-  return Effect.void;
+  });
 }
 
 function gitCommand(...args: ReadonlyArray<string>) {
@@ -489,6 +516,31 @@ function buildCreatePlan(
   });
 }
 
+function createBranch(
+  plan: CreatePlan,
+): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
+  return Command.exitCode(
+    gitCommand(
+      "--git-dir",
+      plan.managedRepoPath,
+      "branch",
+      plan.branch,
+      plan.startPoint,
+    ),
+  ).pipe(
+    Effect.mapError((error) => new CreateError({ message: error.message })),
+    Effect.flatMap((exitCode) =>
+      exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new CreateError({
+              message: `Failed to create branch ${plan.branch} for repo ${plan.repoId}.`,
+            }),
+          ),
+    ),
+  );
+}
+
 function createWorktree(
   plan: CreatePlan,
 ): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
@@ -498,10 +550,8 @@ function createWorktree(
       plan.managedRepoPath,
       "worktree",
       "add",
-      "-b",
-      plan.branch,
       plan.worktreePath,
-      plan.startPoint,
+      plan.branch,
     ),
   ).pipe(
     Effect.mapError((error) => new CreateError({ message: error.message })),
@@ -517,6 +567,203 @@ function createWorktree(
   );
 }
 
+function checkPortableTicketCollision(
+  outpostHome: string,
+  ticket: string,
+): Effect.Effect<void, CreateError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
+    const stateRootExists = yield* fs
+      .exists(stateRoot)
+      .pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+
+    if (!stateRootExists) {
+      return;
+    }
+
+    const entries = yield* fs
+      .readDirectory(stateRoot)
+      .pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+    const manifestFiles = entries.filter((entry) => entry.endsWith(".json"));
+    const targetFilePath = path.join(stateRoot, `${ticket}.json`);
+    const targetKey = yield* getCanonicalPortablePathKey(targetFilePath);
+
+    for (const file of manifestFiles) {
+      const candidatePath = path.join(stateRoot, file);
+      const candidateKey = yield* getCanonicalPortablePathKey(candidatePath);
+
+      if (candidateKey === targetKey) {
+        return yield* Effect.fail(
+          new CreateError({
+            message: `Ticket identity collision detected for ${ticket}: manifest ${file} has the same canonical path identity`,
+          }),
+        );
+      }
+    }
+  });
+}
+
+function rollbackCreatedArtifacts(
+  created: CreatedArtifacts,
+  ticketDirectory: string,
+  originalError: CreateError,
+): Effect.Effect<
+  never,
+  CreateError,
+  FileSystem.FileSystem | CommandExecutor.CommandExecutor
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const cleanupErrors: Array<string> = [];
+
+    for (const plan of [...created.worktrees].reverse()) {
+      yield* Command.exitCode(
+        gitCommand(
+          "--git-dir",
+          plan.managedRepoPath,
+          "worktree",
+          "remove",
+          "--force",
+          plan.worktreePath,
+        ),
+      ).pipe(
+        Effect.flatMap((exitCode) =>
+          exitCode === 0
+            ? Effect.void
+            : Effect.fail(`git worktree remove exited with status ${exitCode}`),
+        ),
+        Effect.mapError((error) =>
+          typeof error === "string" ? error : error.message,
+        ),
+        Effect.catchAll((message) => {
+          cleanupErrors.push(
+            `Failed to remove worktree ${plan.worktreePath}: ${message}`,
+          );
+          return Effect.void;
+        }),
+      );
+    }
+
+    for (const plan of [...created.branches].reverse()) {
+      yield* Command.exitCode(
+        gitCommand(
+          "--git-dir",
+          plan.managedRepoPath,
+          "branch",
+          "-D",
+          plan.branch,
+        ),
+      ).pipe(
+        Effect.flatMap((exitCode) =>
+          exitCode === 0
+            ? Effect.void
+            : Effect.fail(`git branch -D exited with status ${exitCode}`),
+        ),
+        Effect.mapError((error) =>
+          typeof error === "string" ? error : error.message,
+        ),
+        Effect.catchAll((message) => {
+          cleanupErrors.push(
+            `Failed to delete branch ${plan.branch} for ${plan.repoId}: ${message}`,
+          );
+          return Effect.void;
+        }),
+      );
+    }
+
+    if (created.ticketDirectory) {
+      const entries = yield* fs.readDirectory(ticketDirectory).pipe(
+        Effect.mapError((error) => error.message),
+        Effect.catchAll((message) => {
+          cleanupErrors.push(
+            `Failed to inspect ticket directory ${ticketDirectory}: ${message}`,
+          );
+          return Effect.succeed(undefined);
+        }),
+      );
+
+      if (entries?.length === 0) {
+        yield* Effect.tryPromise({
+          try: () => rmdir(ticketDirectory),
+          catch: (error) =>
+            error instanceof Error ? error.message : String(error),
+        }).pipe(
+          Effect.catchAll((message) => {
+            cleanupErrors.push(
+              `Failed to remove ticket directory ${ticketDirectory}: ${message}`,
+            );
+            return Effect.void;
+          }),
+        );
+      }
+    }
+
+    const message =
+      cleanupErrors.length > 0
+        ? `${originalError.message}\nRollback errors: ${cleanupErrors.join("; ")}`
+        : originalError.message;
+
+    return yield* Effect.fail(new CreateError({ message }));
+  });
+}
+
+function prepareCreate(
+  outpostHome: string,
+  ticket: string,
+  ticketDirectory: string,
+  selectedRepos: ReadonlyArray<RepoRecord>,
+  branchName: string,
+  base: string | undefined,
+): Effect.Effect<
+  ReadonlyArray<CreatePlan>,
+  CreateError,
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message })),
+    );
+
+    if (hasManifest) {
+      return yield* Effect.fail(
+        new CreateError({
+          message: `A workspace manifest already exists for ticket ${ticket}`,
+        }),
+      );
+    }
+
+    yield* checkPortableTicketCollision(outpostHome, ticket);
+
+    const ticketDirectoryExists = yield* fs
+      .exists(ticketDirectory)
+      .pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+
+    if (ticketDirectoryExists) {
+      return yield* Effect.fail(
+        new CreateError({
+          message: `A workspace already exists for ticket ${ticket}: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`,
+        }),
+      );
+    }
+
+    const plans = yield* Effect.forEach(selectedRepos, (repo) =>
+      buildCreatePlan(repo, ticketDirectory, branchName, base),
+    );
+
+    yield* ensureUniqueWorktreePaths(plans);
+    return plans;
+  });
+}
+
 export function runCreate(
   args: ReadonlyArray<string>,
   options: { interactive: boolean },
@@ -529,6 +776,8 @@ export function runCreate(
     const fs = yield* FileSystem.FileSystem;
     const parsedArgsInput = yield* parseCreateArgsInput(args);
 
+    const outpostHome = yield* resolveOutpostHome();
+
     let parsedArgs: CreateArgs;
 
     if (!hasMissingCreateArgs(parsedArgsInput)) {
@@ -539,16 +788,12 @@ export function runCreate(
         yield* requireCreateArgs(parsedArgsInput);
       }
 
-      const outpostHome = yield* resolveOutpostHome();
-      yield* loadConfig(outpostHome).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message })),
-      );
-      const registry = yield* loadRepoRegistry(outpostHome).pipe(
+      const earlyRegistry = yield* loadRepoRegistry(outpostHome).pipe(
         Effect.mapError((error) => new CreateError({ message: error.message })),
       );
       parsedArgs = yield* resolveCreateArgs(parsedArgsInput, {
         interactive: options.interactive,
-        availableRepos: registry.repos.map((repo) => ({
+        availableRepos: earlyRegistry.repos.map((repo) => ({
           id: repo.id,
           name: repo.name,
         })),
@@ -557,11 +802,8 @@ export function runCreate(
     }
 
     const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
-    if (parsedArgs.repoIds.length === 1) {
-      yield* validateBranchName(branchName);
-    }
+    yield* validateBranchName(branchName);
 
-    const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message })),
     );
@@ -572,63 +814,159 @@ export function runCreate(
       registry.repos,
       parsedArgs.repoIds,
     );
-    if (parsedArgs.repoIds.length > 1) {
-      yield* validateBranchName(branchName);
-    }
+
+    const workspacePath = parsedArgs.ticket;
     const ticketDirectory = yield* resolvePathWithinRoot(
       config.worktreesRoot,
-      parsedArgs.ticket,
+      workspacePath,
     ).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message })),
     );
-    const ticketDirectoryExists = yield* fs
-      .exists(ticketDirectory)
-      .pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message })),
+
+    if (parsedArgs.dryRun) {
+      const plans = yield* prepareCreate(
+        outpostHome,
+        parsedArgs.ticket,
+        ticketDirectory,
+        selectedRepos,
+        branchName,
+        parsedArgs.base,
       );
 
-    if (ticketDirectoryExists) {
-      return yield* Effect.fail(
-        new CreateError({
-          message: `A workspace already exists for ticket ${parsedArgs.ticket}: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`,
-        }),
-      );
+      return {
+        command: "create",
+        data: {
+          ticket: parsedArgs.ticket,
+          ticketDirectory,
+          type: parsedArgs.type,
+          branch: branchName,
+          dryRun: true,
+          worktrees: plans.map((plan) => ({
+            repoId: plan.repoId,
+            repoName: plan.repoName,
+            path: plan.worktreePath,
+            branch: plan.branch,
+            base: plan.base,
+          })),
+        },
+      } satisfies CommandOutput;
     }
 
-    const plans = yield* Effect.forEach(selectedRepos, (repo) =>
-      buildCreatePlan(repo, ticketDirectory, branchName, parsedArgs.base),
+    yield* acquireTicketLock(outpostHome, parsedArgs.ticket).pipe(
+      Effect.mapError((error) => {
+        if (
+          error.message.includes("EEXIST") ||
+          error.message.includes("already exists")
+        ) {
+          return new CreateError({
+            message: `Ticket ${parsedArgs.ticket} is locked by another operation. Wait for it to complete or remove the lock manually.`,
+          });
+        }
+        return new CreateError({ message: error.message });
+      }),
     );
 
-    yield* ensureUniqueWorktreePaths(plans);
+    const result = yield* Effect.gen(function* () {
+      const plans = yield* prepareCreate(
+        outpostHome,
+        parsedArgs.ticket,
+        ticketDirectory,
+        selectedRepos,
+        branchName,
+        parsedArgs.base,
+      );
+      const created: CreatedArtifacts = {
+        branches: [],
+        worktrees: [],
+        ticketDirectory: false,
+      };
 
-    if (!parsedArgs.dryRun) {
-      yield* fs
-        .makeDirectory(ticketDirectory, { recursive: true })
-        .pipe(
+      return yield* Effect.gen(function* () {
+        yield* fs
+          .makeDirectory(ticketDirectory)
+          .pipe(
+            Effect.mapError(
+              (error) => new CreateError({ message: error.message }),
+            ),
+          );
+        created.ticketDirectory = true;
+
+        for (const plan of plans) {
+          yield* createBranch(plan);
+          created.branches.push(plan);
+          yield* createWorktree(plan);
+          created.worktrees.push(plan);
+        }
+
+        const pathModule = yield* Path.Path;
+        const repositoryEntries: ReadonlyArray<RepositoryEntry> =
+          yield* Effect.forEach(
+            selectedRepos,
+            (repo, index) => {
+              const plan = plans[index];
+              return Effect.succeed({
+                id: repo.id,
+                name: repo.name,
+                base: plan.base,
+                managedPath: pathModule.relative(
+                  config.reposRoot,
+                  repo.managedRepoPath,
+                ),
+                worktreePath: pathModule.relative(
+                  ticketDirectory,
+                  plan.worktreePath,
+                ),
+              } satisfies RepositoryEntry);
+            },
+            { concurrency: 1 },
+          );
+
+        const manifest: Manifest = {
+          ticket: parsedArgs.ticket,
+          type: parsedArgs.type,
+          branch: branchName,
+          createdAt: new Date().toISOString(),
+          workspacePath,
+          repositories: [...repositoryEntries],
+        };
+
+        yield* writeManifest(outpostHome, manifest).pipe(
           Effect.mapError(
             (error) => new CreateError({ message: error.message }),
           ),
         );
 
-      yield* Effect.forEach(plans, createWorktree, { concurrency: 1 });
-    }
+        return {
+          command: "create",
+          data: {
+            ticket: parsedArgs.ticket,
+            ticketDirectory,
+            type: parsedArgs.type,
+            branch: branchName,
+            dryRun: false,
+            workspacePath,
+            worktrees: plans.map((plan) => ({
+              repoId: plan.repoId,
+              repoName: plan.repoName,
+              path: plan.worktreePath,
+              branch: plan.branch,
+              base: plan.base,
+            })),
+          },
+        } satisfies CommandOutput;
+      }).pipe(
+        Effect.catchAll((error) =>
+          rollbackCreatedArtifacts(created, ticketDirectory, error),
+        ),
+      );
+    }).pipe(
+      Effect.ensuring(
+        releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(
+          Effect.catchAll(() => Effect.void),
+        ),
+      ),
+    );
 
-    return {
-      command: "create",
-      data: {
-        ticket: parsedArgs.ticket,
-        ticketDirectory,
-        type: parsedArgs.type,
-        branch: branchName,
-        dryRun: parsedArgs.dryRun,
-        worktrees: plans.map((plan) => ({
-          repoId: plan.repoId,
-          repoName: plan.repoName,
-          path: plan.worktreePath,
-          branch: plan.branch,
-          base: plan.base,
-        })),
-      },
-    } satisfies CommandOutput;
+    return result;
   });
 }

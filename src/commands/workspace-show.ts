@@ -1,9 +1,18 @@
 import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Effect, Schema } from "effect";
+import { Either, Effect, Schema } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
+import {
+  deriveWorkspaceStatus,
+  getManifestFilePath,
+  readManifest,
+  resolveManagedPath,
+  resolveWorkspacePath,
+  resolveWorktreePath,
+  type WorkspaceStatus,
+} from "../workspace-manifest.js";
 import type { CommandOutput } from "../types.js";
 
 export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()(
@@ -37,75 +46,148 @@ export function runWorkspaceShow(
     );
 
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
         (error) => new WorkspaceShowError({ message: error.message }),
       ),
     );
-    const ticketDirectory = yield* resolvePathWithinRoot(
-      config.worktreesRoot,
-      ticket,
-    ).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceShowError({ message: error.message }),
-      ),
+
+    const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
+    const manifestResult = yield* readManifest(outpostHome, ticket).pipe(
+      Effect.either,
     );
-    const exists = yield* fs
-      .exists(ticketDirectory)
-      .pipe(
-        Effect.mapError(
-          (error) => new WorkspaceShowError({ message: error.message }),
-        ),
+
+    if (Either.isRight(manifestResult)) {
+      const manifest = manifestResult.right;
+      const status = yield* deriveWorkspaceStatus(
+        outpostHome,
+        config,
+        ticket,
+      ).pipe(
+        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus)),
       );
 
-    if (!exists) {
-      return yield* Effect.fail(
-        new WorkspaceShowError({
-          message: `Unknown workspace ticket: ${ticket}`,
-        }),
-      );
+      let ticketDirectory: string | undefined;
+      const workspacePathResult = yield* resolveWorkspacePath(
+        config.worktreesRoot,
+        manifest.workspacePath,
+      ).pipe(Effect.either);
+      if (Either.isRight(workspacePathResult)) {
+        ticketDirectory = workspacePathResult.right;
+      }
+
+      const worktrees: Array<Record<string, unknown>> = [];
+      for (const repo of manifest.repositories) {
+        const managedPathResult = yield* resolveManagedPath(
+          config.reposRoot,
+          repo.managedPath,
+        ).pipe(Effect.either);
+        const resolvedManagedPath = Either.isRight(managedPathResult)
+          ? managedPathResult.right
+          : undefined;
+
+        let resolvedWorktreePath: string | undefined;
+        if (ticketDirectory) {
+          const wtResult = yield* resolveWorktreePath(
+            ticketDirectory,
+            repo.worktreePath,
+          ).pipe(Effect.either);
+          if (Either.isRight(wtResult)) {
+            resolvedWorktreePath = wtResult.right;
+          }
+        }
+
+        const worktreeEntry: Record<string, unknown> = {
+          id: repo.id,
+          name: repo.name,
+          base: repo.base,
+          managedPath: repo.managedPath,
+          resolvedManagedPath,
+          worktreePath: repo.worktreePath,
+          resolvedWorktreePath,
+        };
+
+        if (resolvedWorktreePath) {
+          const worktreeExists = yield* fs
+            .exists(resolvedWorktreePath)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+          worktreeEntry.worktreeExists = worktreeExists;
+        }
+
+        if (resolvedManagedPath) {
+          const managedExists = yield* fs
+            .exists(resolvedManagedPath)
+            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+          worktreeEntry.managedExists = managedExists;
+        }
+
+        worktrees.push(worktreeEntry);
+      }
+
+      return {
+        command: "workspace show",
+        data: {
+          ticket: manifest.ticket,
+          ticketDirectory,
+          type: manifest.type,
+          branch: manifest.branch,
+          createdAt: manifest.createdAt,
+          workspacePath: manifest.workspacePath,
+          status,
+          manifestPath: manifestFilePath,
+          worktrees,
+        },
+      } satisfies CommandOutput;
     }
 
-    const entries = yield* fs
-      .readDirectory(ticketDirectory)
-      .pipe(
-        Effect.mapError(
-          (error) => new WorkspaceShowError({ message: error.message }),
-        ),
-      );
-    const worktrees = yield* Effect.forEach(entries, (entry) => {
-      const worktreePath = path.join(ticketDirectory, entry);
+    const manifestError = manifestResult.left;
+    const isNotFound = manifestError._tag === "ManifestNotFoundError";
 
-      return fs.stat(worktreePath).pipe(
-        Effect.mapError(
-          (error) => new WorkspaceShowError({ message: error.message }),
-        ),
-        Effect.map((info) =>
-          info.type === "Directory"
-            ? {
-                path: worktreePath,
-                repoName: entry,
-              }
-            : undefined,
-        ),
-      );
-    }).pipe(
-      Effect.map((items) =>
-        items
-          .filter((item) => item !== undefined)
-          .sort((left, right) => left.repoName.localeCompare(right.repoName)),
-      ),
+    if (!isNotFound) {
+      return {
+        command: "workspace show",
+        data: {
+          ticket,
+          status: "invalid",
+          manifestPath: manifestFilePath,
+          diagnostics: [manifestError.message],
+          worktrees: [],
+        },
+      } satisfies CommandOutput;
+    }
+
+    const ticketDirResult = yield* resolvePathWithinRoot(
+      config.worktreesRoot,
+      ticket,
+    ).pipe(Effect.either);
+
+    if (Either.isRight(ticketDirResult)) {
+      const ticketDir = ticketDirResult.right;
+      const exists = yield* fs
+        .exists(ticketDir)
+        .pipe(Effect.catchAll(() => Effect.succeed(false)));
+
+      if (exists) {
+        return {
+          command: "workspace show",
+          data: {
+            ticket,
+            ticketDirectory: ticketDir,
+            status: "unmanaged",
+            diagnostics: [
+              "No workspace manifest exists; directory contents are not treated as managed worktrees.",
+            ],
+            worktrees: [],
+          },
+        } satisfies CommandOutput;
+      }
+    }
+
+    return yield* Effect.fail(
+      new WorkspaceShowError({
+        message: `Unknown workspace ticket: ${ticket}`,
+      }),
     );
-
-    return {
-      command: "workspace show",
-      data: {
-        ticket,
-        ticketDirectory,
-        worktrees,
-      },
-    } satisfies CommandOutput;
   });
 }

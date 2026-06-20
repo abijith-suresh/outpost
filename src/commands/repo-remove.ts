@@ -1,6 +1,6 @@
 import * as FileSystem from "@effect/platform/FileSystem";
 import type * as Path from "@effect/platform/Path";
-import { Effect, Schema } from "effect";
+import { Console, Effect, Either, Schema } from "effect";
 
 import {
   loadConfig,
@@ -8,7 +8,14 @@ import {
   resolveOutpostHome,
   writeRepoRegistry,
 } from "../config.js";
+import { getCanonicalPortablePathKey } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import {
+  listManifestTickets,
+  readManifest,
+  resolveManagedPath,
+  scanWorktreesRoot,
+} from "../workspace-manifest.js";
 
 export class RepoRemoveError extends Schema.TaggedError<RepoRemoveError>()(
   "RepoRemoveError",
@@ -36,7 +43,7 @@ export function runRepoRemove(
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
 
-    yield* loadConfig(outpostHome).pipe(
+    const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message }),
       ),
@@ -53,6 +60,93 @@ export function runRepoRemove(
     if (!existingRepo) {
       return yield* Effect.fail(
         new RepoRemoveError({ message: `Unknown repo id: ${repoId}` }),
+      );
+    }
+
+    const tickets = yield* listManifestTickets(outpostHome).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message }),
+      ),
+    );
+
+    const referencingWorkspaces: Array<string> = [];
+    const uninspectableManifests: Array<string> = [];
+
+    for (const ticket of tickets) {
+      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(
+        Effect.either,
+      );
+
+      if (Either.isLeft(manifestResult)) {
+        uninspectableManifests.push(ticket);
+        continue;
+      }
+
+      const manifest = manifestResult.right;
+      let isReferencing = false;
+
+      for (const repo of manifest.repositories) {
+        if (repo.id === existingRepo.id) {
+          isReferencing = true;
+          break;
+        }
+
+        const resolvedManagedPathResult = yield* Effect.either(
+          resolveManagedPath(config.reposRoot, repo.managedPath),
+        );
+
+        if (Either.isRight(resolvedManagedPathResult)) {
+          const manifestPathKey = yield* getCanonicalPortablePathKey(
+            resolvedManagedPathResult.right,
+          );
+          const repoPathKey = yield* getCanonicalPortablePathKey(
+            existingRepo.managedRepoPath,
+          );
+
+          if (manifestPathKey === repoPathKey) {
+            isReferencing = true;
+            break;
+          }
+        }
+      }
+
+      if (isReferencing) {
+        referencingWorkspaces.push(ticket);
+      }
+    }
+
+    if (uninspectableManifests.length > 0) {
+      const manifestList = uninspectableManifests
+        .map((t) => `"${t}"`)
+        .join(", ");
+      return yield* Effect.fail(
+        new RepoRemoveError({
+          message: `Cannot remove repo ${existingRepo.id}: workspace manifest(s) for ${manifestList} could not be inspected and may still reference this repository`,
+        }),
+      );
+    }
+
+    if (referencingWorkspaces.length > 0) {
+      const wsList = referencingWorkspaces.map((t) => `"${t}"`).join(", ");
+      return yield* Effect.fail(
+        new RepoRemoveError({
+          message: `Cannot remove repo ${existingRepo.id}: referenced by workspace(s): ${wsList}`,
+        }),
+      );
+    }
+
+    const unmanagedTickets = yield* scanWorktreesRoot(
+      config.worktreesRoot,
+      outpostHome,
+    ).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message }),
+      ),
+    );
+
+    if (unmanagedTickets.length > 0) {
+      yield* Console.warn(
+        `Warning: ${unmanagedTickets.length} unmanaged workspace(s) found under worktreesRoot. They have no manifests and cannot reference repos, but consider cleaning them up.`,
       );
     }
 
