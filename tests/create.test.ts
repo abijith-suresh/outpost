@@ -1399,4 +1399,184 @@ describe("run", () => {
       existsSync(path.join(tempHome, "worktrees", "WORKTREE-CASE-COLLISION")),
     ).toBe(false);
   });
+
+  it("writes AGENTS.md to workspace directory on create", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "AGENTS-1",
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const ticketDirectory = path.join(tempHome, "worktrees", "AGENTS-1");
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    expect(existsSync(agentsPath)).toBe(true);
+
+    const content = readFileSync(agentsPath, "utf8");
+    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(
+      true,
+    );
+  });
+
+  it("AGENTS.md is written before the manifest", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "AGENTS-BEFORE",
+      "--type",
+      "fix",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const ticketDirectory = path.join(tempHome, "worktrees", "AGENTS-BEFORE");
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    const content = readFileSync(agentsPath, "utf8");
+
+    expect(content).toContain("AGENTS-BEFORE");
+    expect(content).toContain(path.basename(alpha.tempRepo));
+    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(
+      true,
+    );
+
+    const manifestPath = path.join(
+      tempHome,
+      "workspaces",
+      "AGENTS-BEFORE.json",
+    );
+    expect(existsSync(manifestPath)).toBe(true);
+  });
+
+  it("dry-run does not create AGENTS.md", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "DRY-AGENTS",
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+      "--dry-run",
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const ticketDirectory = path.join(tempHome, "worktrees", "DRY-AGENTS");
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    expect(existsSync(agentsPath)).toBe(false);
+  });
+
+  it("rollback deletes AGENTS.md when manifest write fails", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
+      return Effect.fail(
+        new WorkspaceManifest.ManifestError({
+          message: "Simulated manifest write failure",
+        }),
+      );
+    });
+
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "ROLLBACK-AGENTS",
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+    ]);
+
+    expect(exitCode).toBe(1);
+
+    const ticketDirectory = path.join(tempHome, "worktrees", "ROLLBACK-AGENTS");
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    expect(existsSync(agentsPath)).toBe(false);
+  });
+
+  it("rollback preserves residual files and removes AGENTS.md", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const ticketDirectory = path.join(
+      tempHome,
+      "worktrees",
+      "ROLLBACK-RESIDUAL-AGENTS",
+    );
+    const sentinelPath = path.join(ticketDirectory, "keep.txt");
+
+    vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
+      writeFileSync(sentinelPath, "keep\n");
+      return Effect.fail(
+        new WorkspaceManifest.ManifestError({
+          message: "Simulated manifest write failure",
+        }),
+      );
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "create",
+      "--ticket",
+      "ROLLBACK-RESIDUAL-AGENTS",
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(alpha.tempRemote),
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    expect(existsSync(agentsPath)).toBe(false);
+
+    expect(
+      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
+    ).toBe(false);
+  });
 });
