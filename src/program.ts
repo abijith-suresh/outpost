@@ -711,7 +711,9 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "workspace" && positionalArgs[1] === "remove") {
-    return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
+    return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3), {
+      interactive: options.interactive,
+    }).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }

@@ -9,6 +9,13 @@ import { Effect, Either, Schema, Stream } from "effect";
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import {
+  classifyAgentsOwnership,
+  deleteAgentsIfExists,
+  getAgentsBodyHash,
+  renderAgentsMarkdown,
+  validateAgentsFingerprint,
+} from "../workspace-agents.js";
+import {
   acquireTicketLock,
   deleteManifest,
   manifestExists,
@@ -43,6 +50,48 @@ function toMapError(error: unknown): WorkspaceRemoveError {
   });
 }
 
+export async function promptAgentsRemovalConsent(
+  ticket: string,
+  agentsFilePath: string,
+  ownership: "modified" | "foreign",
+): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
+
+  const message =
+    ownership === "modified"
+      ? `Workspace AGENTS.md has been modified. Delete it and continue removing workspace ${ticket}? [y/N] `
+      : `Workspace AGENTS.md is not managed by outpost. Delete it and continue removing workspace ${ticket}? [y/N] `;
+
+  return new Promise<boolean>((resolve) => {
+    let handled = false;
+
+    rl.on("SIGINT", () => {
+      handled = true;
+      rl.close();
+      resolve(false);
+    });
+
+    rl.question(message)
+      .then((answer: string) => {
+        if (handled) return;
+        handled = true;
+        rl.close();
+        const trimmed = answer.trim().toLowerCase();
+        resolve(trimmed === "y" || trimmed === "yes");
+      })
+      .catch(() => {
+        if (handled) return;
+        handled = true;
+        rl.close();
+        resolve(false);
+      });
+  });
+}
+
 function partialRemovalOutput(
   ticket: string,
   workspaceDir: string,
@@ -70,6 +119,7 @@ function partialRemovalOutput(
 export function runWorkspaceRemove(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
+  options: { interactive: boolean },
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
@@ -156,6 +206,58 @@ export function runWorkspaceRemove(
               config.worktreesRoot,
               manifest.workspacePath,
             ).pipe(Effect.mapError(toMapError));
+
+            // --- AGENTS.md classification ---
+            const agentsFilePath = yield* resolvePathWithinRoot(
+              workspaceDir,
+              "AGENTS.md",
+            ).pipe(Effect.mapError(toMapError));
+
+            const renderedContent = yield* renderAgentsMarkdown(
+              manifest,
+              config,
+            ).pipe(Effect.mapError(toMapError));
+            const expectedBodyHash = getAgentsBodyHash(renderedContent);
+
+            const ownership = yield* classifyAgentsOwnership(
+              agentsFilePath,
+              expectedBodyHash,
+            ).pipe(Effect.mapError(toMapError));
+
+            if (ownership === "foreign" || ownership === "modified") {
+              if (options.interactive) {
+                const consent = yield* Effect.tryPromise({
+                  try: () =>
+                    promptAgentsRemovalConsent(
+                      ticket as string,
+                      agentsFilePath,
+                      ownership,
+                    ),
+                  catch: (error) =>
+                    new WorkspaceRemoveError({
+                      message: `Consent prompt failed: ${String(error)}`,
+                    }),
+                });
+
+                if (!consent) {
+                  return yield* Effect.fail(
+                    new WorkspaceRemoveError({
+                      message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Delete AGENTS.md manually or approve its removal.`,
+                    }),
+                  );
+                }
+                // proceed
+              } else {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message:
+                      ownership === "modified"
+                        ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Delete it manually and rerun, or retry in interactive mode.`
+                        : `AGENTS.md at ${agentsFilePath} is not managed by outpost. Delete it manually and rerun, or retry in interactive mode.`,
+                  }),
+                );
+              }
+            }
 
             for (const repo of manifest.repositories) {
               const resolvedManagedPath = yield* resolveManagedPath(
@@ -296,6 +398,24 @@ export function runWorkspaceRemove(
                 diagnostics,
               );
             }
+
+            // --- Revalidate AGENTS.md fingerprint before deletion ---
+            const fingerprintChanged = yield* validateAgentsFingerprint(
+              agentsFilePath,
+              expectedBodyHash,
+            ).pipe(Effect.mapError(toMapError));
+
+            if (!fingerprintChanged) {
+              return yield* Effect.fail(
+                new WorkspaceRemoveError({
+                  message: `AGENTS.md at ${agentsFilePath} was modified concurrently during removal. Preserving file; manifest retained for retry.`,
+                }),
+              );
+            }
+
+            yield* deleteAgentsIfExists(workspaceDir).pipe(
+              Effect.mapError(toMapError),
+            );
 
             const dirExists = yield* fs
               .exists(workspaceDir)
