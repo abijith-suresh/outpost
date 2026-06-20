@@ -11,8 +11,6 @@ import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import {
   classifyAgentsOwnership,
   deleteAgentsIfExists,
-  getAgentsBodyHash,
-  renderAgentsMarkdown,
   validateAgentsFingerprint,
 } from "../workspace-agents.js";
 import {
@@ -213,15 +211,8 @@ export function runWorkspaceRemove(
               "AGENTS.md",
             ).pipe(Effect.mapError(toMapError));
 
-            const renderedContent = yield* renderAgentsMarkdown(
-              manifest,
-              config,
-            ).pipe(Effect.mapError(toMapError));
-            const expectedBodyHash = getAgentsBodyHash(renderedContent);
-
             const ownership = yield* classifyAgentsOwnership(
               agentsFilePath,
-              expectedBodyHash,
             ).pipe(Effect.mapError(toMapError));
 
             if (ownership === "foreign" || ownership === "modified") {
@@ -400,12 +391,11 @@ export function runWorkspaceRemove(
             }
 
             // --- Revalidate AGENTS.md fingerprint before deletion ---
-            const fingerprintChanged = yield* validateAgentsFingerprint(
+            const fingerprintValid = yield* validateAgentsFingerprint(
               agentsFilePath,
-              expectedBodyHash,
             ).pipe(Effect.mapError(toMapError));
 
-            if (!fingerprintChanged) {
+            if (!fingerprintValid) {
               return yield* Effect.fail(
                 new WorkspaceRemoveError({
                   message: `AGENTS.md at ${agentsFilePath} was modified concurrently during removal. Preserving file; manifest retained for retry.`,

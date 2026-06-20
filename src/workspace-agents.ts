@@ -129,7 +129,6 @@ export function getAgentsFilePath(
 
 export function classifyAgentsOwnership(
   filePath: string,
-  expectedBodyHash: string,
 ): Effect.Effect<AgentsOwnership, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -149,7 +148,8 @@ export function classifyAgentsOwnership(
     }
 
     const hash = match[1];
-    if (hash === expectedBodyHash) {
+    const actualHash = getAgentsBodyHash(content);
+    if (hash === actualHash) {
       return "generated";
     }
 
@@ -200,13 +200,7 @@ export function generateAgentsMarkdown(
       Effect.mapError((error) => new AgentsError({ message: error.message })),
     );
 
-    const body = renderedContent.slice(renderedContent.indexOf("\n") + 1);
-    const expectedBodyHash = computeSha256(body);
-
-    const ownership = yield* classifyAgentsOwnership(
-      agentsFilePath,
-      expectedBodyHash,
-    ).pipe(
+    const ownership = yield* classifyAgentsOwnership(agentsFilePath).pipe(
       Effect.mapError((error) => new AgentsError({ message: error.message })),
     );
 
@@ -244,7 +238,6 @@ export function deleteAgentsIfExists(
 
 export function validateAgentsFingerprint(
   filePath: string,
-  expectedBodyHash: string,
 ): Effect.Effect<boolean, never, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -267,7 +260,12 @@ export function validateAgentsFingerprint(
       /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
     const match = markerRegex.exec(content);
 
-    if (match?.[1] && match[1] === expectedBodyHash) {
+    if (!match?.[1]) {
+      return false;
+    }
+
+    const actualHash = getAgentsBodyHash(content);
+    if (match[1] === actualHash) {
       return true;
     }
 

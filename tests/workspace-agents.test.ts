@@ -266,9 +266,7 @@ describe("classifyAgentsOwnership", () => {
     const filePath = path.join(tempHome, "AGENTS.md");
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath, "abc").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("missing");
@@ -282,9 +280,7 @@ describe("classifyAgentsOwnership", () => {
     writeFileSync(filePath, `${AGENTS_MARKER_PREFIX}${bodyHash} -->\n${body}`);
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath, bodyHash).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("generated");
@@ -299,10 +295,7 @@ describe("classifyAgentsOwnership", () => {
     );
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(
-        filePath,
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      ).pipe(Effect.provide(NodeContext.layer)),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("modified");
@@ -314,9 +307,7 @@ describe("classifyAgentsOwnership", () => {
     writeFileSync(filePath, "# Some other content\n");
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath, "abc").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("foreign");
@@ -331,9 +322,7 @@ describe("classifyAgentsOwnership", () => {
     );
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath, "abc").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("foreign");
@@ -350,9 +339,7 @@ describe("classifyAgentsOwnership", () => {
     );
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath, bodyHash).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
     );
 
     expect(result).toBe("generated");
@@ -471,7 +458,7 @@ describe("validateAgentsFingerprint", () => {
     writeFileSync(filePath, `${AGENTS_MARKER_PREFIX}${bodyHash} -->\n${body}`);
 
     const result = await Effect.runPromise(
-      validateAgentsFingerprint(filePath, bodyHash).pipe(
+      validateAgentsFingerprint(filePath).pipe(
         Effect.provide(NodeContext.layer),
       ),
     );
@@ -488,10 +475,9 @@ describe("validateAgentsFingerprint", () => {
     );
 
     const result = await Effect.runPromise(
-      validateAgentsFingerprint(
-        filePath,
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      ).pipe(Effect.provide(NodeContext.layer)),
+      validateAgentsFingerprint(filePath).pipe(
+        Effect.provide(NodeContext.layer),
+      ),
     );
 
     expect(result).toBe(false);
@@ -502,7 +488,7 @@ describe("validateAgentsFingerprint", () => {
     const filePath = path.join(tempHome, "AGENTS.md");
 
     const result = await Effect.runPromise(
-      validateAgentsFingerprint(filePath, "abc").pipe(
+      validateAgentsFingerprint(filePath).pipe(
         Effect.provide(NodeContext.layer),
       ),
     );
@@ -525,7 +511,7 @@ describe("validateAgentsFingerprint", () => {
             readFileString: () =>
               Effect.fail(new Error("read error") as unknown as never),
           };
-          return yield* validateAgentsFingerprint(filePath, "abc").pipe(
+          return yield* validateAgentsFingerprint(filePath).pipe(
             Effect.provideService(FileSystem.FileSystem, failing),
           );
         }).pipe(Effect.provide(NodeContext.layer)),
