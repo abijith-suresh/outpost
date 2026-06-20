@@ -621,7 +621,7 @@ function rollbackCreatedArtifacts(
 ): Effect.Effect<
   never,
   CreateError,
-  FileSystem.FileSystem | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
