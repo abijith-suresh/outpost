@@ -37,7 +37,6 @@ export function runWorkspaceList(): Effect.Effect<
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
@@ -116,19 +115,17 @@ export function runWorkspaceList(): Effect.Effect<
     for (const dir of unmanagedDirs) {
       if (managedTicketSet.has(dir)) continue;
 
-      const childCount = yield* fs
-        .readDirectory(path.join(config.worktreesRoot, dir))
-        .pipe(Effect.catchAll(() => Effect.succeed([] as Array<string>)));
-
       unmanagedResults.push({
         ticket: dir,
         ticketDirectory: path.join(config.worktreesRoot, dir),
         type: undefined,
         branch: undefined,
         createdAt: undefined,
-        worktreeCount: childCount.length,
+        worktreeCount: 0,
         status: "unmanaged",
-        diagnostics: [],
+        diagnostics: [
+          "No workspace manifest exists; directory contents are not treated as managed worktrees.",
+        ],
       });
     }
 

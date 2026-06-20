@@ -867,6 +867,57 @@ describe("run", () => {
       expect(existsSync(manifestPath)).toBe(true);
     });
 
+    it("rejects a ticket directory symlink to another workspace", async () => {
+      const tempHome = createTempDir("outpost-test-");
+      process.env.OUTPOST_HOME = tempHome;
+
+      await runCli(["init"]);
+
+      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+      const beta = await createManagedRepoFixture({ defaultBranch: "main" });
+      await runCli(["repo", "add", alpha.tempRepo]);
+      await runCli(["repo", "add", beta.tempRepo]);
+      await runCli([
+        "create",
+        "--ticket",
+        "SOURCE-TICKET",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]);
+      await runCli([
+        "create",
+        "--ticket",
+        "TARGET-TICKET",
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(beta.tempRemote),
+      ]);
+
+      const sourceDirectory = path.join(tempHome, "worktrees", "SOURCE-TICKET");
+      const targetDirectory = path.join(tempHome, "worktrees", "TARGET-TICKET");
+      const sentinelPath = path.join(targetDirectory, "keep.txt");
+      writeFileSync(sentinelPath, "keep\n");
+      rmSync(sourceDirectory, { recursive: true, force: true });
+      symlinkSync(targetDirectory, sourceDirectory, "dir");
+
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "SOURCE-TICKET"]);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "does not resolve to the expected ticket directory",
+      );
+      expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
+      expect(
+        existsSync(path.join(tempHome, "workspaces", "SOURCE-TICKET.json")),
+      ).toBe(true);
+    });
+
     it("rejects a managed repository symlink escape before cleanup", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
@@ -1305,6 +1356,7 @@ describe("run", () => {
       const worktreesRoot = path.join(tempHome, "worktrees");
       const unmanagedDir = path.join(worktreesRoot, "UNMANAGED-123");
       mkdirSync(unmanagedDir, { recursive: true });
+      writeFileSync(path.join(unmanagedDir, "not-a-worktree.txt"), "keep\n");
 
       const infoSpy = vi
         .spyOn(console, "log")
@@ -1315,6 +1367,16 @@ describe("run", () => {
 
       const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
       expect(output).toContain("- UNMANAGED-123 [unmanaged]");
+      expect(output).toContain("worktrees: 0");
+      expect(output).toContain("directory contents are not treated");
+
+      infoSpy.mockClear();
+      const showExitCode = await runCli(["workspace", "show", "UNMANAGED-123"]);
+      expect(showExitCode).toBe(0);
+      const showOutput = infoSpy.mock.calls.map((call) => call[0]).join("\n");
+      expect(showOutput).toContain("status: unmanaged");
+      expect(showOutput).toContain("worktrees: 0");
+      expect(showOutput).not.toContain("not-a-worktree.txt");
     });
 
     it("list continues when one manifest is invalid but others are valid", async () => {

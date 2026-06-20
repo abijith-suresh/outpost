@@ -46,7 +46,6 @@ export function runWorkspaceShow(
     );
 
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
@@ -170,23 +169,16 @@ export function runWorkspaceShow(
         .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
       if (exists) {
-        const entries = yield* fs
-          .readDirectory(ticketDir)
-          .pipe(Effect.catchAll(() => Effect.succeed([] as Array<string>)));
-        const worktrees = entries
-          .sort((left, right) => left.localeCompare(right))
-          .map((entry) => ({
-            path: path.join(ticketDir, entry),
-            repoName: entry,
-          }));
-
         return {
           command: "workspace show",
           data: {
             ticket,
             ticketDirectory: ticketDir,
             status: "unmanaged",
-            worktrees,
+            diagnostics: [
+              "No workspace manifest exists; directory contents are not treated as managed worktrees.",
+            ],
+            worktrees: [],
           },
         } satisfies CommandOutput;
       }

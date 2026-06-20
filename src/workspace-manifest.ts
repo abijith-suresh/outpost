@@ -7,6 +7,7 @@ import { loadConfig } from "./config.js";
 import type { OutpostConfig } from "./config.js";
 import {
   getCanonicalPortablePathKey,
+  getPortablePathKey,
   resolvePathWithinRoot,
   validatePathSegment,
 } from "./path-safety.js";
@@ -150,6 +151,30 @@ function ensureCanonicalPathWithinRoot(
     }
 
     return resolvedPath;
+  });
+}
+
+function ensureWorkspaceMatchesTicket(
+  worktreesRoot: string,
+  ticket: string,
+  workspacePath: string,
+  workspaceDir: string,
+): Effect.Effect<void, ManifestError, FileSystem.FileSystem | Path.Path> {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const canonicalRoot = yield* resolveCanonicalPath(worktreesRoot);
+    const canonicalWorkspaceDir = yield* resolveCanonicalPath(workspaceDir);
+    const expectedWorkspaceDir = path.resolve(canonicalRoot, ticket);
+    const actualKey = yield* getPortablePathKey(canonicalWorkspaceDir);
+    const expectedKey = yield* getPortablePathKey(expectedWorkspaceDir);
+
+    if (actualKey !== expectedKey) {
+      return yield* Effect.fail(
+        new ManifestError({
+          message: `Manifest workspacePath ${workspacePath} does not resolve to the expected ticket directory ${path.resolve(worktreesRoot, ticket)}`,
+        }),
+      );
+    }
   });
 }
 
@@ -317,21 +342,12 @@ export function readManifest(
       config.worktreesRoot,
       manifest.workspacePath,
     );
-    const expectedWorkspaceDir = yield* resolveWorkspacePath(
+    yield* ensureWorkspaceMatchesTicket(
       config.worktreesRoot,
       ticket,
+      manifest.workspacePath,
+      workspaceDir,
     );
-    const canonicalWorkspaceDir = yield* resolveCanonicalPath(workspaceDir);
-    const canonicalExpectedWorkspaceDir =
-      yield* resolveCanonicalPath(expectedWorkspaceDir);
-
-    if (canonicalWorkspaceDir !== canonicalExpectedWorkspaceDir) {
-      return yield* Effect.fail(
-        new ManifestError({
-          message: `Manifest workspacePath ${manifest.workspacePath} does not resolve to the expected ticket directory ${expectedWorkspaceDir}`,
-        }),
-      );
-    }
 
     const repoIds = new Set<string>();
     const managedPathKeys = new Set<string>();
@@ -495,21 +511,12 @@ export function writeManifest(
       config.worktreesRoot,
       manifest.workspacePath,
     );
-    const expectedWorkspaceDir = yield* resolveWorkspacePath(
+    yield* ensureWorkspaceMatchesTicket(
       config.worktreesRoot,
       manifest.ticket,
+      manifest.workspacePath,
+      workspaceDir,
     );
-    const canonicalWorkspaceDir = yield* resolveCanonicalPath(workspaceDir);
-    const canonicalExpectedWorkspaceDir =
-      yield* resolveCanonicalPath(expectedWorkspaceDir);
-
-    if (canonicalWorkspaceDir !== canonicalExpectedWorkspaceDir) {
-      return yield* Effect.fail(
-        new ManifestError({
-          message: `Manifest workspacePath ${manifest.workspacePath} does not resolve to the expected ticket directory ${expectedWorkspaceDir}`,
-        }),
-      );
-    }
 
     for (let i = 0; i < manifest.repositories.length; i++) {
       const repo = manifest.repositories[i];
