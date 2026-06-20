@@ -10,8 +10,7 @@ import { loadConfig, resolveOutpostHome } from "../config.js";
 import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import {
   classifyAgentsOwnership,
-  deleteAgentsIfExists,
-  validateAgentsFingerprint,
+  deleteAgentsIfSnapshotMatches,
 } from "../workspace-agents.js";
 import {
   acquireTicketLock,
@@ -25,6 +24,10 @@ import {
   verifyWorktreeOwnership,
 } from "../workspace-manifest.js";
 import type { CommandOutput } from "../types.js";
+import {
+  promptAgentsRemovalConsent,
+  type AgentsRemovalPrompt,
+} from "./workspace-remove-prompt.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
   "WorkspaceRemoveError",
@@ -45,48 +48,6 @@ function gitCommand(...args: ReadonlyArray<string>) {
 function toMapError(error: unknown): WorkspaceRemoveError {
   return new WorkspaceRemoveError({
     message: error instanceof Error ? error.message : "Unknown workspace error",
-  });
-}
-
-export async function promptAgentsRemovalConsent(
-  ticket: string,
-  agentsFilePath: string,
-  ownership: "modified" | "foreign",
-): Promise<boolean> {
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stderr,
-  });
-
-  const message =
-    ownership === "modified"
-      ? `Workspace AGENTS.md has been modified. Delete it and continue removing workspace ${ticket}? [y/N] `
-      : `Workspace AGENTS.md is not managed by outpost. Delete it and continue removing workspace ${ticket}? [y/N] `;
-
-  return new Promise<boolean>((resolve) => {
-    let handled = false;
-
-    rl.on("SIGINT", () => {
-      handled = true;
-      rl.close();
-      resolve(false);
-    });
-
-    rl.question(message)
-      .then((answer: string) => {
-        if (handled) return;
-        handled = true;
-        rl.close();
-        const trimmed = answer.trim().toLowerCase();
-        resolve(trimmed === "y" || trimmed === "yes");
-      })
-      .catch(() => {
-        if (handled) return;
-        handled = true;
-        rl.close();
-        resolve(false);
-      });
   });
 }
 
@@ -117,7 +78,10 @@ function partialRemovalOutput(
 export function runWorkspaceRemove(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
-  options: { interactive: boolean },
+  options: {
+    interactive: boolean;
+    promptAgentsRemovalConsent?: AgentsRemovalPrompt;
+  },
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
@@ -211,19 +175,23 @@ export function runWorkspaceRemove(
               "AGENTS.md",
             ).pipe(Effect.mapError(toMapError));
 
-            const ownership = yield* classifyAgentsOwnership(
+            const agentsClassification = yield* classifyAgentsOwnership(
               agentsFilePath,
             ).pipe(Effect.mapError(toMapError));
+            const { ownership } = agentsClassification;
 
             if (ownership === "foreign" || ownership === "modified") {
               if (options.interactive) {
                 const consent = yield* Effect.tryPromise({
                   try: () =>
-                    promptAgentsRemovalConsent(
-                      ticket as string,
+                    (
+                      options.promptAgentsRemovalConsent ??
+                      promptAgentsRemovalConsent
+                    )({
+                      ticket,
                       agentsFilePath,
                       ownership,
-                    ),
+                    }),
                   catch: (error) =>
                     new WorkspaceRemoveError({
                       message: `Consent prompt failed: ${String(error)}`,
@@ -390,22 +358,23 @@ export function runWorkspaceRemove(
               );
             }
 
-            // --- Revalidate AGENTS.md fingerprint before deletion ---
-            const fingerprintValid = yield* validateAgentsFingerprint(
+            const agentsDeleteResult = yield* deleteAgentsIfSnapshotMatches(
               agentsFilePath,
+              agentsClassification.snapshot,
             ).pipe(Effect.mapError(toMapError));
 
-            if (!fingerprintValid) {
-              return yield* Effect.fail(
-                new WorkspaceRemoveError({
-                  message: `AGENTS.md at ${agentsFilePath} was modified concurrently during removal. Preserving file; manifest retained for retry.`,
-                }),
+            if (agentsDeleteResult === "mismatch") {
+              return partialRemovalOutput(
+                ticket,
+                workspaceDir,
+                worktreeNames,
+                completed,
+                ["AGENTS.md"],
+                [
+                  `AGENTS.md at ${agentsFilePath} changed after approval. Preserving file; manifest retained for retry.`,
+                ],
               );
             }
-
-            yield* deleteAgentsIfExists(workspaceDir).pipe(
-              Effect.mapError(toMapError),
-            );
 
             const dirExists = yield* fs
               .exists(workspaceDir)

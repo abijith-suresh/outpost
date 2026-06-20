@@ -1,9 +1,20 @@
 import { chmodSync, rmSync, symlinkSync } from "node:fs";
 
-import { Effect } from "effect";
+import * as FileSystem from "@effect/platform/FileSystem";
+import { NodeContext } from "@effect/platform-node";
+import { Effect, Exit } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
-import * as WorkspaceAgents from "../src/workspace-agents.ts";
+import {
+  makeAgentsRemovalPrompt,
+  type AgentsRemovalPrompt,
+  type PromptReadline,
+} from "../src/commands/workspace-remove-prompt.ts";
+import { runWorkspaceRemove } from "../src/commands/workspace-remove.ts";
+import {
+  AGENTS_MARKER_PREFIX,
+  computeSha256,
+} from "../src/workspace-agents.ts";
 
 import {
   createManagedRepoFixture,
@@ -12,7 +23,6 @@ import {
   path,
   readFileSync,
   readRegistry,
-  restoreTtyProperty,
   runCli,
   localRepoId,
   setupAfterEach,
@@ -22,17 +32,150 @@ import {
 
 setupAfterEach();
 
-const consentAnswer = { value: "y" };
+type PromptScenario = "decline" | "empty" | "eof" | "sigint" | "rejection";
 
-vi.mock("node:readline/promises", () => ({
-  createInterface: () => ({
-    question: vi
-      .fn()
-      .mockImplementation(() => Promise.resolve(consentAnswer.value)),
-    close: vi.fn(),
-    on: vi.fn(),
-  }),
-}));
+class RemovalPromptReadline implements PromptReadline {
+  private readonly listeners = new Map<"SIGINT" | "close", Array<() => void>>();
+
+  constructor(
+    private readonly scenario: PromptScenario | "yes",
+    private readonly onQuestion?: () => void,
+  ) {}
+
+  once(event: "SIGINT" | "close", listener: () => void): void {
+    const listeners = this.listeners.get(event) ?? [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
+  }
+
+  question(): Promise<string> {
+    this.onQuestion?.();
+
+    if (this.scenario === "eof" || this.scenario === "sigint") {
+      queueMicrotask(() =>
+        this.emit(this.scenario === "eof" ? "close" : "SIGINT"),
+      );
+      return new Promise(() => undefined);
+    }
+
+    if (this.scenario === "rejection") {
+      return Promise.reject(new Error("simulated question rejection"));
+    }
+
+    return Promise.resolve(
+      this.scenario === "yes" ? "yes" : this.scenario === "empty" ? "" : "no",
+    );
+  }
+
+  close(): void {
+    this.emit("close");
+  }
+
+  private emit(event: "SIGINT" | "close"): void {
+    const listeners = this.listeners.get(event) ?? [];
+    this.listeners.delete(event);
+    for (const listener of listeners) {
+      listener();
+    }
+  }
+}
+
+function removalPrompt(
+  scenario: PromptScenario | "yes",
+  onQuestion?: () => void,
+): AgentsRemovalPrompt {
+  return makeAgentsRemovalPrompt({
+    createReadline: () => new RemovalPromptReadline(scenario, onQuestion),
+  });
+}
+
+function managedAgentsContent(body: string): string {
+  return `${AGENTS_MARKER_PREFIX}${computeSha256(body)} -->\n${body}`;
+}
+
+async function createAgentsWorkspace(ticket: string) {
+  const tempHome = createTempDir("outpost-test-");
+  process.env.OUTPOST_HOME = tempHome;
+  await runCli(["init"]);
+
+  const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+  await runCli(["repo", "add", repo.tempRepo]);
+  expect(
+    await runCli([
+      "create",
+      "--ticket",
+      ticket,
+      "--type",
+      "feat",
+      "--repo",
+      localRepoId(repo.tempRemote),
+    ]),
+  ).toBe(0);
+
+  const registry = readRegistry(tempHome);
+  const managedRepoPath = registry.repos[0].managedRepoPath;
+  const ticketDirectory = path.join(tempHome, "worktrees", ticket);
+  const worktreePath = path.join(ticketDirectory, path.basename(repo.tempRepo));
+
+  return {
+    agentsPath: path.join(ticketDirectory, "AGENTS.md"),
+    branch: `feat/${ticket}`,
+    lockPath: path.join(
+      tempHome,
+      "workspaces",
+      `.${ticket.toLowerCase()}.lock`,
+    ),
+    managedRepoPath,
+    manifestPath: path.join(tempHome, "workspaces", `${ticket}.json`),
+    tempHome,
+    ticket,
+    ticketDirectory,
+    worktreePath,
+  };
+}
+
+async function runInteractiveWorkspaceRemove(
+  ticket: string,
+  prompt: AgentsRemovalPrompt,
+) {
+  return Effect.runPromise(
+    Effect.exit(
+      runWorkspaceRemove(ticket, [], {
+        interactive: true,
+        promptAgentsRemovalConsent: prompt,
+      }).pipe(Effect.provide(NodeContext.layer)),
+    ),
+  );
+}
+
+async function expectWorkspaceIntact(
+  fixture: Awaited<ReturnType<typeof createAgentsWorkspace>>,
+  agentsContent: string,
+) {
+  const { execFileSync } = await import("node:child_process");
+
+  expect(readFileSync(fixture.agentsPath, "utf8")).toBe(agentsContent);
+  expect(existsSync(fixture.manifestPath)).toBe(true);
+  expect(existsSync(fixture.ticketDirectory)).toBe(true);
+  expect(existsSync(fixture.worktreePath)).toBe(true);
+  expect(existsSync(fixture.lockPath)).toBe(false);
+  expect(() =>
+    execFileSync("git", [
+      "--git-dir",
+      fixture.managedRepoPath,
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/heads/${fixture.branch}`,
+    ]),
+  ).not.toThrow();
+  const registrations = execFileSync(
+    "git",
+    ["--git-dir", fixture.managedRepoPath, "worktree", "list", "--porcelain"],
+    { encoding: "utf8" },
+  );
+  expect(registrations).toContain(`worktree ${fixture.worktreePath}`);
+}
 
 async function installFailingGitShim(
   tempHome: string,
@@ -1179,542 +1322,178 @@ describe("run", () => {
       expect(existsSync(manifestPath)).toBe(true);
     });
 
-    it("deletes AGENTS.md automatically when generated", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
+    it("deletes an unchanged generated AGENTS.md", async () => {
+      const fixture = await createAgentsWorkspace("AGENT-DEL-001");
 
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "AGENT-DEL-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(tempHome, "worktrees", "AGENT-DEL-001");
-      const agentsPath = path.join(ticketDirectory, "AGENTS.md");
-      writeFileSync(
-        agentsPath,
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Test AGENTS.md\n`,
-      );
-
-      vi.spyOn(WorkspaceAgents, "renderAgentsMarkdown").mockImplementation(() =>
-        Effect.succeed(
-          `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Test AGENTS.md\n`,
-        ),
-      );
-      vi.spyOn(WorkspaceAgents, "classifyAgentsOwnership").mockImplementation(
-        () => Effect.succeed("generated"),
-      );
-      vi.spyOn(WorkspaceAgents, "validateAgentsFingerprint").mockImplementation(
-        () => Effect.succeed(true),
-      );
-
-      expect(existsSync(agentsPath)).toBe(true);
-
-      const exitCode = await runCli(["workspace", "remove", "AGENT-DEL-001"]);
-      expect(exitCode).toBe(0);
-      expect(existsSync(agentsPath)).toBe(false);
-      expect(existsSync(ticketDirectory)).toBe(false);
+      expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(0);
+      expect(existsSync(fixture.agentsPath)).toBe(false);
+      expect(existsSync(fixture.ticketDirectory)).toBe(false);
+      expect(existsSync(fixture.manifestPath)).toBe(false);
     });
 
-    it("continues removal when AGENTS.md is missing", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
+    it("continues removal when AGENTS.md remains missing", async () => {
+      const fixture = await createAgentsWorkspace("MISSING-AGENT-001");
+      rmSync(fixture.agentsPath);
 
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "MISSING-AGENT-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "MISSING-AGENT-001",
-      );
-      const agentsPath = path.join(ticketDirectory, "AGENTS.md");
-      if (existsSync(agentsPath)) {
-        rmSync(agentsPath);
-      }
-
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "MISSING-AGENT-001",
-      ]);
-      expect(exitCode).toBe(0);
-      expect(existsSync(ticketDirectory)).toBe(false);
+      expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(0);
+      expect(existsSync(fixture.ticketDirectory)).toBe(false);
     });
 
-    it("interactive remove prompts for consent when AGENTS.md is modified", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "CONSENT-YES-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "CONSENT-YES-001",
-      );
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Modified\n`,
-      );
-
-      const stdinDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdin,
-        "isTTY",
-      );
-      const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdout,
-        "isTTY",
-      );
-      Object.defineProperty(process.stdin, "isTTY", {
-        configurable: true,
-        value: true,
-      });
-      Object.defineProperty(process.stdout, "isTTY", {
-        configurable: true,
-        value: true,
-      });
-
-      try {
-        consentAnswer.value = "y";
-        vi.spyOn(
-          WorkspaceAgents,
-          "validateAgentsFingerprint",
-        ).mockImplementation(() => Effect.succeed(true));
-
-        const exitCode = await runCli([
-          "workspace",
-          "remove",
-          "CONSENT-YES-001",
-        ]);
-        expect(exitCode).toBe(0);
-        expect(existsSync(ticketDirectory)).toBe(false);
-      } finally {
-        restoreTtyProperty(process.stdin, stdinDescriptor);
-        restoreTtyProperty(process.stdout, stdoutDescriptor);
-      }
-    });
-
-    it("interactive remove aborts when user declines consent", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "CONSENT-NO-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "CONSENT-NO-001",
-      );
-      const agentsPath = path.join(ticketDirectory, "AGENTS.md");
-      writeFileSync(
-        agentsPath,
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Modified\n`,
-      );
-
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "CONSENT-NO-001.json",
-      );
-
-      const stdinDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdin,
-        "isTTY",
-      );
-      const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdout,
-        "isTTY",
-      );
-      Object.defineProperty(process.stdin, "isTTY", {
-        configurable: true,
-        value: true,
-      });
-      Object.defineProperty(process.stdout, "isTTY", {
-        configurable: true,
-        value: true,
-      });
-
-      try {
-        consentAnswer.value = "n";
-
-        const errorSpy = vi
-          .spyOn(console, "error")
-          .mockImplementation(() => undefined);
-        const exitCode = await runCli([
-          "workspace",
-          "remove",
-          "CONSENT-NO-001",
-        ]);
-        expect(exitCode).toBe(1);
-        expect(errorSpy.mock.calls.map((c) => c[0]).join("\n")).toContain(
-          "removal was declined",
+    it.each([
+      ["modified", `${AGENTS_MARKER_PREFIX}${"0".repeat(64)} -->\n# changed\n`],
+      ["foreign", "# foreign workspace instructions\n"],
+    ])(
+      "interactive Yes removes an unchanged %s file",
+      async (_kind, content) => {
+        const fixture = await createAgentsWorkspace(
+          `CONSENT-YES-${_kind.toUpperCase()}`,
         );
-        expect(existsSync(agentsPath)).toBe(true);
-        expect(existsSync(manifestPath)).toBe(true);
-        expect(existsSync(ticketDirectory)).toBe(true);
-      } finally {
-        restoreTtyProperty(process.stdin, stdinDescriptor);
-        restoreTtyProperty(process.stdout, stdoutDescriptor);
-      }
-    });
+        writeFileSync(fixture.agentsPath, content);
 
-    it("non-interactive remove refuses modified AGENTS.md", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "NI-MOD-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(tempHome, "worktrees", "NI-MOD-001");
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Modified\n`,
-      );
-
-      const manifestPath = path.join(tempHome, "workspaces", "NI-MOD-001.json");
-
-      const stdinDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdin,
-        "isTTY",
-      );
-      const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-        process.stdout,
-        "isTTY",
-      );
-      Object.defineProperty(process.stdin, "isTTY", {
-        configurable: true,
-        value: false,
-      });
-      Object.defineProperty(process.stdout, "isTTY", {
-        configurable: true,
-        value: false,
-      });
-
-      try {
-        const errorSpy = vi
-          .spyOn(console, "error")
-          .mockImplementation(() => undefined);
-        const exitCode = await runCli(["workspace", "remove", "NI-MOD-001"]);
-        expect(exitCode).toBe(1);
-        expect(errorSpy.mock.calls.map((c) => c[0]).join("\n")).toContain(
-          "modified since generation",
+        const exit = await runInteractiveWorkspaceRemove(
+          fixture.ticket,
+          removalPrompt("yes"),
         );
-        expect(existsSync(ticketDirectory)).toBe(true);
-        expect(existsSync(manifestPath)).toBe(true);
-      } finally {
-        restoreTtyProperty(process.stdin, stdinDescriptor);
-        restoreTtyProperty(process.stdout, stdoutDescriptor);
-      }
+
+        expect(Exit.isSuccess(exit)).toBe(true);
+        if (Exit.isSuccess(exit)) {
+          expect(exit.value.exitCode ?? 0).toBe(0);
+        }
+        expect(existsSync(fixture.ticketDirectory)).toBe(false);
+        expect(existsSync(fixture.manifestPath)).toBe(false);
+      },
+    );
+
+    it.each([
+      ["decline", "decline"],
+      ["empty", "empty"],
+      ["EOF", "eof"],
+      ["SIGINT", "sigint"],
+      ["question rejection", "rejection"],
+    ] as const)(
+      "%s leaves every workspace artifact and Git registration intact",
+      async (_label, scenario) => {
+        const ticket = `CANCEL-${scenario.toUpperCase()}`;
+        const fixture = await createAgentsWorkspace(ticket);
+        const agentsContent = "# foreign workspace instructions\n";
+        writeFileSync(fixture.agentsPath, agentsContent);
+
+        const exit = await runInteractiveWorkspaceRemove(
+          ticket,
+          removalPrompt(scenario),
+        );
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        await expectWorkspaceIntact(fixture, agentsContent);
+      },
+    );
+
+    it("non-interactive removal refuses modified AGENTS.md before teardown", async () => {
+      const fixture = await createAgentsWorkspace("NI-MOD-001");
+      const agentsContent = `${AGENTS_MARKER_PREFIX}${"0".repeat(64)} -->\n# changed\n`;
+      writeFileSync(fixture.agentsPath, agentsContent);
+
+      expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(1);
+      await expectWorkspaceIntact(fixture, agentsContent);
     });
 
-    it("non-interactive JSON mode refuses foreign AGENTS.md", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
+    it("JSON removal refuses foreign AGENTS.md before teardown", async () => {
+      const fixture = await createAgentsWorkspace("NI-FOREIGN-001");
+      const agentsContent = "# foreign workspace instructions\n";
+      writeFileSync(fixture.agentsPath, agentsContent);
 
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "NI-FOREIGN-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "NI-FOREIGN-001",
-      );
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        "# Not an outpost AGENTS.md\nThis file is foreign.\n",
-      );
-
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "NI-FOREIGN-001.json",
-      );
-
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "NI-FOREIGN-001",
-        "--json",
-      ]);
-      expect(exitCode).toBe(1);
-      expect(errorSpy.mock.calls.map((c) => c[0]).join("\n")).toContain(
-        "not managed by outpost",
-      );
-      expect(existsSync(ticketDirectory)).toBe(true);
-      expect(existsSync(manifestPath)).toBe(true);
+      expect(
+        await runCli(["workspace", "remove", fixture.ticket, "--json"]),
+      ).toBe(1);
+      await expectWorkspaceIntact(fixture, agentsContent);
     });
 
-    it("fingerprint revalidation catches TOCTOU modification", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
+    it("preserves a different correctly hashed file created after approval", async () => {
+      const fixture = await createAgentsWorkspace("EXACT-APPROVAL-001");
+      writeFileSync(fixture.agentsPath, "# approved foreign file\n");
+      const replacement = managedAgentsContent("# replacement renderer\n");
 
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "TOCTOU-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(tempHome, "worktrees", "TOCTOU-001");
-
-      vi.spyOn(WorkspaceAgents, "validateAgentsFingerprint").mockImplementation(
-        () => Effect.succeed(false),
-      );
-
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const exitCode = await runCli(["workspace", "remove", "TOCTOU-001"]);
-      expect(exitCode).toBe(1);
-      expect(errorSpy.mock.calls.map((c) => c[0]).join("\n")).toContain(
-        "modified concurrently",
-      );
-      expect(existsSync(ticketDirectory)).toBe(true);
-    });
-
-    it("manifest is deleted last (after AGENTS.md)", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "ORDER-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(tempHome, "worktrees", "ORDER-001");
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Order test\n`,
-      );
-
-      const deletionCalls: string[] = [];
-      vi.spyOn(WorkspaceAgents, "classifyAgentsOwnership").mockImplementation(
-        () => Effect.succeed("generated"),
-      );
-      vi.spyOn(WorkspaceAgents, "validateAgentsFingerprint").mockImplementation(
-        () => Effect.succeed(true),
-      );
-      vi.spyOn(WorkspaceAgents, "deleteAgentsIfExists").mockImplementation(
-        () => {
-          deletionCalls.push("agents");
-          const agentsPath = path.join(ticketDirectory, "AGENTS.md");
-          if (existsSync(agentsPath)) rmSync(agentsPath);
-          return Effect.succeed(undefined);
-        },
-      );
-      vi.spyOn(WorkspaceAgents, "renderAgentsMarkdown").mockImplementation(() =>
-        Effect.succeed(
-          `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Order test\n`,
+      const exit = await runInteractiveWorkspaceRemove(
+        fixture.ticket,
+        removalPrompt("yes", () =>
+          writeFileSync(fixture.agentsPath, replacement),
         ),
       );
 
-      await runCli(["workspace", "remove", "ORDER-001"]);
+      expect(Exit.isSuccess(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.exitCode).toBe(1);
+        expect(exit.value.data.status).toBe("partial");
+        expect(exit.value.data.diagnostics).toContain(
+          `AGENTS.md at ${fixture.agentsPath} changed after approval. Preserving file; manifest retained for retry.`,
+        );
+      }
+      expect(readFileSync(fixture.agentsPath, "utf8")).toBe(replacement);
+      expect(existsSync(fixture.manifestPath)).toBe(true);
+      expect(existsSync(fixture.ticketDirectory)).toBe(true);
+      expect(existsSync(fixture.worktreePath)).toBe(false);
+    });
 
-      expect(deletionCalls).toContain("agents");
-      const manifestPath = path.join(tempHome, "workspaces", "ORDER-001.json");
-      expect(existsSync(manifestPath)).toBe(false);
+    it("deletes AGENTS.md before deleting the manifest", async () => {
+      const fixture = await createAgentsWorkspace("ORDER-001");
+      const removals: Array<string> = [];
+
+      const exit = await Effect.runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const trackingFs = {
+            ...fs,
+            remove: (filePath: string, options?: FileSystem.RemoveOptions) => {
+              if (
+                filePath === fixture.agentsPath ||
+                filePath === fixture.manifestPath
+              ) {
+                removals.push(filePath);
+              }
+              return fs.remove(filePath, options);
+            },
+          };
+
+          return yield* Effect.exit(
+            runWorkspaceRemove(fixture.ticket, [], {
+              interactive: false,
+            }).pipe(Effect.provideService(FileSystem.FileSystem, trackingFs)),
+          );
+        }).pipe(Effect.provide(NodeContext.layer)),
+      );
+
+      expect(Exit.isSuccess(exit)).toBe(true);
+      expect(removals).toEqual([fixture.agentsPath, fixture.manifestPath]);
+      expect(existsSync(fixture.ticketDirectory)).toBe(false);
+      expect(existsSync(fixture.manifestPath)).toBe(false);
     });
 
     it("worktree cleanup failure preserves AGENTS.md and manifest", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
+      const fixture = await createAgentsWorkspace("WTCF-AGENT-001");
+      const agentsContent = readFileSync(fixture.agentsPath, "utf8");
+      await installFailingGitShim(fixture.tempHome, "worktree-remove");
 
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "WTCF-AGENT-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      await installFailingGitShim(tempHome, "worktree-remove");
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "WTCF-AGENT-001",
-      );
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# WTCF\n`,
-      );
-
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "WTCF-AGENT-001.json",
-      );
-
-      vi.spyOn(WorkspaceAgents, "classifyAgentsOwnership").mockImplementation(
-        () => Effect.succeed("generated"),
-      );
-      vi.spyOn(WorkspaceAgents, "renderAgentsMarkdown").mockImplementation(() =>
-        Effect.succeed(
-          `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# WTCF\n`,
-        ),
-      );
-
-      const exitCode = await runCli(["workspace", "remove", "WTCF-AGENT-001"]);
-      expect(exitCode).toBe(1);
-      expect(existsSync(path.join(ticketDirectory, "AGENTS.md"))).toBe(true);
-      expect(existsSync(manifestPath)).toBe(true);
+      expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(1);
+      expect(readFileSync(fixture.agentsPath, "utf8")).toBe(agentsContent);
+      expect(existsSync(fixture.manifestPath)).toBe(true);
+      expect(existsSync(fixture.worktreePath)).toBe(true);
     });
 
-    it("residual files protected during removal with AGENTS.md", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-      await runCli([
-        "create",
-        "--ticket",
-        "RESIDUAL-AGENT-001",
-        "--type",
-        "feat",
-        "--repo",
-        localRepoId(alpha.tempRemote),
-      ]);
-
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "RESIDUAL-AGENT-001",
-      );
-      writeFileSync(
-        path.join(ticketDirectory, "AGENTS.md"),
-        `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Residual\n`,
-      );
-
-      const residualPath = path.join(ticketDirectory, "keep.txt");
+    it("retains residual files and the manifest after approved AGENTS cleanup", async () => {
+      const fixture = await createAgentsWorkspace("RESIDUAL-AGENT-001");
+      const residualPath = path.join(fixture.ticketDirectory, "keep.txt");
       writeFileSync(residualPath, "keep\n");
-
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "RESIDUAL-AGENT-001.json",
-      );
-
-      vi.spyOn(WorkspaceAgents, "classifyAgentsOwnership").mockImplementation(
-        () => Effect.succeed("generated"),
-      );
-      vi.spyOn(WorkspaceAgents, "validateAgentsFingerprint").mockImplementation(
-        () => Effect.succeed(true),
-      );
-      vi.spyOn(WorkspaceAgents, "renderAgentsMarkdown").mockImplementation(() =>
-        Effect.succeed(
-          `<!-- outpost:workspace-agents sha256=0000000000000000000000000000000000000000000000000000000000000000 -->\n# Residual\n`,
-        ),
-      );
-
       const infoSpy = vi
         .spyOn(console, "log")
         .mockImplementation(() => undefined);
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "RESIDUAL-AGENT-001",
-      ]);
-      const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
 
-      expect(exitCode).toBe(1);
-      expect(output).toContain("status: partial");
-      expect(output).toContain("residual entries");
+      expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(1);
+      expect(infoSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        "residual entries",
+      );
       expect(readFileSync(residualPath, "utf8")).toBe("keep\n");
-      expect(existsSync(manifestPath)).toBe(true);
+      expect(existsSync(fixture.agentsPath)).toBe(false);
+      expect(existsSync(fixture.manifestPath)).toBe(true);
     });
   });
 

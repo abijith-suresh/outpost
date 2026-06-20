@@ -1,8 +1,10 @@
+import * as FileSystem from "@effect/platform/FileSystem";
+import { NodeContext } from "@effect/platform-node";
+import { Effect, Exit } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
-import { Effect } from "effect";
-
 import * as CreatePrompt from "../src/commands/create-prompt.ts";
+import { runCreate } from "../src/commands/create.ts";
 import * as WorkspaceManifest from "../src/workspace-manifest.ts";
 
 import {
@@ -15,6 +17,7 @@ import {
   path,
   pushBranch,
   readFileSync,
+  readRegistry,
   restoreTtyProperty,
   runCli,
   localRepoId,
@@ -1531,6 +1534,10 @@ describe("run", () => {
     const ticketDirectory = path.join(tempHome, "worktrees", "ROLLBACK-AGENTS");
     const agentsPath = path.join(ticketDirectory, "AGENTS.md");
     expect(existsSync(agentsPath)).toBe(false);
+    expect(existsSync(ticketDirectory)).toBe(false);
+    expect(
+      existsSync(path.join(tempHome, "workspaces", "ROLLBACK-AGENTS.json")),
+    ).toBe(false);
   });
 
   it("rollback preserves residual files and removes AGENTS.md", async () => {
@@ -1578,5 +1585,140 @@ describe("run", () => {
     expect(
       existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
     ).toBe(false);
+  });
+
+  it("preserves and diagnoses AGENTS.md edited during rollback", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const ticket = "ROLLBACK-EDITED-AGENTS";
+    const ticketDirectory = path.join(tempHome, "worktrees", ticket);
+    const agentsPath = path.join(ticketDirectory, "AGENTS.md");
+    const editedContent = "# edited while manifest write failed\n";
+    vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
+      writeFileSync(agentsPath, editedContent);
+      return Effect.fail(
+        new WorkspaceManifest.ManifestError({
+          message: "Simulated manifest write failure",
+        }),
+      );
+    });
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    expect(
+      await runCli([
+        "create",
+        "--ticket",
+        ticket,
+        "--type",
+        "feat",
+        "--repo",
+        localRepoId(alpha.tempRemote),
+      ]),
+    ).toBe(1);
+
+    expect(readFileSync(agentsPath, "utf8")).toBe(editedContent);
+    expect(existsSync(ticketDirectory)).toBe(true);
+    expect(
+      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
+    ).toBe(false);
+    expect(
+      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
+    ).toBe(false);
+    expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
+      `Preserved AGENTS.md at ${agentsPath} because it changed during rollback`,
+    );
+
+    const { execFileSync } = await import("node:child_process");
+    const managedRepoPath = readRegistry(tempHome).repos[0].managedRepoPath;
+    expect(() =>
+      execFileSync("git", [
+        "--git-dir",
+        managedRepoPath,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        `refs/heads/feat/${ticket}`,
+      ]),
+    ).toThrow();
+  });
+
+  it("rolls back branches and worktrees when AGENTS.md writing fails", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const ticket = "AGENTS-WRITE-FAIL";
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const failingFs = {
+          ...fs,
+          writeFile: (
+            filePath: string,
+            data: Uint8Array,
+            options?: FileSystem.WriteFileOptions,
+          ) =>
+            path.basename(filePath).startsWith(".AGENTS.md.")
+              ? fs.writeFile(
+                  path.join(tempHome, "missing-parent", "write-failure"),
+                  data,
+                  options,
+                )
+              : fs.writeFile(filePath, data, options),
+        };
+
+        return yield* Effect.exit(
+          runCreate(
+            [
+              "--ticket",
+              ticket,
+              "--type",
+              "feat",
+              "--repo",
+              localRepoId(alpha.tempRemote),
+            ],
+            { interactive: false },
+          ).pipe(Effect.provideService(FileSystem.FileSystem, failingFs)),
+        );
+      }).pipe(Effect.provide(NodeContext.layer)),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    const ticketDirectory = path.join(tempHome, "worktrees", ticket);
+    expect(existsSync(ticketDirectory)).toBe(false);
+    expect(
+      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
+    ).toBe(false);
+
+    const { execFileSync } = await import("node:child_process");
+    const managedRepoPath = readRegistry(tempHome).repos[0].managedRepoPath;
+    expect(() =>
+      execFileSync("git", [
+        "--git-dir",
+        managedRepoPath,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        `refs/heads/feat/${ticket}`,
+      ]),
+    ).toThrow();
+    const registrations = execFileSync(
+      "git",
+      ["--git-dir", managedRepoPath, "worktree", "list", "--porcelain"],
+      { encoding: "utf8" },
+    );
+    expect(registrations).not.toContain(ticketDirectory);
   });
 });

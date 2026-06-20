@@ -1,14 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { link } from "node:fs/promises";
 
 import type { PlatformError } from "@effect/platform/Error";
 import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import { PathSafetyError, resolvePathWithinRoot } from "./path-safety.js";
-import { writeTextFileAtomic } from "./store.js";
 import type { Manifest } from "./workspace-manifest.js";
 import {
   resolveWorkspacePath,
@@ -16,6 +16,28 @@ import {
 } from "./workspace-manifest.js";
 
 export type AgentsOwnership = "missing" | "generated" | "modified" | "foreign";
+
+export type AgentsSnapshot =
+  | { readonly state: "missing" }
+  | {
+      readonly state: "present";
+      readonly bytes: Uint8Array;
+      readonly sha256: string;
+    };
+
+type PresentAgentsSnapshot = Extract<AgentsSnapshot, { state: "present" }>;
+
+export type AgentsClassification = {
+  readonly ownership: AgentsOwnership;
+  readonly snapshot: AgentsSnapshot;
+};
+
+export type GeneratedAgentsFile = {
+  readonly filePath: string;
+  readonly snapshot: PresentAgentsSnapshot;
+};
+
+export type AgentsDeleteResult = "deleted" | "unchanged-missing" | "mismatch";
 
 export class AgentsError extends Schema.TaggedError<AgentsError>()(
   "AgentsError",
@@ -26,12 +48,53 @@ export class AgentsError extends Schema.TaggedError<AgentsError>()(
 
 export const AGENTS_MARKER_PREFIX = "<!-- outpost:workspace-agents sha256=";
 
-export function computeSha256(body: string): string {
-  return createHash("sha256").update(body).digest("hex");
+const markerRegex =
+  /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
+
+export function computeSha256(content: string | Uint8Array): string {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 function jsonEncode(value: string): string {
   return JSON.stringify(value);
+}
+
+function presentSnapshot(bytes: Uint8Array): PresentAgentsSnapshot {
+  const snapshotBytes = Uint8Array.from(bytes);
+  return {
+    state: "present",
+    bytes: snapshotBytes,
+    sha256: computeSha256(snapshotBytes),
+  };
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) {
+    return false;
+  }
+
+  for (let index = 0; index < left.byteLength; index++) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function agentsSnapshotsEqual(
+  left: AgentsSnapshot,
+  right: AgentsSnapshot,
+): boolean {
+  if (left.state !== right.state) {
+    return false;
+  }
+
+  if (left.state === "missing" || right.state === "missing") {
+    return true;
+  }
+
+  return bytesEqual(left.bytes, right.bytes);
 }
 
 function resolveAgentsMarkdownWorkspaceDir(
@@ -127,52 +190,85 @@ export function getAgentsFilePath(
   return resolvePathWithinRoot(workspaceDir, "AGENTS.md");
 }
 
-export function classifyAgentsOwnership(
+export function readAgentsSnapshot(
   filePath: string,
-): Effect.Effect<AgentsOwnership, PlatformError, FileSystem.FileSystem> {
+): Effect.Effect<AgentsSnapshot, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const exists = yield* fs.exists(filePath);
 
     if (!exists) {
-      return "missing";
+      return { state: "missing" };
     }
 
-    const content = yield* fs.readFileString(filePath);
-    const markerRegex =
-      /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
-    const match = markerRegex.exec(content);
-
-    if (!match?.[1]) {
-      return "foreign";
-    }
-
-    const hash = match[1];
-    const actualHash = getAgentsBodyHash(content);
-    if (hash === actualHash) {
-      return "generated";
-    }
-
-    return "modified";
+    return presentSnapshot(yield* fs.readFile(filePath));
   });
 }
 
-export function writeAgentsMarkdownAtomic(
+export function classifyAgentsOwnership(
+  filePath: string,
+): Effect.Effect<AgentsClassification, PlatformError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const snapshot = yield* readAgentsSnapshot(filePath);
+
+    if (snapshot.state === "missing") {
+      return { ownership: "missing", snapshot };
+    }
+
+    const content = new TextDecoder().decode(snapshot.bytes);
+    const match = markerRegex.exec(content);
+
+    if (!match?.[1]) {
+      return { ownership: "foreign", snapshot };
+    }
+
+    return {
+      ownership:
+        match[1] === getAgentsBodyHash(content) ? "generated" : "modified",
+      snapshot,
+    };
+  });
+}
+
+export function writeAgentsMarkdownExclusive(
   workspaceDir: string,
   content: string,
 ): Effect.Effect<
-  void,
+  GeneratedAgentsFile,
   AgentsError | PlatformError,
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const filePath = yield* getAgentsFilePath(workspaceDir).pipe(
       Effect.mapError((error) => new AgentsError({ message: error.message })),
     );
-
-    yield* writeTextFileAtomic(filePath, content).pipe(
-      Effect.mapError((error) => new AgentsError({ message: error.message })),
+    const bytes = new TextEncoder().encode(content);
+    const temporaryPath = path.join(
+      path.dirname(filePath),
+      `.${path.basename(filePath)}.${randomUUID()}.tmp`,
     );
+
+    yield* fs.writeFile(temporaryPath, bytes, { flag: "wx" }).pipe(
+      Effect.andThen(
+        Effect.tryPromise({
+          try: () => link(temporaryPath, filePath),
+          catch: (error) =>
+            new AgentsError({
+              message: `Failed to create AGENTS.md at ${filePath} without overwriting an existing file: ${String(error)}`,
+            }),
+        }),
+      ),
+      Effect.ensuring(
+        fs.remove(temporaryPath, { force: true }).pipe(Effect.ignore),
+      ),
+    );
+
+    return {
+      filePath,
+      snapshot: presentSnapshot(bytes),
+    };
   });
 }
 
@@ -180,7 +276,7 @@ export function generateAgentsMarkdown(
   outpostHome: string,
   manifest: Manifest,
 ): Effect.Effect<
-  void,
+  GeneratedAgentsFile,
   AgentsError | PlatformError,
   FileSystem.FileSystem | Path.Path
 > {
@@ -188,88 +284,34 @@ export function generateAgentsMarkdown(
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError((error) => new AgentsError({ message: error.message })),
     );
-
     const workspaceDir = yield* resolveAgentsMarkdownWorkspaceDir(
       manifest,
       config,
     );
-
     const renderedContent = yield* renderAgentsMarkdown(manifest, config);
 
-    const agentsFilePath = yield* getAgentsFilePath(workspaceDir).pipe(
-      Effect.mapError((error) => new AgentsError({ message: error.message })),
-    );
-
-    const ownership = yield* classifyAgentsOwnership(agentsFilePath).pipe(
-      Effect.mapError((error) => new AgentsError({ message: error.message })),
-    );
-
-    if (ownership === "foreign" || ownership === "modified") {
-      return yield* Effect.fail(
-        new AgentsError({
-          message: `AGENTS.md at ${agentsFilePath} is ${ownership} and cannot be overwritten automatically`,
-        }),
-      );
-    }
-
-    yield* writeAgentsMarkdownAtomic(workspaceDir, renderedContent);
+    return yield* writeAgentsMarkdownExclusive(workspaceDir, renderedContent);
   });
 }
 
-export function deleteAgentsIfExists(
-  workspaceDir: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const result = yield* Effect.either(getAgentsFilePath(workspaceDir));
-
-    if (Either.isLeft(result)) {
-      return;
-    }
-
-    const filePath = result.right;
-    const exists = yield* fs.exists(filePath);
-
-    if (exists) {
-      yield* fs.remove(filePath, { force: true });
-    }
-  });
-}
-
-export function validateAgentsFingerprint(
+export function deleteAgentsIfSnapshotMatches(
   filePath: string,
-): Effect.Effect<boolean, never, FileSystem.FileSystem> {
+  approvedSnapshot: AgentsSnapshot,
+): Effect.Effect<AgentsDeleteResult, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const exists = yield* fs
-      .exists(filePath)
-      .pipe(Effect.orElseSucceed(() => false));
+    const currentSnapshot = yield* readAgentsSnapshot(filePath);
 
-    if (!exists) {
-      return true;
+    if (!agentsSnapshotsEqual(approvedSnapshot, currentSnapshot)) {
+      return "mismatch";
     }
 
-    const contentResult = yield* Effect.either(fs.readFileString(filePath));
-
-    if (Either.isLeft(contentResult)) {
-      return false;
+    if (currentSnapshot.state === "missing") {
+      return "unchanged-missing";
     }
 
-    const content = contentResult.right;
-    const markerRegex =
-      /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
-    const match = markerRegex.exec(content);
-
-    if (!match?.[1]) {
-      return false;
-    }
-
-    const actualHash = getAgentsBodyHash(content);
-    if (match[1] === actualHash) {
-      return true;
-    }
-
-    return false;
+    yield* fs.remove(filePath);
+    return "deleted";
   });
 }
 

@@ -25,9 +25,10 @@ import {
 } from "../workspace-manifest.js";
 import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
 import {
-  deleteAgentsIfExists,
+  deleteAgentsIfSnapshotMatches,
   generateAgentsMarkdown,
 } from "../workspace-agents.js";
+import type { GeneratedAgentsFile } from "../workspace-agents.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()(
   "CreateError",
@@ -70,7 +71,7 @@ type CreatedArtifacts = {
   branches: Array<CreatePlan>;
   worktrees: Array<CreatePlan>;
   ticketDirectory: boolean;
-  agentsGenerated: boolean;
+  agents?: GeneratedAgentsFile;
 };
 
 function ensureUniqueWorktreePaths(
@@ -682,6 +683,28 @@ function rollbackCreatedArtifacts(
       );
     }
 
+    if (created.agents) {
+      const agents = created.agents;
+      yield* deleteAgentsIfSnapshotMatches(
+        agents.filePath,
+        agents.snapshot,
+      ).pipe(
+        Effect.mapError((error) => error.message),
+        Effect.flatMap((result) => {
+          if (result === "mismatch") {
+            cleanupErrors.push(
+              `Preserved AGENTS.md at ${agents.filePath} because it changed during rollback`,
+            );
+          }
+          return Effect.void;
+        }),
+        Effect.catchAll((message) => {
+          cleanupErrors.push(`Failed to delete AGENTS.md: ${message}`);
+          return Effect.void;
+        }),
+      );
+    }
+
     if (created.ticketDirectory) {
       const entries = yield* fs.readDirectory(ticketDirectory).pipe(
         Effect.mapError((error) => error.message),
@@ -707,16 +730,6 @@ function rollbackCreatedArtifacts(
           }),
         );
       }
-    }
-
-    if (created.agentsGenerated) {
-      yield* deleteAgentsIfExists(ticketDirectory).pipe(
-        Effect.mapError((error) => error.message),
-        Effect.catchAll((message) => {
-          cleanupErrors.push(`Failed to delete AGENTS.md: ${message}`);
-          return Effect.void;
-        }),
-      );
     }
 
     const message =
@@ -894,7 +907,6 @@ export function runCreate(
         branches: [],
         worktrees: [],
         ticketDirectory: false,
-        agentsGenerated: false,
       };
 
       return yield* Effect.gen(function* () {
@@ -946,12 +958,14 @@ export function runCreate(
           repositories: [...repositoryEntries],
         };
 
-        yield* generateAgentsMarkdown(outpostHome, manifest).pipe(
+        created.agents = yield* generateAgentsMarkdown(
+          outpostHome,
+          manifest,
+        ).pipe(
           Effect.mapError(
             (error) => new CreateError({ message: error.message }),
           ),
         );
-        created.agentsGenerated = true;
 
         yield* writeManifest(outpostHome, manifest).pipe(
           Effect.mapError(
