@@ -24,6 +24,11 @@ import {
   writeManifest,
 } from "../workspace-manifest.js";
 import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
+import {
+  deleteAgentsIfSnapshotMatches,
+  generateAgentsMarkdown,
+} from "../workspace-agents.js";
+import type { GeneratedAgentsFile } from "../workspace-agents.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()(
   "CreateError",
@@ -66,6 +71,7 @@ type CreatedArtifacts = {
   branches: Array<CreatePlan>;
   worktrees: Array<CreatePlan>;
   ticketDirectory: boolean;
+  agents?: GeneratedAgentsFile;
 };
 
 function ensureUniqueWorktreePaths(
@@ -616,7 +622,7 @@ function rollbackCreatedArtifacts(
 ): Effect.Effect<
   never,
   CreateError,
-  FileSystem.FileSystem | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -672,6 +678,28 @@ function rollbackCreatedArtifacts(
           cleanupErrors.push(
             `Failed to delete branch ${plan.branch} for ${plan.repoId}: ${message}`,
           );
+          return Effect.void;
+        }),
+      );
+    }
+
+    if (created.agents) {
+      const agents = created.agents;
+      yield* deleteAgentsIfSnapshotMatches(
+        agents.filePath,
+        agents.snapshot,
+      ).pipe(
+        Effect.mapError((error) => error.message),
+        Effect.flatMap((result) => {
+          if (result === "mismatch") {
+            cleanupErrors.push(
+              `Preserved AGENTS.md at ${agents.filePath} because it changed during rollback`,
+            );
+          }
+          return Effect.void;
+        }),
+        Effect.catchAll((message) => {
+          cleanupErrors.push(`Failed to delete AGENTS.md: ${message}`);
           return Effect.void;
         }),
       );
@@ -929,6 +957,15 @@ export function runCreate(
           workspacePath,
           repositories: [...repositoryEntries],
         };
+
+        created.agents = yield* generateAgentsMarkdown(
+          outpostHome,
+          manifest,
+        ).pipe(
+          Effect.mapError(
+            (error) => new CreateError({ message: error.message }),
+          ),
+        );
 
         yield* writeManifest(outpostHome, manifest).pipe(
           Effect.mapError(

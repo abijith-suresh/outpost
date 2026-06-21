@@ -9,6 +9,10 @@ import { Effect, Either, Schema, Stream } from "effect";
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
 import {
+  classifyAgentsOwnership,
+  deleteAgentsIfSnapshotMatches,
+} from "../workspace-agents.js";
+import {
   acquireTicketLock,
   deleteManifest,
   manifestExists,
@@ -20,6 +24,10 @@ import {
   verifyWorktreeOwnership,
 } from "../workspace-manifest.js";
 import type { CommandOutput } from "../types.js";
+import {
+  promptAgentsRemovalConsent,
+  type AgentsRemovalPrompt,
+} from "./workspace-remove-prompt.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
   "WorkspaceRemoveError",
@@ -70,6 +78,10 @@ function partialRemovalOutput(
 export function runWorkspaceRemove(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>,
+  options: {
+    interactive: boolean;
+    promptAgentsRemovalConsent?: AgentsRemovalPrompt;
+  },
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
@@ -156,6 +168,55 @@ export function runWorkspaceRemove(
               config.worktreesRoot,
               manifest.workspacePath,
             ).pipe(Effect.mapError(toMapError));
+
+            // --- AGENTS.md classification ---
+            const agentsFilePath = yield* resolvePathWithinRoot(
+              workspaceDir,
+              "AGENTS.md",
+            ).pipe(Effect.mapError(toMapError));
+
+            const agentsClassification = yield* classifyAgentsOwnership(
+              agentsFilePath,
+            ).pipe(Effect.mapError(toMapError));
+            const { ownership } = agentsClassification;
+
+            if (ownership === "foreign" || ownership === "modified") {
+              if (options.interactive) {
+                const consent = yield* Effect.tryPromise({
+                  try: () =>
+                    (
+                      options.promptAgentsRemovalConsent ??
+                      promptAgentsRemovalConsent
+                    )({
+                      ticket,
+                      agentsFilePath,
+                      ownership,
+                    }),
+                  catch: (error) =>
+                    new WorkspaceRemoveError({
+                      message: `Consent prompt failed: ${String(error)}`,
+                    }),
+                });
+
+                if (!consent) {
+                  return yield* Effect.fail(
+                    new WorkspaceRemoveError({
+                      message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Delete AGENTS.md manually or approve its removal.`,
+                    }),
+                  );
+                }
+                // proceed
+              } else {
+                return yield* Effect.fail(
+                  new WorkspaceRemoveError({
+                    message:
+                      ownership === "modified"
+                        ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Delete it manually and rerun, or retry in interactive mode.`
+                        : `AGENTS.md at ${agentsFilePath} is not managed by outpost. Delete it manually and rerun, or retry in interactive mode.`,
+                  }),
+                );
+              }
+            }
 
             for (const repo of manifest.repositories) {
               const resolvedManagedPath = yield* resolveManagedPath(
@@ -294,6 +355,24 @@ export function runWorkspaceRemove(
                 completed,
                 remaining,
                 diagnostics,
+              );
+            }
+
+            const agentsDeleteResult = yield* deleteAgentsIfSnapshotMatches(
+              agentsFilePath,
+              agentsClassification.snapshot,
+            ).pipe(Effect.mapError(toMapError));
+
+            if (agentsDeleteResult === "mismatch") {
+              return partialRemovalOutput(
+                ticket,
+                workspaceDir,
+                worktreeNames,
+                completed,
+                ["AGENTS.md"],
+                [
+                  `AGENTS.md at ${agentsFilePath} changed after approval. Preserving file; manifest retained for retry.`,
+                ],
               );
             }
 
