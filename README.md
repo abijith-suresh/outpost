@@ -8,7 +8,7 @@ CLI for managing local Git repository workspaces. Bootstrap multiple repos into 
 npm install -g @abijith-suresh/outpost
 ```
 
-**Requirements:** Node.js >= 22.14.0, Git available on PATH.
+**Requirements:** Node.js >= 22.14.0, npm >= 11.5.1, and Git available on PATH.
 
 ## Quick start
 
@@ -66,7 +66,7 @@ Removes all worktrees for the given ticket. The command refuses to remove:
 
 - Worktrees with uncommitted changes (dirty `git status`)
 - Worktrees it cannot prove it owns
-- Workspaces where the generated `AGENTS.md` has been modified by the user (interactive mode prompts for confirmation; non-interactive mode fails)
+- Workspaces where `AGENTS.md` has been modified or replaced (interactive mode prompts for confirmation; non-interactive mode fails)
 
 Branches in the managed mirrors are preserved.
 
@@ -91,7 +91,7 @@ All state lives under `$OUTPOST_HOME`:
 
 ## JSON output
 
-Most commands support `--json` for machine-readable output. When `--json` is present, interactive prompting is disabled and output is formatted as pretty-printed JSON:
+Most commands support `--json` for machine-readable command results, including structured partial results. When `--json` is present, interactive prompting is disabled. Errors raised before a command result is produced, plus help and version output, remain plain text.
 
 ```bash
 outpost repo list --json

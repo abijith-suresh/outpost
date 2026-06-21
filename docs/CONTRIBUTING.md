@@ -79,7 +79,7 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 
 | Hook         | Action                                                                                                              |
 | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `pre-commit` | Runs lint-staged: ESLint fix + Prettier on staged `.ts`/`.js` files, Prettier on `.json`/`.md`/`.yml`/`.yaml` files |
+| `pre-commit` | Runs lint-staged: ESLint fix + Prettier on staged TypeScript/JavaScript files, Prettier on JSON/Markdown/YAML files |
 | `commit-msg` | Validates the commit message against `@commitlint/config-conventional`                                              |
 | `pre-push`   | Runs `npm run verify` (format:check, lint, typecheck, test)                                                         |
 
@@ -89,7 +89,7 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 - **Effect-TS conventions:** use `Effect.gen` for effectful logic, `Schema.TaggedError` for typed error variants, `pipe` for composition
 - **No CLI framework:** arguments are parsed manually from `process.argv` — follow the existing pattern in `src/program.ts` when adding flags
 - **Formatting:** Prettier (double quotes, semicolons, trailing commas)
-- **Linting:** ESLint with type-aware rules for source, relaxed rules for tests
+- **Linting:** ESLint with the TypeScript recommended rules; tests disable project-service parsing
 
 ## Testing
 
@@ -100,7 +100,7 @@ npm run test:watch    # Watch mode
 
 Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: false`) to prevent temp directory conflicts.
 
-**Integration tests** (majority, in `tests/`): exercise the full CLI pipeline via `runCli()` from `src/index.ts`. Each test scaffolds real temporary directories and Git repositories, runs Outpost against them, and asserts against stdout/stderr output and filesystem state. Test files are organized by CLI command domain (e.g., `tests/create.test.ts`, `tests/workspace.test.ts`).
+**Integration tests** exercise the full CLI pipeline via `runCli()` from `src/index.ts`. Lifecycle tests scaffold real temporary directories and Git repositories, run Outpost against them, and assert against stdout/stderr output and filesystem state. Test files are organized by CLI command domain (e.g., `tests/create.test.ts`, `tests/workspace.test.ts`).
 
 **Focused unit/module tests:**
 
@@ -120,14 +120,14 @@ GitHub Actions run on every PR and push to `main`:
 1. `format:check` — Prettier formatting
 2. `lint` — ESLint
 3. `typecheck` — TypeScript strict mode
-4. `test` — Vitest integration tests
+4. `test` — Vitest test suite
 5. `build` — Compile to ESM
 
 CI runs on Node.js 22 and 24 (`fail-fast: false`).
 
 ## Release Process
 
-1. PRs merge to `main` with changesets.
+1. PRs that change source or package behavior merge to `main` with changesets.
 2. The [Changesets Action](https://github.com/changesets/action) opens or updates a `chore: version packages` PR.
 3. Merging that PR publishes to npm via trusted publishing (`npm run publish:release`).
 

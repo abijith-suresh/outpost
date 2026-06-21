@@ -4,41 +4,35 @@ This document describes the current implemented behavior of Outpost. It is descr
 
 ## Overview
 
-Outpost is a single-binary CLI tool (TypeScript compiled to ESM) that manages local Git repository workspaces. It uses [Effect-TS](https://effect.website) for all side effects: file I/O, process spawning, environment access, and console output are modeled as `Effect.Effect` values that are composed and executed through a single runtime.
+Outpost is an npm-distributed CLI written in TypeScript and compiled to ESM. It manages local Git repository workspaces and uses [Effect-TS](https://effect.website) to compose its command workflows and most filesystem, process, path, and console effects.
 
 ## CLI Routing
 
-**Entry point:** `src/index.ts` loads the package version and calls `run(argv, version)` from `src/program.ts`.
+**Entry point:** `src/index.ts` loads the package version and exports `runCli()` for programmatic use. When the module recognizes that it is being executed directly, it calls `run(argv, version)` from `src/program.ts` through the Node Effect runtime.
 
-**Argument parsing** in `src/program.ts:run()`:
+**Argument parsing** in `src/program.ts`:
 
-1. Check for `--help` or `--version` anywhere in `argv` — if found, print and exit 0 immediately.
+1. Check for `--help` or `--version` anywhere in `argv` — if found, print and return a successful command result immediately.
 2. Detect `--json` flag (any position) for machine-readable output.
 3. Determine interactive mode: enabled only when `--json` is absent, stdin is a TTY, and stdout is a TTY.
 4. Strip `--json` and `--version` from positional args.
 5. If no positional args or first arg is `"help"`, print help and exit 0.
 6. Dispatch to `resolveCommand()` which routes by `positionalArgs[0]` through a linear chain.
 
-`resolveCommand()` (line 648) routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). All command errors are mapped to `CliError` via `Effect.mapError`.
+`resolveCommand()` routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). Command errors are mapped to `CliError` before presentation.
 
-**Output formatting** in `printCommandOutput()` (line 65): if `--json`, delegates to `printJson()` which serializes the `CommandOutput` object with `JSON.stringify` (pretty-printed, 2-space indent). Otherwise dispatches by `output.command` to human-readable text output.
-
-**Exit codes:**
-
-- 0 — success, or help/version requested
-- 1 — any error or partial failure (e.g., some repos failed to fetch, partial workspace removal)
+**Output formatting:** returned command results are rendered as pretty-printed JSON when `--json` is present, including structured partial results. Otherwise they are formatted as command-specific human-readable text. Help, version output, and errors raised before a command result is produced are plain text.
 
 ## Effect System Boundaries
 
-All side effects flow through Effect layers:
+The main command workflows use Effect services for:
 
 - **FileSystem** (`@effect/platform/FileSystem`) — file reads, writes, directory listing, path resolution
 - **Path** (`@effect/platform/Path`) — portable path manipulation
 - **CommandExecutor** (`@effect/platform-node/CommandExecutor`) — child process spawning (`git` commands)
 - **Console** (`effect/Console`) — stdout/stderr output
-- **Terminal** (`@effect/platform-node/Terminal`) — TTY detection
 
-The `NodeContext.layer` is provided at the entry point in `src/index.ts`. Tests inject custom layers to control the environment.
+The `NodeContext.layer` is provided at the entry point in `src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
 
 ## Persisted State
 
@@ -104,11 +98,10 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 
 **Transaction ordering:**
 
-1. Create workspace directory
-2. Create branches on all managed repos
-3. Create worktrees on all managed repos
-4. Write `AGENTS.md` into workspace directory
-5. Write manifest to `workspaces/<ticket>.json`
+1. Create the workspace directory.
+2. For each selected repository in order, create its branch and then its worktree.
+3. Write `AGENTS.md` into the workspace directory.
+4. Write the manifest to `workspaces/<ticket>.json` as the successful creation commit marker.
 
 **Rollback** on any failure after step 1:
 
@@ -130,21 +123,21 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 
 **Removal safeguards:**
 
-1. Acquire ticket lock
-2. Read and validate the manifest
-3. For each repository entry:
-   - Verify the managed repo still exists
-   - Verify worktree ownership (`.git` file points to the correct bare repo's `worktrees/` directory)
-   - Check `git status --porcelain` for uncommitted changes — refuse if dirty
-   - Run `git worktree remove` on the worktree
-4. Classify AGENTS.md ownership:
-   - `"generated"` (unmodified by user): delete automatically
-   - `"modified"` or `"foreign"`: prompt in interactive mode, refuse in non-interactive mode
-5. Remove workspace directory (only if empty after worktrees removed)
-6. Delete the manifest
-7. Release the ticket lock
+1. Acquire the ticket lock and read and validate the manifest.
+2. Classify `AGENTS.md` ownership:
+   - `"generated"` (unmodified by user): eligible for automatic deletion
+   - `"modified"` or `"foreign"`: require approval in interactive mode and fail in non-interactive mode
+3. Preflight every existing worktree before deleting any:
+   - Verify the managed repo still exists.
+   - Verify worktree ownership (`.git` points to the expected bare repository).
+   - Check `git status --porcelain` and refuse if dirty or if cleanliness cannot be established.
+4. Remove each existing worktree. A worktree already missing is treated as completed so a partial removal can be retried.
+5. Delete `AGENTS.md` only if its bytes still match the snapshot that was classified and, when required, approved.
+6. Remove the workspace directory only if it is empty.
+7. Delete the manifest last, after complete cleanup.
+8. Release the ticket lock.
 
-**Partial cleanup:** if some worktrees fail to remove, the command reports which succeeded and which failed with exit code 1. The manifest is only deleted on complete removal.
+**Partial cleanup:** worktree removal failures, concurrent changes to the approved `AGENTS.md` snapshot, residual directory entries, and workspace-directory inspection or removal failures produce a structured partial result and retain the manifest for retry. Other unexpected I/O failures can terminate with a plain command error. Preflight failures occur before worktree teardown begins.
 
 **Branch preservation:** `git worktree remove` removes only the worktree metadata and directory. The branch in the bare mirror is preserved.
 
@@ -152,12 +145,12 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 
 Scans `workspaces/` for manifest files and `worktrees/` for directories without manifests (unmanaged workspaces). Derives a status for each:
 
-| Status      | Condition                                                            |
-| ----------- | -------------------------------------------------------------------- |
-| `ready`     | Manifest valid, all repos and worktrees exist, ownership checks pass |
-| `missing`   | Some worktree or managed repo path does not exist                    |
-| `invalid`   | Manifest unreadable, path resolution fails, or ownership check fails |
-| `unmanaged` | Directory exists in worktrees root but no manifest                   |
+| Status      | Condition                                                             |
+| ----------- | --------------------------------------------------------------------- |
+| `ready`     | Manifest valid, all repos and worktrees exist, ownership checks pass  |
+| `missing`   | The workspace directory, a worktree, or a managed repo path is absent |
+| `invalid`   | Manifest unreadable, path resolution fails, or ownership check fails  |
+| `unmanaged` | Directory exists in worktrees root but no manifest                    |
 
 ## Workspace Manifests (`src/workspace-manifest.ts`)
 
@@ -184,9 +177,9 @@ Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
 
 All paths in the manifest are relative to their respective roots (`reposRoot` or `worktreesRoot`). The manifest is validated exhaustively on read: ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
 
-## Ticket Locks (`src/workspace-manifest.ts` lines 801-865)
+## Ticket Locks (`src/workspace-manifest.ts`)
 
-Ticket operations that mutate workspace state (`create`, `workspace remove`) acquire an exclusive lock file at `workspaces/.<ticket>.lock` using `O_CREAT | O_EXCL` (exclusive creation). If the lock file already exists, the operation fails with a "ticket is locked" message. Locks are released via `Effect.ensuring` to guarantee cleanup even on errors.
+Ticket operations that mutate workspace state (`create`, `workspace remove`) acquire an exclusive lock file using create-if-absent semantics. The lock identity normalizes ticket casing and strips trailing spaces and dots, matching Outpost's portable collision rules. If the lock already exists, acquisition fails. Normal handled outcomes release the lock through Effect finalization.
 
 ## Workspace AGENTS.md (`src/workspace-agents.ts`)
 
@@ -201,14 +194,14 @@ When a workspace is created, Outpost generates an `AGENTS.md` file in the worksp
 - `"generated"` — marker exists and hash matches (unmodified)
 - `"modified"` — marker exists but hash does not match (user edited)
 
-Outpost only deletes `AGENTS.md` when it is `"generated"` (unmodified). For `"foreign"` or `"modified"` files, the user must confirm in interactive mode, or the remove operation fails in non-interactive mode.
+Outpost automatically deletes `"generated"` files. A `"foreign"` or `"modified"` file is deleted only after explicit interactive approval; non-interactive removal fails. Deletion compares the exact classified snapshot immediately before removal so a concurrently changed file is preserved.
 
 ## Path Safety (`src/path-safety.ts`)
 
 All path operations are validated for containment:
 
-- `validatePathSegment()` — rejects `/`, `\`, `.`, `..` in path segments
-- `resolvePathWithinRoot()` — resolves paths to canonical form, verifies the resolved path is within the root directory
+- `validatePathSegment()` — rejects path separators and, by default, traversal segments
+- `resolvePathWithinRoot()` — resolves a path lexically and verifies that it remains within the root directory
 - `getCanonicalPortablePathKey()` — normalizes paths (lowercase, unified separators) for collision detection
 
 ## Module Ownership

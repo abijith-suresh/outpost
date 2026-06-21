@@ -11,8 +11,8 @@ The primary user is an individual developer coordinating one ticket across multi
 ## Goals
 
 - **Deterministic workspace lifecycle.** Every `outpost create` produces the same branch layout and worktree structure for the same inputs. Humans and coding agents can safely operate within these workspaces.
-- **Local-first.** Outpost works entirely on the local filesystem. Network access happens only through explicit repository fetch operations, never implicitly during workspace creation.
-- **Safety over convenience.** Outpost must not delete, overwrite, or adopt state it cannot prove it owns. Workspace removal refuses dirty worktrees and unmodified generated files.
+- **Local-first.** Workspace operations use local state. Network access happens only through explicit repository operations, never implicitly during workspace creation.
+- **Safety over convenience.** Outpost must not delete, overwrite, or adopt state it cannot prove it owns. Workspace removal refuses dirty worktrees and requires explicit interactive approval before deleting modified or foreign workspace guidance.
 - **Terse everyday operations.** Frequent workspace operations (create, list, remove) are short. Infrequent repository and configuration operations may remain explicit.
 - **Machine-readable output.** Most commands support `--json` for scripting and agent consumption.
 
@@ -23,7 +23,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 - Issue trackers or ticket content
 - Builds, deployments, or testing
 - Repository application code
-- Remote operations beyond fetch (no push, no pull, no merge)
+- Remote collaboration workflows such as push, pull, and merge
 
 ## Constraints
 
@@ -44,6 +44,6 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 
 1. A developer can initialize Outpost, import repos, create a ticket workspace, navigate it, and remove it — all from the command line.
 2. A coding agent reading workspace `AGENTS.md` can understand which repos to work in, what branches to use, and what the workspace structure is.
-3. Outpost refuses to remove worktrees with uncommitted changes or workspaces with modified generated files.
+3. Outpost refuses to remove worktrees with uncommitted changes and does not delete modified or foreign workspace guidance without explicit interactive approval.
 4. Concurrent `outpost create` calls for the same ticket are serialized via ticket locks.
 5. All commands that inspect state support `--json` for scripting.

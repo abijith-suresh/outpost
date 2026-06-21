@@ -51,8 +51,8 @@ When documents and implementation disagree:
 
 - **Language:** TypeScript (strict, ES2022, ES modules)
 - **Runtime:** Node.js >= 22.14.0
-- **Effects system:** Effect-TS — all side effects return `Effect.Effect`
+- **Effects system:** Effect-TS — command workflows and project-controlled side effects return `Effect.Effect`; direct Node process boundaries are documented in `docs/ARCHITECTURE.md`
 - **Config/Schema:** `Schema.TaggedError` for errors, `Schema.Struct` for config validation
-- **Testing:** Vitest (integration tests with real temp Git repos, split per command domain in `tests/`, shared helpers in `tests/helpers.ts`)
+- **Testing:** Vitest (CLI integration and focused module tests in `tests/`, with shared helpers in `tests/helpers.ts`)
 - **CI:** GitHub Actions (format:check, lint, typecheck, test, build)
 - **Changeset enforcement:** [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs, documented in `docs/CONTRIBUTING.md`
