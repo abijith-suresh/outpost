@@ -47,7 +47,6 @@ export default tseslint.config(
     },
     rules: {
       "no-console": "off",
-      "no-empty": "off",
     },
   },
 );
