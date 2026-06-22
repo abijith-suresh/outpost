@@ -4,7 +4,7 @@
   "description": "CLI for managing local repository workspaces.",
   "type": "module",
   "bin": {
-    "outpost": "./dist/index.js"
+    "outpost": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -54,6 +54,7 @@
     "prepublishOnly": "npm run build",
     "publish:release": "changeset publish",
     "test": "vitest run",
+    "test:smoke": "node scripts/smoke.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test"

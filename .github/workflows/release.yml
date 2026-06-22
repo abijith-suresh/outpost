@@ -54,6 +54,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Installed-package smoke test
+        run: npm run test:smoke
+
       - name: Create release pull request or publish package
         id: changesets
         uses: changesets/action@v1

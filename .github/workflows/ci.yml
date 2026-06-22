@@ -55,3 +55,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Installed-package smoke test
+        run: npm run test:smoke

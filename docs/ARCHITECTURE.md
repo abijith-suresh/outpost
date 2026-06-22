@@ -8,7 +8,9 @@ Outpost is an npm-distributed CLI written in TypeScript and compiled to ESM. It 
 
 ## CLI Routing
 
-**Entry point:** `src/index.ts` loads the package version and exports `runCli()` for programmatic use. When the module recognizes that it is being executed directly, it calls `run(argv, version)` from `src/program.ts` through the Node Effect runtime.
+**Executable entry point:** `src/cli.ts` is the dedicated executable binary entry point pointed to by `package.json#bin`. It starts unconditionally, propagates the numeric command result through `process.exitCode`, and uses `NodeRuntime.runMain` for lifecycle management and signal handling.
+
+**API entry point:** `src/index.ts` loads the package version and exports `runCli()` for programmatic use. It is import-safe with no side effects — importing the package does not execute the CLI.
 
 **Argument parsing** in `src/program.ts`:
 
@@ -32,7 +34,7 @@ The main command workflows use Effect services for:
 - **CommandExecutor** (`@effect/platform-node/CommandExecutor`) — child process spawning (`git` commands)
 - **Console** (`effect/Console`) — stdout/stderr output
 
-The `NodeContext.layer` is provided at the entry point in `src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
+The `NodeContext.layer` is provided at the entry points in `src/cli.ts` and `src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
 
 ## Persisted State
 
@@ -206,28 +208,29 @@ All path operations are validated for containment:
 
 ## Module Ownership
 
-| Module                                    | Responsibility                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------ |
-| `src/index.ts`                            | Entry point, runtime bootstrap                                     |
-| `src/program.ts`                          | CLI routing, arg parsing, output formatting, help text             |
-| `src/config.ts`                           | Config schema, read/write, migration                               |
-| `src/store.ts`                            | Atomic JSON/text file writes                                       |
-| `src/path-safety.ts`                      | Path segment validation, containment checks                        |
-| `src/remote-identity.ts`                  | Remote URL parsing, identity derivation, managed path encoding     |
-| `src/workspace-manifest.ts`               | Manifest schema, CRUD, validation, status derivation, ticket locks |
-| `src/workspace-agents.ts`                 | AGENTS.md generation, ownership classification, deletion           |
-| `src/types.ts`                            | Shared types (`CommandOutput`)                                     |
-| `src/commands/create.ts`                  | Create command with rollback                                       |
-| `src/commands/create-prompt.ts`           | Interactive prompting for create                                   |
-| `src/commands/init.ts`                    | Initialize Outpost home                                            |
-| `src/commands/doctor.ts`                  | Environment status report                                          |
-| `src/commands/repo-add.ts`                | Register a local repo                                              |
-| `src/commands/repo-mirror.ts`             | Git clone/fetch mirror operations                                  |
-| `src/commands/repo-fetch.ts`              | Fetch all managed mirrors                                          |
-| `src/commands/repo-list.ts`               | List registered repos                                              |
-| `src/commands/repo-show.ts`               | Show repo details                                                  |
-| `src/commands/repo-remove.ts`             | Remove registered repo (with workspace reference check)            |
-| `src/commands/workspace-list.ts`          | List workspaces with derived status                                |
-| `src/commands/workspace-show.ts`          | Show workspace details                                             |
-| `src/commands/workspace-remove.ts`        | Remove workspace with safety checks                                |
-| `src/commands/workspace-remove-prompt.ts` | Interactive prompting for AGENTS.md consent                        |
+| Module                                    | Responsibility                                                              |
+| ----------------------------------------- | --------------------------------------------------------------------------- |
+| `src/cli.ts`                              | Executable binary entry point, unconditional startup, exit-code propagation |
+| `src/index.ts`                            | API entry point, programmatic `runCli()` export, import-safe                |
+| `src/program.ts`                          | CLI routing, arg parsing, output formatting, help text                      |
+| `src/config.ts`                           | Config schema, read/write, migration                                        |
+| `src/store.ts`                            | Atomic JSON/text file writes                                                |
+| `src/path-safety.ts`                      | Path segment validation, containment checks                                 |
+| `src/remote-identity.ts`                  | Remote URL parsing, identity derivation, managed path encoding              |
+| `src/workspace-manifest.ts`               | Manifest schema, CRUD, validation, status derivation, ticket locks          |
+| `src/workspace-agents.ts`                 | AGENTS.md generation, ownership classification, deletion                    |
+| `src/types.ts`                            | Shared types (`CommandOutput`)                                              |
+| `src/commands/create.ts`                  | Create command with rollback                                                |
+| `src/commands/create-prompt.ts`           | Interactive prompting for create                                            |
+| `src/commands/init.ts`                    | Initialize Outpost home                                                     |
+| `src/commands/doctor.ts`                  | Environment status report                                                   |
+| `src/commands/repo-add.ts`                | Register a local repo                                                       |
+| `src/commands/repo-mirror.ts`             | Git clone/fetch mirror operations                                           |
+| `src/commands/repo-fetch.ts`              | Fetch all managed mirrors                                                   |
+| `src/commands/repo-list.ts`               | List registered repos                                                       |
+| `src/commands/repo-show.ts`               | Show repo details                                                           |
+| `src/commands/repo-remove.ts`             | Remove registered repo (with workspace reference check)                     |
+| `src/commands/workspace-list.ts`          | List workspaces with derived status                                         |
+| `src/commands/workspace-show.ts`          | Show workspace details                                                      |
+| `src/commands/workspace-remove.ts`        | Remove workspace with safety checks                                         |
+| `src/commands/workspace-remove-prompt.ts` | Interactive prompting for AGENTS.md consent                                 |
