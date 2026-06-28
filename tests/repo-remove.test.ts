@@ -104,6 +104,8 @@ describe("run", () => {
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledTimes(1);
       const output = infoSpy.mock.calls[0]?.[0] as string;
+      expect(output).toContain('"ok": true');
+      expect(output).toContain('"exitCode": 0');
       expect(output).toContain('"command": "repo remove"');
       expect(output).toContain(`"id": "${repoId}"`);
       expect(output).toContain(`"managedRepoPath": "${managedRepoPath}"`);

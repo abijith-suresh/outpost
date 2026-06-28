@@ -175,6 +175,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(1);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(output).toContain('"ok": false');
+    expect(output).toContain('"exitCode": 1');
     expect(output).toContain('"command": "repo fetch"');
     expect(output).toContain('"repoCount": 2');
     expect(output).toContain('"fetchedCount": 1');

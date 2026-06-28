@@ -92,7 +92,13 @@ All state lives under `$OUTPOST_HOME`:
 
 ## JSON output
 
-Most commands support `--json` for machine-readable command results, including structured partial results. When `--json` is present, interactive prompting is disabled. Errors raised before a command result is produced, plus help and version output, remain plain text.
+Commands support `--json` for a stable machine-readable contract. JSON output is a single document with the following envelope:
+
+- **Success:** `{ "ok": true, "command": "...", "data": { ... }, "exitCode": 0 }` written to stdout
+- **Partial failure:** `{ "ok": false, "command": "...", "data": { ... }, "exitCode": 1 }` written to stdout
+- **Error:** `{ "ok": false, "command": null, "error": { "code": "...", "message": "..." }, "exitCode": 1 }` written to stderr
+
+When `--json` is present, interactive prompting is disabled. Help and version output remain plain text.
 
 ```bash
 outpost repo list --json

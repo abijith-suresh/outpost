@@ -23,7 +23,7 @@ Outpost is an npm-distributed CLI written in TypeScript and compiled to ESM. It 
 
 `resolveCommand()` routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). Every command validates that all provided positional arguments are consumed, rejecting extra or unknown arguments with a usage error before any side effects occur. Command errors are mapped to `CliError` before presentation.
 
-**Output formatting:** returned command results are rendered as pretty-printed JSON when `--json` is present, including structured partial results. Otherwise they are formatted as command-specific human-readable text. Help, version output, and errors raised before a command result is produced are plain text.
+**Output formatting:** returned command results are rendered as JSON envelopes when `--json` is present: `{ "ok": true | false, "command": "...", "data": { ... }, "exitCode": 0 | 1 }`. Success and partial results go to stdout; errors go to stderr with a stable `error.code` and descriptive `error.message`. In human mode, results are formatted as command-specific text. Help and version output remain plain text. Git subprocess stderr is piped and captured, never inherited as unstructured prose in JSON mode.
 
 ## Effect System Boundaries
 

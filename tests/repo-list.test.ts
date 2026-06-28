@@ -141,6 +141,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo show"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"id": "alpha"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "ok"');
@@ -356,6 +358,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo list"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"repos": [');

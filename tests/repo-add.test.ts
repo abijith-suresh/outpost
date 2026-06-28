@@ -131,6 +131,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo add"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"action": "cloned"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"registryAction": "created"');

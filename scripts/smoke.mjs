@@ -175,15 +175,16 @@ try {
   const createResult = runInstalled(["create", "--json"]);
   assert.equal(createResult.status, 1);
   assert.equal(createResult.stdout, "");
-  assert.equal(
-    createResult.stderr,
-    [
-      "Usage: outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]",
-      "--ticket is required.",
-      "--type is required.",
-      "At least one --repo is required.",
-      "",
-    ].join("\n"),
+  const createError = JSON.parse(createResult.stderr);
+  assert.equal(createError.ok, false);
+  assert.equal(createError.exitCode, 1);
+  assert.equal(createError.command, null);
+  assert.equal(createError.error.code, "USAGE_ERROR");
+  assert.ok(createError.error.message.includes("Usage: outpost create"));
+  assert.ok(createError.error.message.includes("--ticket is required."));
+  assert.ok(createError.error.message.includes("--type is required."));
+  assert.ok(
+    createError.error.message.includes("At least one --repo is required."),
   );
 
   console.log("Test: structured partial result exits 1");
@@ -222,6 +223,7 @@ try {
   assert.equal(partialResult.status, 1);
   assert.equal(partialResult.stderr, "");
   const partialOutput = JSON.parse(partialResult.stdout);
+  assert.equal(partialOutput.ok, false);
   assert.equal(partialOutput.command, "repo fetch");
   assert.equal(partialOutput.exitCode, 1);
   assert.equal(partialOutput.data.failedCount, 1);
