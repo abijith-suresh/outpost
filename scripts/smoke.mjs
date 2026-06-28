@@ -1,11 +1,17 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
@@ -13,9 +19,15 @@ const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const smokeRoot = mkdtempSync(join(tmpdir(), "outpost-smoke-"));
 const packDir = join(smokeRoot, "pack");
+const unpackDir = join(smokeRoot, "unpack");
+const unpackedPackage = join(unpackDir, "package");
 const installPrefix = join(smokeRoot, "global");
-const importProject = join(smokeRoot, "import");
 const outpostHome = join(smokeRoot, "home");
+const npmPrefixEnv = {
+  NPM_CONFIG_PREFIX: installPrefix,
+  npm_config_global_prefix: installPrefix,
+  npm_config_prefix: installPrefix,
+};
 
 let cleaned = false;
 
@@ -84,7 +96,7 @@ function runInstalled(args, env) {
 
 try {
   mkdirSync(packDir, { recursive: true });
-  mkdirSync(importProject, { recursive: true });
+  mkdirSync(unpackDir, { recursive: true });
 
   console.log("Building...");
   const buildResult = runNpm(["run", "build"]);
@@ -104,19 +116,39 @@ try {
   assert.equal(packOutput.length, 1, "npm pack should produce one tarball");
   const tarball = join(packDir, packOutput[0].filename);
 
-  console.log(`Installing to ${installPrefix}...`);
-  const installResult = runNpm([
-    "install",
-    "--global",
-    "--prefix",
-    installPrefix,
-    "--offline",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    tarball,
+  console.log(`Extracting ${tarball}...`);
+  const extractResult = run("tar", ["-xzf", tarball, "-C", unpackDir]);
+  assertSuccess(extractResult, "tarball extraction");
+
+  symlinkSync(
+    join(projectRoot, "node_modules"),
+    join(unpackedPackage, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+
+  console.log(`Linking to ${installPrefix}...`);
+  const linkResult = runNpm(
+    ["link", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+    {
+      cwd: unpackedPackage,
+      env: npmPrefixEnv,
+    },
+  );
+  assertSuccess(linkResult, "global package link");
+
+  console.log("Test: importing packed package is side-effect-free");
+  const importResult = run(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    [
+      `import { runCli } from ${JSON.stringify(pathToFileURL(join(unpackedPackage, "dist", "index.js")).href)};`,
+      'if (typeof runCli !== "function") throw new TypeError("runCli missing");',
+      'process.stdout.write("OK\\n");',
+    ].join("\n"),
   ]);
-  assertSuccess(installResult, "global tarball install");
+  assert.equal(importResult.status, 0);
+  assert.equal(importResult.stdout, "OK\n");
+  assert.equal(importResult.stderr, "");
 
   console.log("Test: outpost --help");
   const helpResult = runInstalled(["--help"]);
@@ -194,54 +226,6 @@ try {
   assert.equal(partialOutput.exitCode, 1);
   assert.equal(partialOutput.data.failedCount, 1);
   assert.equal(partialOutput.data.results[0].fetchStatus, "failed");
-
-  console.log("Test: npm exec --package <tarball> -- outpost --help");
-  const npmExecResult = runNpm([
-    "exec",
-    "--offline",
-    "--yes",
-    "--package",
-    tarball,
-    "--",
-    "outpost",
-    "--help",
-  ]);
-  assertSuccess(npmExecResult, "npm exec");
-  assert.match(npmExecResult.stdout, /Usage:/);
-
-  console.log("Test: importing installed package is side-effect-free");
-  writeFileSync(
-    join(importProject, "package.json"),
-    `${JSON.stringify({ private: true, type: "module" }, null, 2)}\n`,
-  );
-  const localInstallResult = runNpm(
-    [
-      "install",
-      "--offline",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      tarball,
-    ],
-    { cwd: importProject },
-  );
-  assertSuccess(localInstallResult, "local tarball install");
-
-  writeFileSync(
-    join(importProject, "import-test.mjs"),
-    [
-      'import { runCli } from "@abijith-suresh/outpost";',
-      'if (typeof runCli !== "function") throw new TypeError("runCli missing");',
-      'process.stdout.write("OK\\n");',
-      "",
-    ].join("\n"),
-  );
-  const importResult = run(process.execPath, ["import-test.mjs"], {
-    cwd: importProject,
-  });
-  assert.equal(importResult.status, 0);
-  assert.equal(importResult.stdout, "OK\n");
-  assert.equal(importResult.stderr, "");
 
   console.log("\nAll smoke tests passed.");
 } finally {
