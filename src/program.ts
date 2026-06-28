@@ -6,6 +6,7 @@ import * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
 
 import { runCreate } from "./commands/create.js";
+import { runDescribe } from "./commands/describe.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
@@ -16,6 +17,12 @@ import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
+import {
+  findCommand,
+  findCommandPrefix,
+  formatCommandDetail,
+  formatHelpText,
+} from "./command-spec.js";
 import { CLI_ERROR_CODES } from "./types.js";
 import type {
   CliErrorDiagnostic,
@@ -92,35 +99,12 @@ function jsonErrorEnvelope(
 }
 
 function printHelp(version: string): string {
-  return `outpost ${version}
+  return formatHelpText(version);
+}
 
-Usage:
-  outpost <command> [options]
-
-Commands:
-  help                 Show this help output
-  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]
-                         Create worktrees for imported repositories
-  doctor [--json]      Report local CLI environment status
-  init [--json]        Initialize Outpost home and worktrees roots
-  repo add <path> [--remote <name>]
-                       Validate a local repository for Outpost registration
-  repo fetch --all [--json]
-                        Fetch all managed mirror repositories
-  repo list [--json]   List imported repositories
-  repo remove <id> [--json]
-                       Remove an imported repository
-  repo show <id>       Show one imported repository by id
-  workspace list [--json]
-                         List created ticket workspaces
-  workspace remove <ticket> [--json]
-                         Remove a ticket workspace and all its worktrees
-  workspace show <ticket> [--json]
-                         Show one created ticket workspace
-Global options:
-  --help               Show help output
-  --version            Show CLI version
-  --json               Use JSON output for supported commands`;
+function commandHelp(commandPath: ReadonlyArray<string>): string | undefined {
+  const spec = findCommand(commandPath);
+  return spec ? formatCommandDetail(spec) : undefined;
 }
 
 function printJson(output: CommandOutput): Effect.Effect<void> {
@@ -621,6 +605,64 @@ function printCommandOutput(
             })
           : []),
       ]).pipe(Effect.asVoid);
+    case "describe":
+      return Effect.gen(function* () {
+        const data = output.data;
+        if (Array.isArray(data.commands)) {
+          yield* Console.log("outpost describe");
+          yield* Console.log("commands:");
+          for (const cmd of data.commands as Array<Record<string, unknown>>) {
+            const path = String(cmd.usage);
+            const desc = String(cmd.description);
+            const flags = [
+              cmd.mutation ? "mutation" : "read-only",
+              cmd.interactive ? "interactive" : "",
+              cmd.json ? "json" : "",
+              cmd.dryRun ? "dry-run" : "",
+            ]
+              .filter(Boolean)
+              .join(", ");
+            yield* Console.log(`  ${path}  ${desc}`);
+            yield* Console.log(`    ${flags}`);
+          }
+        } else if (typeof data.usage === "string") {
+          yield* Console.log(`outpost describe ${data.usage}`);
+          yield* Console.log(`description: ${String(data.description)}`);
+          yield* Console.log(`mutation: ${String(data.mutation)}`);
+          yield* Console.log(`interactive: ${String(data.interactive)}`);
+          yield* Console.log(`json: ${String(data.json)}`);
+          yield* Console.log(`dryRun: ${String(data.dryRun)}`);
+          const commandArguments = data.arguments as Array<
+            Record<string, unknown>
+          >;
+          if (Array.isArray(commandArguments) && commandArguments.length > 0) {
+            yield* Console.log("arguments:");
+            for (const argument of commandArguments) {
+              const name = String(argument.name);
+              const desc = String(argument.description);
+              const required = argument.required ? " (required)" : "";
+              const repeatable = argument.repeatable ? " (repeatable)" : "";
+              yield* Console.log(
+                `  <${name}>  ${desc}${required}${repeatable}`,
+              );
+            }
+          }
+          const options = data.options as Array<Record<string, unknown>>;
+          if (Array.isArray(options) && options.length > 0) {
+            yield* Console.log("options:");
+            for (const opt of options) {
+              const name = String(opt.name);
+              const desc = String(opt.description);
+              const required = opt.required ? " (required)" : "";
+              const repeatable = opt.repeatable ? " (repeatable)" : "";
+              const value = opt.valueName ? ` <${String(opt.valueName)}>` : "";
+              yield* Console.log(
+                `  ${name}${value}  ${desc}${required}${repeatable}`,
+              );
+            }
+          }
+        }
+      });
     default:
       return Console.log(JSON.stringify(output));
   }
@@ -682,57 +724,13 @@ function validateGlobalOptions(
   return Effect.void;
 }
 
-type KnownCommand =
-  | "help"
-  | "create"
-  | "doctor"
-  | "init"
-  | "repo add"
-  | "repo fetch"
-  | "repo list"
-  | "repo remove"
-  | "repo show"
-  | "workspace list"
-  | "workspace remove"
-  | "workspace show";
+type KnownCommand = Exclude<ReturnType<typeof resolveCommandIdentity>, null>;
 
-function resolveCommandIdentity(
-  args: ReadonlyArray<string>,
-): KnownCommand | null {
+function resolveCommandIdentity(args: ReadonlyArray<string>): string | null {
   const positionalArgs = args.filter(
     (arg) => arg !== "--json" && arg !== "--help" && arg !== "--version",
   );
-  const root = positionalArgs[0];
-  const subcommand = positionalArgs[1];
-
-  if (
-    root === "help" ||
-    root === "create" ||
-    root === "doctor" ||
-    root === "init"
-  ) {
-    return root;
-  }
-
-  if (
-    root === "repo" &&
-    (subcommand === "add" ||
-      subcommand === "fetch" ||
-      subcommand === "list" ||
-      subcommand === "remove" ||
-      subcommand === "show")
-  ) {
-    return `repo ${subcommand}`;
-  }
-
-  if (
-    root === "workspace" &&
-    (subcommand === "list" || subcommand === "remove" || subcommand === "show")
-  ) {
-    return `workspace ${subcommand}`;
-  }
-
-  return null;
+  return findCommandPrefix(positionalArgs)?.path.join(" ") ?? null;
 }
 
 function resolveRepoAddArgs(
@@ -812,6 +810,10 @@ function resolveCommand(
   switch (command) {
     case "help":
       return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost help"));
+    case "describe":
+      return runDescribe(positionalArgs.slice(1)).pipe(
+        Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)),
+      );
     case "doctor":
       if (positionalArgs.length > 1) {
         return Effect.fail(
@@ -898,6 +900,10 @@ function resolveCommand(
         ),
       );
   }
+
+  return Effect.fail(
+    cliError("UNKNOWN_COMMAND", `Unknown command: ${positionalArgs.join(" ")}`),
+  );
 }
 
 export function run(
@@ -918,8 +924,21 @@ export function run(
 
     yield* validateGlobalOptions(input.argv);
 
-    if (input.argv.includes("--help")) {
-      yield* Console.log(printHelp(input.version));
+    const wantsHelp = input.argv.includes("--help");
+    const asJson = input.argv.includes("--json");
+    const interactive =
+      !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
+    const positionalArgs = input.argv.filter(
+      (arg) => arg !== "--json" && arg !== "--version" && arg !== "--help",
+    );
+
+    if (wantsHelp) {
+      const helpTarget =
+        positionalArgs[0] === "help" ? positionalArgs.slice(1) : positionalArgs;
+      const helpText =
+        helpTarget.length > 0 ? commandHelp(helpTarget) : undefined;
+
+      yield* Console.log(helpText ?? printHelp(input.version));
       return 0;
     }
 
@@ -928,25 +947,27 @@ export function run(
       return 0;
     }
 
-    const asJson = input.argv.includes("--json");
-    const interactive =
-      !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
-    const positionalArgs = input.argv.filter(
-      (arg) => arg !== "--json" && arg !== "--version",
-    );
-
     if (positionalArgs.length === 0) {
       yield* Console.log(printHelp(input.version));
       return 0;
     }
 
     if (positionalArgs[0] === "help") {
-      if (positionalArgs.length > 1) {
+      const helpTarget = positionalArgs.slice(1);
+
+      if (helpTarget.length > 0) {
+        const helpText = commandHelp(helpTarget);
+
+        if (helpText) {
+          yield* Console.log(helpText);
+          return 0;
+        }
+
         return yield* printError(
           "help",
           {
             code: "INVALID_ARGUMENT",
-            message: "Usage: outpost help",
+            message: `Unknown command: ${helpTarget.join(" ")}`,
           },
           asJson,
         );

@@ -14,16 +14,27 @@ Outpost is an npm-distributed CLI written in TypeScript and compiled to ESM. It 
 
 **Argument parsing** in `src/program.ts`:
 
-1. Check for `--help` or `--version` anywhere in `argv` — if found, print and return a successful command result immediately.
-2. Detect `--json` flag (any position) for machine-readable output.
-3. Determine interactive mode: enabled only when `--json` is absent, stdin is a TTY, and stdout is a TTY.
-4. Strip `--json` and `--version` from positional args.
-5. If no positional args or first arg is `"help"`, print help and exit 0.
-6. Dispatch to `resolveCommand()` which routes by `positionalArgs[0]` through a linear chain.
+1. Validate duplicate global flags (`--json`, `--help`, `--version`) before any short-circuit.
+2. Detect `--json` for machine-readable command output.
+3. Strip global flags from positional args.
+4. If `--help` is present, render top-level help or command-level help from the command registry and exit 0.
+5. If `--version` is present, print the version and exit 0.
+6. Determine interactive mode: enabled only when `--json` is absent, stdin is a TTY, and stdout is a TTY.
+7. If no positional args or first arg is `"help"`, render top-level help or command-level help and exit without invoking command handlers.
+8. Resolve the canonical command identity from the command registry and dispatch to `resolveCommand()`.
 
 `resolveCommand()` routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). Every command validates that all provided positional arguments are consumed, rejecting extra or unknown arguments with a usage error before any side effects occur. Command errors are mapped to `CliError` before presentation.
 
-**Output formatting:** returned command results are rendered as JSON envelopes when `--json` is present: `{ "ok": true | false, "command": "...", "data": { ... }, "exitCode": 0 | 1 }`. Success and partial results go to stdout; errors go to stderr with a stable `error.code` and descriptive `error.message`. Error codes are assigned explicitly at parser, router, and command-handler mapping boundaries; they are never inferred from message text. Known-command errors include the canonical command identity, while unknown or unresolvable commands use `null`. Error objects may include structured `diagnostics`, but diagnostics are omitted when none are available. In human mode, results are formatted as command-specific text. Help and version output remain plain text unless global argument validation fails first.
+### Command Specification (`src/command-spec.ts`)
+
+All public commands are registered in `ALL_COMMANDS` as a single metadata source. Each entry declares the command path, human-readable description, positional arguments, command-specific options with required/repeatable/value-name annotations, and behavioral flags (mutation, interactive, JSON support, dry-run support). This registry drives:
+
+- Top-level help text (`--help` output)
+- Command-level help (`outpost help <command path>` and `outpost <command path> --help`)
+- Command recognition and canonical command identity
+- `outpost describe` and `outpost describe <command path>` (human and `--json` output)
+
+**Output formatting:** returned command results are rendered as JSON envelopes when `--json` is present: `{ "ok": true | false, "command": "...", "data": { ... }, "exitCode": 0 | 1 }`. Success and partial results go to stdout; errors go to stderr with a stable `error.code` and descriptive `error.message`. Error codes are assigned explicitly at parser, router, and command-handler mapping boundaries; they are never inferred from message text. Known-command errors include the canonical command identity, while unknown or unresolvable commands use `null`. Error objects may include structured `diagnostics`, but diagnostics are omitted when none are available. In human mode, results are formatted as command-specific text. Help and version output remain plain text unless global argument validation fails first. Git subprocess stderr is piped and captured, never inherited as unstructured prose in JSON mode.
 
 ## Effect System Boundaries
 
