@@ -1,0 +1,104 @@
+---
+import plexMonoUrl from "../assets/fonts/IBMPlexMono-Regular.woff2";
+import plexSansUrl from "../assets/fonts/IBMPlexSansVar-Roman.woff2";
+
+export interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+
+const schema = JSON.stringify(
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Outpost",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Linux, macOS",
+    description: description,
+    url: "https://abijith-suresh.github.io/outpost/",
+  },
+  null,
+  2,
+);
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#1c1c1c" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="canonical" href="https://abijith-suresh.github.io/outpost/" />
+    <link rel="icon" type="image/svg+xml" href="/outpost/favicon.svg" />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+      href={plexSansUrl}
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+      href={plexMonoUrl}
+    />
+    <title>{title}</title>
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://abijith-suresh.github.io/outpost/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <script type="application/ld+json" is:inline set:html={schema}></script>
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <main id="main-content">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <a href="https://github.com/abijith-suresh/outpost">GitHub</a>
+      <a href="https://www.npmjs.com/package/@abijith-suresh/outpost">npm</a>
+    </footer>
+  </body>
+</html>
+<script>
+  document.addEventListener("click", async (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest("[data-copy-command]") as HTMLElement | null;
+    if (!button) return;
+    const command = button.getAttribute("data-copy-command");
+    if (!command) return;
+
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      window.prompt("Copy this command:", command);
+      return;
+    }
+
+    const copyIcon = button.querySelector("[data-copy-icon]");
+    const checkIcon = button.querySelector("[data-check-icon]");
+
+    copyIcon?.classList.add("hidden");
+    checkIcon?.classList.remove("hidden");
+
+    const existing = button.getAttribute("data-copy-timeout");
+    if (existing) clearTimeout(Number(existing));
+
+    const timeout = window.setTimeout(() => {
+      copyIcon?.classList.remove("hidden");
+      checkIcon?.classList.add("hidden");
+      button.removeAttribute("data-copy-timeout");
+    }, 1600);
+
+    button.setAttribute("data-copy-timeout", String(timeout));
+  });
+</script>

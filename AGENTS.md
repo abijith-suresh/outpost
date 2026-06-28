@@ -42,10 +42,11 @@ When documents and implementation disagree:
 
 1. **Changesets required** — every PR with source changes must include a changeset. Create one with `npx changeset`.
 2. **Pre-v1: all bumps are `patch`** — never use `minor` or `major` in a changeset.
-3. **Run `npm run verify` before pushing** — this runs format:check, lint, typecheck, and test.
-4. **Never use `--no-verify`** — it bypasses husky hooks (lint-staged, commitlint) and can cause CI failures.
-5. **Conventional commits** — use `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:` prefixes.
-6. **Branch naming** — use `feat/`, `fix/`, `chore/`, `docs/` prefixes.
+3. **Website-only changes** — PRs that only touch `website/`, website-specific workflows, and website-specific docs/config do not require a CLI package changeset.
+4. **Run `npm run verify` before pushing** — this runs format:check, lint, typecheck, and test.
+5. **Never use `--no-verify`** — it bypasses husky hooks (lint-staged, commitlint) and can cause CI failures.
+6. **Conventional commits** — use `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:` prefixes.
+7. **Branch naming** — use `feat/`, `fix/`, `chore/`, `docs/` prefixes.
 
 ## Stack
 

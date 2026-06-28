@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.job }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -58,3 +58,30 @@ jobs:
 
       - name: Installed-package smoke test
         run: npm run test:smoke
+
+  website:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Setup npm
+        run: npm install --global npm@11.16.0
+
+      - name: Install website dependencies
+        run: npm ci --prefix website
+
+      - name: Check types
+        run: npm run --prefix website verify
+
+      - name: Build
+        run: npm run --prefix website build

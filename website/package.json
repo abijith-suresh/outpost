@@ -1,0 +1,22 @@
+{
+  "name": "outpost-website",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run check && npm run typecheck",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "astro": "^5.7.12"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "~5.8.3"
+  }
+}
