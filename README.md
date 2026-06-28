@@ -36,7 +36,8 @@ Commands:
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
-  repo remove <id>     Remove an imported repository
+  repo remove <id> [--json]
+                         Remove an imported repository
   repo show <id>       Show one imported repository by id
   workspace list [--json]
                          List created ticket workspaces

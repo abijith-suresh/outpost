@@ -21,7 +21,7 @@ Outpost is an npm-distributed CLI written in TypeScript and compiled to ESM. It 
 5. If no positional args or first arg is `"help"`, print help and exit 0.
 6. Dispatch to `resolveCommand()` which routes by `positionalArgs[0]` through a linear chain.
 
-`resolveCommand()` routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). Command errors are mapped to `CliError` before presentation.
+`resolveCommand()` routes to individual command handlers (`runDoctor`, `runCreate`, `runInit`, `runRepoAdd`, etc.). Every command validates that all provided positional arguments are consumed, rejecting extra or unknown arguments with a usage error before any side effects occur. Command errors are mapped to `CliError` before presentation.
 
 **Output formatting:** returned command results are rendered as pretty-printed JSON when `--json` is present, including structured partial results. Otherwise they are formatted as command-specific human-readable text. Help, version output, and errors raised before a command result is produced are plain text.
 

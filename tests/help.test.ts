@@ -151,6 +151,52 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
   });
 
+  it("rejects unexpected positional argument for doctor", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["doctor", "unexpected"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost doctor [--json]");
+  });
+
+  it("rejects unexpected positional argument for init", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["init", "unexpected"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost init [--json]");
+  });
+
+  it("rejects unexpected positional argument for repo list", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "list", "unexpected"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo list [--json]");
+  });
+
+  it("rejects unexpected positional argument for workspace list", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["workspace", "list", "unexpected"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Usage: outpost workspace list [--json]",
+    );
+  });
+
   it("prints help when both --help and --version are present", async () => {
     const infoSpy = vi
       .spyOn(console, "log")

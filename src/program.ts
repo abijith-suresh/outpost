@@ -654,6 +654,11 @@ function resolveCommand(
   FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > {
   if (positionalArgs[0] === "doctor") {
+    if (positionalArgs.length > 1) {
+      return Effect.fail(
+        new CliError({ message: "Usage: outpost doctor [--json]" }),
+      );
+    }
     return runDoctor();
   }
 
@@ -666,6 +671,11 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "init") {
+    if (positionalArgs.length > 1) {
+      return Effect.fail(
+        new CliError({ message: "Usage: outpost init [--json]" }),
+      );
+    }
     return runInit().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
@@ -681,6 +691,11 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "list") {
+    if (positionalArgs.length > 2) {
+      return Effect.fail(
+        new CliError({ message: "Usage: outpost repo list [--json]" }),
+      );
+    }
     return runRepoList().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
@@ -699,7 +714,7 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "repo" && positionalArgs[1] === "remove") {
-    return runRepoRemove(positionalArgs[2]).pipe(
+    return runRepoRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
   }
@@ -719,6 +734,11 @@ function resolveCommand(
   }
 
   if (positionalArgs[0] === "workspace" && positionalArgs[1] === "list") {
+    if (positionalArgs.length > 2) {
+      return Effect.fail(
+        new CliError({ message: "Usage: outpost workspace list [--json]" }),
+      );
+    }
     return runWorkspaceList().pipe(
       Effect.mapError((error) => new CliError({ message: error.message })),
     );
