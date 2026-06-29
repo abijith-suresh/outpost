@@ -1,5 +1,17 @@
 # @abijith-suresh/outpost
 
+## 0.0.24
+
+### Patch Changes
+
+- e0ea55e: Reject unsupported and trailing CLI arguments before dispatching commands
+- bccfd04: Add central workspace manifests with atomic writes, ticket locking, transactional create/rollback, manifest-backed list/show/remove, and repo-remove safety checks.
+- d65d64e: Add Astro marketing landing page as a standalone website package
+- 87d81b5: Make --json a complete machine-readable contract with stable error envelopes
+- 1f3e1dc: Add a dedicated executable entry point so the packaged CLI starts through npm bin shims, propagates command exit codes to the process, and remains side-effect-free when imported.
+- c0c8fbf: Add command-level help and machine-readable introspection via outpost describe
+- 3236ffa: Generate workspace AGENTS.md with SHA-256 marker, ownership classification, and transactional creation/removal integration.
+
 ## 0.0.23
 
 ### Patch Changes
