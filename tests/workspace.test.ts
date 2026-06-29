@@ -328,6 +328,8 @@ describe("run", () => {
     const output = infoSpy.mock.calls[0]?.[0] as string;
 
     expect(exitCode).toBe(0);
+    expect(output).toContain('"ok": true');
+    expect(output).toContain('"exitCode": 0');
     expect(output).toContain('"command": "workspace show"');
     expect(output).toContain('"ticket": "SHOW-JSON-456"');
     expect(output).toContain('"status": "ready"');
@@ -410,6 +412,8 @@ describe("run", () => {
     const output = infoSpy.mock.calls[0]?.[0] as string;
 
     expect(exitCode).toBe(0);
+    expect(output).toContain('"ok": true');
+    expect(output).toContain('"exitCode": 0');
     expect(output).toContain('"command": "workspace list"');
     expect(output).toContain('"ticket": "LIST-JSON-789"');
     expect(output).toContain('"status": "ready"');
@@ -611,6 +615,8 @@ describe("run", () => {
 
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(output).toContain('"ok": true');
+      expect(output).toContain('"exitCode": 0');
       expect(output).toContain('"command": "workspace remove"');
       expect(output).toContain('"ticket": "REMOVE-JSON-456"');
       expect(output).toContain(`"ticketDirectory": "${ticketDirectory}"`);

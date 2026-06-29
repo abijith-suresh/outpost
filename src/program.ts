@@ -16,7 +16,14 @@ import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
-import type { CommandOutput } from "./types.js";
+import { CLI_ERROR_CODES } from "./types.js";
+import type {
+  CliErrorDiagnostic,
+  CliErrorCode,
+  CommandOutput,
+  JsonErrorEnvelope,
+  JsonSuccessEnvelope,
+} from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
   argv: Schema.Array(Schema.String),
@@ -25,7 +32,64 @@ const cliVersionSchema = Schema.Struct({
 
 export class CliError extends Schema.TaggedError<CliError>()("CliError", {
   message: Schema.String,
+  code: Schema.Literal(...CLI_ERROR_CODES),
+  diagnostics: Schema.optional(
+    Schema.Array(
+      Schema.Record({
+        key: Schema.String,
+        value: Schema.Unknown,
+      }),
+    ),
+  ),
 }) {}
+
+function cliError(
+  code: CliErrorCode,
+  message: string,
+  diagnostics?: ReadonlyArray<CliErrorDiagnostic>,
+): CliError {
+  return new CliError({
+    message,
+    code,
+    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
+  });
+}
+
+function jsonSuccessEnvelope(output: CommandOutput): string {
+  const envelope = {
+    ok: true,
+    command: output.command,
+    data: output.data,
+    exitCode: 0,
+  } satisfies JsonSuccessEnvelope;
+  return JSON.stringify(envelope, null, 2);
+}
+
+function jsonPartialEnvelope(output: CommandOutput): string {
+  return JSON.stringify(
+    {
+      ok: false,
+      command: output.command,
+      data: output.data,
+      exitCode: 1,
+    },
+    null,
+    2,
+  );
+}
+
+function jsonErrorEnvelope(
+  command: string | null,
+  error: JsonErrorEnvelope["error"],
+): string {
+  const envelope = {
+    ok: false,
+    command,
+    error,
+    exitCode: 1,
+  } satisfies JsonErrorEnvelope;
+  return JSON.stringify(envelope, null, 2);
+}
 
 function printHelp(version: string): string {
   return `outpost ${version}
@@ -60,7 +124,10 @@ Global options:
 }
 
 function printJson(output: CommandOutput): Effect.Effect<void> {
-  return Console.log(JSON.stringify(output, null, 2));
+  if (output.exitCode === 1) {
+    return Console.log(jsonPartialEnvelope(output));
+  }
+  return Console.log(jsonSuccessEnvelope(output));
 }
 
 function printCommandOutput(
@@ -559,15 +626,41 @@ function printCommandOutput(
   }
 }
 
-function printUnknownCommand(command: string): Effect.Effect<number> {
+function printUnknownCommand(
+  command: string,
+  asJson: boolean,
+): Effect.Effect<number> {
+  if (asJson) {
+    return Console.error(
+      jsonErrorEnvelope(null, {
+        code: "UNKNOWN_COMMAND",
+        message: `Unknown command: ${command}`,
+      }),
+    ).pipe(Effect.as(1));
+  }
   return Effect.all([
     Console.error(`Unknown command: ${command}`),
     Console.error("Run `outpost --help` to see available commands."),
   ]).pipe(Effect.as(1));
 }
 
-function printError(message: string): Effect.Effect<number> {
-  return Console.error(message).pipe(Effect.as(1));
+function printError(
+  command: string | null,
+  error: JsonErrorEnvelope["error"],
+  asJson: boolean,
+): Effect.Effect<number> {
+  if (asJson) {
+    return Console.error(
+      jsonErrorEnvelope(command, {
+        code: error.code,
+        message: error.message,
+        ...(error.diagnostics === undefined
+          ? {}
+          : { diagnostics: error.diagnostics }),
+      }),
+    ).pipe(Effect.as(1));
+  }
+  return Console.error(error.message).pipe(Effect.as(1));
 }
 
 function validateGlobalOptions(
@@ -580,6 +673,7 @@ function validateGlobalOptions(
   if (duplicateOption) {
     return Effect.fail(
       new CliError({
+        code: "INVALID_ARGUMENT",
         message: `Usage: outpost <command> [options]\n${duplicateOption} may only be provided once.`,
       }),
     );
@@ -588,18 +682,57 @@ function validateGlobalOptions(
   return Effect.void;
 }
 
-function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
-  return (
-    positionalArgs[0] === "create" ||
-    positionalArgs[0] === "doctor" ||
-    positionalArgs[0] === "init" ||
-    (positionalArgs[0] === "repo" &&
-      ["add", "fetch", "list", "remove", "show"].includes(
-        positionalArgs[1] ?? "",
-      )) ||
-    (positionalArgs[0] === "workspace" &&
-      ["list", "remove", "show"].includes(positionalArgs[1] ?? ""))
+type KnownCommand =
+  | "help"
+  | "create"
+  | "doctor"
+  | "init"
+  | "repo add"
+  | "repo fetch"
+  | "repo list"
+  | "repo remove"
+  | "repo show"
+  | "workspace list"
+  | "workspace remove"
+  | "workspace show";
+
+function resolveCommandIdentity(
+  args: ReadonlyArray<string>,
+): KnownCommand | null {
+  const positionalArgs = args.filter(
+    (arg) => arg !== "--json" && arg !== "--help" && arg !== "--version",
   );
+  const root = positionalArgs[0];
+  const subcommand = positionalArgs[1];
+
+  if (
+    root === "help" ||
+    root === "create" ||
+    root === "doctor" ||
+    root === "init"
+  ) {
+    return root;
+  }
+
+  if (
+    root === "repo" &&
+    (subcommand === "add" ||
+      subcommand === "fetch" ||
+      subcommand === "list" ||
+      subcommand === "remove" ||
+      subcommand === "show")
+  ) {
+    return `repo ${subcommand}`;
+  }
+
+  if (
+    root === "workspace" &&
+    (subcommand === "list" || subcommand === "remove" || subcommand === "show")
+  ) {
+    return `workspace ${subcommand}`;
+  }
+
+  return null;
 }
 
 function resolveRepoAddArgs(
@@ -607,9 +740,10 @@ function resolveRepoAddArgs(
 ): Effect.Effect<{ inputPath: string; remoteName?: string }, CliError> {
   if (args.length === 0) {
     return Effect.fail(
-      new CliError({
-        message: "Usage: outpost repo add <path> [--remote <name>]",
-      }),
+      cliError(
+        "INVALID_ARGUMENT",
+        "Usage: outpost repo add <path> [--remote <name>]",
+      ),
     );
   }
 
@@ -617,9 +751,10 @@ function resolveRepoAddArgs(
 
   if (!inputPath) {
     return Effect.fail(
-      new CliError({
-        message: "Usage: outpost repo add <path> [--remote <name>]",
-      }),
+      cliError(
+        "INVALID_ARGUMENT",
+        "Usage: outpost repo add <path> [--remote <name>]",
+      ),
     );
   }
 
@@ -631,18 +766,19 @@ function resolveRepoAddArgs(
 
     if (arg !== "--remote") {
       return Effect.fail(
-        new CliError({
-          message: "Usage: outpost repo add <path> [--remote <name>]",
-        }),
+        cliError(
+          "INVALID_ARGUMENT",
+          "Usage: outpost repo add <path> [--remote <name>]",
+        ),
       );
     }
 
     if (remoteName) {
       return Effect.fail(
-        new CliError({
-          message:
-            "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
-        }),
+        cliError(
+          "INVALID_ARGUMENT",
+          "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
+        ),
       );
     }
 
@@ -650,10 +786,10 @@ function resolveRepoAddArgs(
 
     if (!value || value.startsWith("--")) {
       return Effect.fail(
-        new CliError({
-          message:
-            "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
-        }),
+        cliError(
+          "INVALID_ARGUMENT",
+          "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
+        ),
       );
     }
 
@@ -665,6 +801,7 @@ function resolveRepoAddArgs(
 }
 
 function resolveCommand(
+  command: KnownCommand,
   positionalArgs: ReadonlyArray<string>,
   options: { interactive: boolean },
 ): Effect.Effect<
@@ -672,98 +809,95 @@ function resolveCommand(
   CliError,
   FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
 > {
-  if (positionalArgs[0] === "doctor") {
-    if (positionalArgs.length > 1) {
-      return Effect.fail(
-        new CliError({ message: "Usage: outpost doctor [--json]" }),
+  switch (command) {
+    case "help":
+      return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost help"));
+    case "doctor":
+      if (positionalArgs.length > 1) {
+        return Effect.fail(
+          cliError("INVALID_ARGUMENT", "Usage: outpost doctor [--json]"),
+        );
+      }
+      return runDoctor();
+    case "create":
+      return runCreate(positionalArgs.slice(1), {
+        interactive: options.interactive,
+      }).pipe(
+        Effect.mapError((error) => cliError("CREATE_FAILED", error.message)),
       );
-    }
-    return runDoctor();
-  }
-
-  if (positionalArgs[0] === "create") {
-    return runCreate(positionalArgs.slice(1), {
-      interactive: options.interactive,
-    }).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "init") {
-    if (positionalArgs.length > 1) {
-      return Effect.fail(
-        new CliError({ message: "Usage: outpost init [--json]" }),
+    case "init":
+      if (positionalArgs.length > 1) {
+        return Effect.fail(
+          cliError("INVALID_ARGUMENT", "Usage: outpost init [--json]"),
+        );
+      }
+      return runInit().pipe(
+        Effect.mapError((error) => cliError("INIT_FAILED", error.message)),
       );
-    }
-    return runInit().pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "repo" && positionalArgs[1] === "add") {
-    return resolveRepoAddArgs(positionalArgs.slice(2)).pipe(
-      Effect.flatMap(({ inputPath, remoteName }) =>
-        runRepoAdd(inputPath, { remoteName }),
-      ),
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "repo" && positionalArgs[1] === "list") {
-    if (positionalArgs.length > 2) {
-      return Effect.fail(
-        new CliError({ message: "Usage: outpost repo list [--json]" }),
+    case "repo add":
+      return resolveRepoAddArgs(positionalArgs.slice(2)).pipe(
+        Effect.flatMap(({ inputPath, remoteName }) =>
+          runRepoAdd(inputPath, { remoteName }).pipe(
+            Effect.mapError((error) =>
+              cliError("REPO_ADD_FAILED", error.message, error.diagnostics),
+            ),
+          ),
+        ),
       );
-    }
-    return runRepoList().pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "repo" && positionalArgs[1] === "fetch") {
-    return runRepoFetch(positionalArgs.slice(2)).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "repo" && positionalArgs[1] === "show") {
-    return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "repo" && positionalArgs[1] === "remove") {
-    return runRepoRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "show") {
-    return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "remove") {
-    return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3), {
-      interactive: options.interactive,
-    }).pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
-  }
-
-  if (positionalArgs[0] === "workspace" && positionalArgs[1] === "list") {
-    if (positionalArgs.length > 2) {
-      return Effect.fail(
-        new CliError({ message: "Usage: outpost workspace list [--json]" }),
+    case "repo list":
+      if (positionalArgs.length > 2) {
+        return Effect.fail(
+          cliError("INVALID_ARGUMENT", "Usage: outpost repo list [--json]"),
+        );
+      }
+      return runRepoList().pipe(
+        Effect.mapError((error) => cliError("REPO_LIST_FAILED", error.message)),
       );
-    }
-    return runWorkspaceList().pipe(
-      Effect.mapError((error) => new CliError({ message: error.message })),
-    );
+    case "repo fetch":
+      return runRepoFetch(positionalArgs.slice(2)).pipe(
+        Effect.mapError((error) =>
+          cliError("REPO_FETCH_FAILED", error.message),
+        ),
+      );
+    case "repo show":
+      return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+        Effect.mapError((error) => cliError("REPO_SHOW_FAILED", error.message)),
+      );
+    case "repo remove":
+      return runRepoRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
+        Effect.mapError((error) =>
+          cliError("REPO_REMOVE_FAILED", error.message),
+        ),
+      );
+    case "workspace show":
+      return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
+        Effect.mapError((error) =>
+          cliError("WORKSPACE_SHOW_FAILED", error.message),
+        ),
+      );
+    case "workspace remove":
+      return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3), {
+        interactive: options.interactive,
+      }).pipe(
+        Effect.mapError((error) =>
+          cliError("WORKSPACE_REMOVE_FAILED", error.message),
+        ),
+      );
+    case "workspace list":
+      if (positionalArgs.length > 2) {
+        return Effect.fail(
+          cliError(
+            "INVALID_ARGUMENT",
+            "Usage: outpost workspace list [--json]",
+          ),
+        );
+      }
+      return runWorkspaceList().pipe(
+        Effect.mapError((error) =>
+          cliError("WORKSPACE_LIST_FAILED", error.message),
+        ),
+      );
   }
-
-  return Effect.fail(new CliError({ message: positionalArgs.join(" ") }));
 }
 
 export function run(
@@ -779,12 +913,7 @@ export function run(
       argv: [...argv],
       version,
     }).pipe(
-      Effect.mapError(
-        (error) =>
-          new CliError({
-            message: error.message,
-          }),
-      ),
+      Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)),
     );
 
     yield* validateGlobalOptions(input.argv);
@@ -813,19 +942,30 @@ export function run(
 
     if (positionalArgs[0] === "help") {
       if (positionalArgs.length > 1) {
-        return yield* printError("Usage: outpost help");
+        return yield* printError(
+          "help",
+          {
+            code: "INVALID_ARGUMENT",
+            message: "Usage: outpost help",
+          },
+          asJson,
+        );
       }
 
       yield* Console.log(printHelp(input.version));
       return 0;
     }
 
-    const output = yield* resolveCommand(positionalArgs, { interactive }).pipe(
+    const command = resolveCommandIdentity(positionalArgs);
+    if (command === null) {
+      return yield* printUnknownCommand(positionalArgs.join(" "), asJson);
+    }
+
+    const output = yield* resolveCommand(command, positionalArgs, {
+      interactive,
+    }).pipe(
       Effect.matchEffect({
-        onFailure: (error) =>
-          isKnownCommand(positionalArgs)
-            ? printError(error.message)
-            : printUnknownCommand(error.message),
+        onFailure: (error) => printError(command, error, asJson),
         onSuccess: (commandOutput) =>
           printCommandOutput(commandOutput, asJson).pipe(
             Effect.as(commandOutput.exitCode ?? 0),
@@ -837,6 +977,9 @@ export function run(
   });
 
   return program.pipe(
-    Effect.catchTag("CliError", (error) => printError(error.message)),
+    Effect.catchTag("CliError", (error) => {
+      const asJson = argv.includes("--json");
+      return printError(resolveCommandIdentity(argv), error, asJson);
+    }),
   );
 }

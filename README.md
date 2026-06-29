@@ -92,7 +92,15 @@ All state lives under `$OUTPOST_HOME`:
 
 ## JSON output
 
-Most commands support `--json` for machine-readable command results, including structured partial results. When `--json` is present, interactive prompting is disabled. Errors raised before a command result is produced, plus help and version output, remain plain text.
+Commands support `--json` for a stable machine-readable contract. JSON output is a single document with the following envelope:
+
+- **Success:** `{ "ok": true, "command": "...", "data": { ... }, "exitCode": 0 }` written to stdout
+- **Partial failure:** `{ "ok": false, "command": "...", "data": { ... }, "exitCode": 1 }` written to stdout
+- **Error:** `{ "ok": false, "command": "...", "error": { "code": "...", "message": "..." }, "exitCode": 1 }` written to stderr
+
+Known-command errors use the canonical command name, such as `repo show`. Unknown or unresolvable commands use `null`. Router and parser errors use `INVALID_ARGUMENT`, unknown commands use `UNKNOWN_COMMAND`, and command-handler failures use stable command-specific codes such as `CREATE_FAILED` or `REPO_SHOW_FAILED`. The error object may include a `diagnostics` array of structured objects when additional machine-readable context is available.
+
+When `--json` is present, interactive prompting is disabled. Help and version output remain plain text unless argument validation fails before those options can short-circuit.
 
 ```bash
 outpost repo list --json

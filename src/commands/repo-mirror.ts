@@ -1,7 +1,22 @@
 import * as Command from "@effect/platform/Command";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import type { PlatformError } from "@effect/platform/Error";
-import { Effect } from "effect";
+import { Effect, Schema, Stream } from "effect";
+
+export const RepoMirrorDiagnosticSchema = Schema.Struct({
+  stream: Schema.Literal("stdout", "stderr"),
+  line: Schema.String,
+});
+
+export type RepoMirrorDiagnostic = typeof RepoMirrorDiagnosticSchema.Type;
+
+export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()(
+  "RepoMirrorError",
+  {
+    message: Schema.String,
+    diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
+  },
+) {}
 
 function gitCommand(...args: ReadonlyArray<string>) {
   return Command.make("git", ...args).pipe(
@@ -9,72 +24,96 @@ function gitCommand(...args: ReadonlyArray<string>) {
       GCM_INTERACTIVE: "never",
       GIT_TERMINAL_PROMPT: "0",
     }),
-    Command.stderr("inherit"),
+    Command.stdout("pipe"),
+    Command.stderr("pipe"),
+  );
+}
+
+function captureDiagnosticLines(
+  stream: Stream.Stream<Uint8Array, PlatformError>,
+  source: RepoMirrorDiagnostic["stream"],
+): Effect.Effect<ReadonlyArray<RepoMirrorDiagnostic>, PlatformError> {
+  return stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold("", (output, chunk) => output + chunk),
+    Effect.map((output) =>
+      output
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => ({ stream: source, line })),
+    ),
+  );
+}
+
+function runGitCommand(
+  command: Command.Command,
+  failureMessage: string,
+): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const process = yield* Command.start(command);
+      const [stdoutDiagnostics, stderrDiagnostics, exitCode] =
+        yield* Effect.all(
+          [
+            captureDiagnosticLines(process.stdout, "stdout"),
+            captureDiagnosticLines(process.stderr, "stderr"),
+            process.exitCode,
+          ] as const,
+          { concurrency: "unbounded" },
+        );
+      const diagnostics = [...stdoutDiagnostics, ...stderrDiagnostics];
+
+      if (exitCode !== 0) {
+        return yield* Effect.fail(
+          new RepoMirrorError({
+            message: `${failureMessage} (exit status ${exitCode})`,
+            diagnostics,
+          }),
+        );
+      }
+    }),
+  ).pipe(
+    Effect.mapError((error) =>
+      error instanceof RepoMirrorError
+        ? error
+        : new RepoMirrorError({
+            message: `${failureMessage}: ${error.message}`,
+            diagnostics: [],
+          }),
+    ),
   );
 }
 
 export function cloneBareRepository(
   remoteUrl: string,
   managedRepoPath: string,
-): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+  return runGitCommand(
     gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
-  ).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
-        ? Effect.void
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "clone",
-            message: `git clone --mirror failed for ${remoteUrl} (see stderr above)`,
-          } as PlatformError),
-    ),
+    `git clone --mirror failed for ${remoteUrl}`,
   );
 }
 
 export function fetchBareRepository(
   managedRepoPath: string,
-): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+  return runGitCommand(
     gitCommand("fetch", "--all", "--prune", "--tags").pipe(
       Command.workingDirectory(managedRepoPath),
     ),
-  ).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
-        ? Effect.void
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "fetch",
-            message: `git fetch failed for ${managedRepoPath} (see stderr above)`,
-          } as PlatformError),
-    ),
+    `git fetch failed for ${managedRepoPath}`,
   );
 }
 
 export function updateBareRepositoryRemote(
   managedRepoPath: string,
   remoteUrl: string,
-): Effect.Effect<void, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+  return runGitCommand(
     gitCommand("remote", "set-url", "origin", remoteUrl).pipe(
       Command.workingDirectory(managedRepoPath),
     ),
-  ).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
-        ? Effect.void
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "remote set-url",
-            message: `git remote set-url failed for ${managedRepoPath} (see stderr above)`,
-          } as PlatformError),
-    ),
+    `git remote set-url failed for ${managedRepoPath}`,
   );
 }

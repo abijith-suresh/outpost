@@ -19,6 +19,7 @@ import type { CommandOutput } from "../types.js";
 import {
   cloneBareRepository,
   fetchBareRepository,
+  RepoMirrorDiagnosticSchema,
   updateBareRepositoryRemote,
 } from "./repo-mirror.js";
 
@@ -26,6 +27,7 @@ export class RepoAddError extends Schema.TaggedError<RepoAddError>()(
   "RepoAddError",
   {
     message: Schema.String,
+    diagnostics: Schema.optional(Schema.Array(RepoMirrorDiagnosticSchema)),
   },
 ) {}
 
@@ -229,12 +231,24 @@ export function runRepoAdd(
         identity.transportUrl,
       ).pipe(
         Effect.mapError(
-          (error) => new RepoAddError({ message: error.message }),
+          (error) =>
+            new RepoAddError({
+              message: error.message,
+              ...(error.diagnostics.length > 0
+                ? { diagnostics: error.diagnostics }
+                : {}),
+            }),
         ),
       );
       yield* fetchBareRepository(managedRepoPath).pipe(
         Effect.mapError(
-          (error) => new RepoAddError({ message: error.message }),
+          (error) =>
+            new RepoAddError({
+              message: error.message,
+              ...(error.diagnostics.length > 0
+                ? { diagnostics: error.diagnostics }
+                : {}),
+            }),
         ),
       );
     } else {
@@ -249,7 +263,13 @@ export function runRepoAdd(
         );
       yield* cloneBareRepository(identity.transportUrl, managedRepoPath).pipe(
         Effect.mapError(
-          (error) => new RepoAddError({ message: error.message }),
+          (error) =>
+            new RepoAddError({
+              message: error.message,
+              ...(error.diagnostics.length > 0
+                ? { diagnostics: error.diagnostics }
+                : {}),
+            }),
         ),
       );
     }

@@ -49,6 +49,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "doctor"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "not-initialized"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"initialized": false');
@@ -176,6 +178,8 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "doctor"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "degraded"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 1');
@@ -222,6 +226,8 @@ describe("run", () => {
 
     const exitCode = await runCli(["doctor", "--json"]);
     const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
+      ok: boolean;
+      exitCode: number;
       data: {
         diagnostics: Array<string>;
         initialized: boolean;
@@ -230,6 +236,8 @@ describe("run", () => {
     };
 
     expect(exitCode).toBe(0);
+    expect(output.ok).toBe(true);
+    expect(output.exitCode).toBe(0);
     expect(output.data.initialized).toBe(true);
     expect(output.data.status).toContain("error:");
     expect(output.data.status).not.toBe("ok");
@@ -279,6 +287,8 @@ describe("run", () => {
 
     const exitCode = await runCli(["doctor", "--json"]);
     const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
+      ok: boolean;
+      exitCode: number;
       data: {
         diagnostics: Array<string>;
         initialized: boolean;
@@ -287,6 +297,8 @@ describe("run", () => {
     };
 
     expect(exitCode).toBe(0);
+    expect(output.ok).toBe(true);
+    expect(output.exitCode).toBe(0);
     expect(output.data.initialized).toBe(true);
     expect(output.data.status).toContain("error:");
     expect(output.data.status).not.toBe("ok");

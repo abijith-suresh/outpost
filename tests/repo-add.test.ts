@@ -1,4 +1,5 @@
-import { renameSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, renameSync, symlinkSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -18,6 +19,36 @@ import {
   createTempDir,
   writeFileSync,
 } from "./helpers.ts";
+
+const GIT_STDOUT_SENTINEL = "OUTPOST_GIT_STDOUT_SENTINEL";
+const GIT_STDERR_SENTINEL = "OUTPOST_GIT_STDERR_SENTINEL";
+
+function installFailingGitShim(subcommand: "clone"): void {
+  const shimRoot = createTempDir("outpost-git-shim-");
+  const shimPath = path.join(shimRoot, "git");
+  const realGit = execFileSync("sh", ["-c", "command -v git"], {
+    encoding: "utf8",
+  }).trim();
+
+  writeFileSync(
+    shimPath,
+    `#!/bin/sh
+if [ "$1" = "${subcommand}" ]; then
+  index=0
+  while [ "$index" -lt 2048 ]; do
+    printf '${GIT_STDOUT_SENTINEL}-%s-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' "$index"
+    printf '${GIT_STDERR_SENTINEL}-%s-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' "$index" >&2
+    index=$((index + 1))
+  done
+  exit 23
+fi
+exec "$OUTPOST_TEST_REAL_GIT" "$@"
+`,
+  );
+  chmodSync(shimPath, 0o755);
+  process.env.OUTPOST_TEST_REAL_GIT = realGit;
+  process.env.PATH = `${shimRoot}:${process.env.PATH ?? ""}`;
+}
 
 setupAfterEach();
 
@@ -131,11 +162,74 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"ok": true');
+    expect(infoSpy.mock.calls[0]?.[0]).toContain('"exitCode": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"command": "repo add"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"action": "cloned"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"registryAction": "created"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"ready": true');
   });
+
+  it("returns captured git clone diagnostics in one json error document", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    const tempRemote = createTempDir("outpost-remote-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempRemote);
+    installFailingGitShim("clone");
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", tempRepo, "--json"]);
+
+    expect(exitCode).toBe(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+
+    const output = JSON.parse(String(errorSpy.mock.calls[0]?.[0])) as {
+      command: string;
+      error: {
+        code: string;
+        message: string;
+        diagnostics: Array<{ stream: string; line: string }>;
+      };
+      exitCode: number;
+      ok: boolean;
+    };
+
+    expect(output).toMatchObject({
+      ok: false,
+      command: "repo add",
+      error: {
+        code: "REPO_ADD_FAILED",
+        message: expect.stringContaining(
+          "git clone --mirror failed for file://",
+        ),
+      },
+      exitCode: 1,
+    });
+    expect(output.error.message).toContain("(exit status 23)");
+    expect(output.error.message).not.toContain(GIT_STDOUT_SENTINEL);
+    expect(output.error.message).not.toContain(GIT_STDERR_SENTINEL);
+    expect(output.error.diagnostics).toHaveLength(4096);
+    expect(output.error.diagnostics).toContainEqual({
+      stream: "stdout",
+      line: `${GIT_STDOUT_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+    });
+    expect(output.error.diagnostics).toContainEqual({
+      stream: "stderr",
+      line: `${GIT_STDERR_SENTINEL}-2047-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+    });
+  }, 10_000);
 
   it("imports a selected remote from a multi-remote repository", async () => {
     const tempHome = createTempDir("outpost-test-");
