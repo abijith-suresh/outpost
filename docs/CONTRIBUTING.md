@@ -38,13 +38,15 @@ Allowed types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`.
 
 ### Changesets
 
-Every PR that changes source code **must** include a changeset:
+Every PR that changes CLI source code or package behavior **must** include a changeset:
 
 ```bash
 npx changeset
 ```
 
 While Outpost is pre-v1, all changesets use the `patch` bump level — never `minor` or `major`. Documentation-only changes do not require a changeset.
+
+Website-only PRs that touch `website/`, website-specific workflows, or website-specific docs/config do not require a CLI package changeset because the website is not published with `@abijith-suresh/outpost`.
 
 The [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs if a changeset is missing.
 
@@ -132,3 +134,26 @@ CI runs on Node.js 22 and 24 (`fail-fast: false`).
 3. Merging that PR publishes to npm via trusted publishing (`npm run publish:release`).
 
 See `.github/workflows/release.yml` for details.
+
+## Website Development
+
+The marketing landing page lives in `website/` as a standalone npm package with its own `package.json` and lockfile. It is not an npm workspace and is not published with the CLI.
+
+### Setup
+
+```bash
+npm ci --prefix website
+```
+
+### Development
+
+```bash
+npm run --prefix website dev      # Start dev server
+npm run --prefix website build    # Build static output to website/dist/
+npm run --prefix website preview  # Preview built output
+npm run --prefix website verify   # Type-check with astro check and tsc
+```
+
+### CI
+
+The website is verified in CI via the `website` job in `.github/workflows/ci.yml`. Deployment is handled separately from the CLI package release flow.

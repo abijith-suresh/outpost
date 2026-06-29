@@ -244,4 +244,5 @@ All path operations are validated for containment:
 | `src/commands/workspace-list.ts`          | List workspaces with derived status                                         |
 | `src/commands/workspace-show.ts`          | Show workspace details                                                      |
 | `src/commands/workspace-remove.ts`        | Remove workspace with safety checks                                         |
+| `website/`                                | Astro static marketing landing page (standalone package, not published)     |
 | `src/commands/workspace-remove-prompt.ts` | Interactive prompting for AGENTS.md consent                                 |

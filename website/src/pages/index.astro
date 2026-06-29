@@ -1,0 +1,245 @@
+---
+import SiteLayout from "../components/SiteLayout.astro";
+import "../styles/global.css";
+---
+
+<SiteLayout
+  title="Outpost — CLI workspace manager for multi-repo tickets"
+  description="Create deterministic Git worktree layouts for tickets that span multiple repositories. One command to branch, worktree, and orient coding agents across your repos."
+>
+  <article class="page-shell">
+    <header class="page-header">
+      <h1>Outpost</h1>
+      <p>
+        CLI workspace manager for multi-repository tickets. Create branches,
+        worktrees, and agent orientation files across your repos with a single
+        command.
+      </p>
+      <div>
+        <p class="eyebrow" style="margin: 0 0 var(--space-2xs);">Install</p>
+        <div class="code-block-shell">
+          <code class="command-code" translate="no"
+            >npm install -g @abijith-suresh/outpost</code
+          >
+          <button
+            type="button"
+            class="copy-button"
+            aria-label="Copy install command to clipboard"
+            data-copy-command="npm install -g @abijith-suresh/outpost"
+          >
+            <svg
+              data-copy-icon
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1"></rect>
+              <path d="M3 10.5V3a1 1 0 0 1 1-1h7.5"></path>
+            </svg>
+            <svg
+              data-check-icon
+              class="hidden"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M3 8l3.5 3.5L13 4"></path>
+            </svg>
+          </button>
+        </div>
+        <p style="margin: var(--space-2xs) 0 0; font-size: var(--text-xs); color: var(--color-muted);">
+          Requires Node.js &ge; 22.14.0 and Git on PATH.
+        </p>
+      </div>
+    </header>
+
+    <section aria-labelledby="what-is" class="prose">
+      <h2 id="what-is">What it does</h2>
+      <p>
+        A ticket like <code translate="no">PROJ-123</code> often spans a backend
+        repo, a frontend repo, and a shared library. Outpost creates matching
+        branches and worktrees across all of them, then writes an orientation
+        file that tells you and your coding agent exactly where everything lives.
+      </p>
+      <div class="terminal-block" aria-label="Abbreviated example of outpost create output">
+        <pre><span class="terminal-prompt">$ </span>outpost create --ticket PROJ-123 --type feat --repo api --repo web --repo shared
+
+<span class="terminal-output">outpost create
+ticket: PROJ-123
+branch: feat/PROJ-123
+workspace directory: ~/.outpost/worktrees/PROJ-123
+worktrees: 3
+
+- api (id: api)
+  path: ~/.outpost/worktrees/PROJ-123/api
+  branch: feat/PROJ-123
+  base: main
+- web (id: web)
+  path: ~/.outpost/worktrees/PROJ-123/web
+  branch: feat/PROJ-123
+  base: main
+- shared (id: shared)
+  path: ~/.outpost/worktrees/PROJ-123/shared
+  branch: feat/PROJ-123
+  base: main</span></pre>
+      </div>
+    </section>
+
+    <section aria-labelledby="safety" class="prose">
+      <h2 id="safety">Safety guarantees</h2>
+      <p>
+        Outpost is pre-v1 and focused on local workspace management. Every
+        mutation is guarded.
+      </p>
+      <ul class="state-list">
+        <li>
+          <span class="state-dot ready" aria-hidden="true"></span>
+          <span><strong>Dirty worktree protection.</strong> Workspace removal checks <code translate="no">git status --porcelain</code> and refuses worktrees with uncommitted changes.</span>
+        </li>
+        <li>
+          <span class="state-dot ready" aria-hidden="true"></span>
+          <span><strong>Ownership verification.</strong> Worktrees must point to the expected bare repositories. Outpost never adopts state it cannot prove it owns.</span>
+        </li>
+        <li>
+          <span class="state-dot ready" aria-hidden="true"></span>
+          <span><strong>Ticket locks.</strong> Concurrent operations on the same ticket are serialized with file locks.</span>
+        </li>
+        <li>
+          <span class="state-dot ready" aria-hidden="true"></span>
+          <span><strong>Rollback.</strong> If creation fails partway through, branches, worktrees, and generated files are rolled back.</span>
+        </li>
+        <li>
+          <span class="state-dot ready" aria-hidden="true"></span>
+          <span><strong>Partial success reporting.</strong> Batch operations like <code translate="no">repo fetch</code> report individual results rather than hiding failures.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="agent-orientation" class="prose">
+      <h2 id="agent-orientation">Agent orientation</h2>
+      <p>
+        Every workspace includes an <code translate="no">AGENTS.md</code> that
+        coding agents can read to understand the workspace layout, expected
+        branches, and repository structure. Outpost verifies file ownership on
+        removal to protect user edits.
+      </p>
+      <div class="terminal-block" aria-label="Abbreviated example of generated AGENTS.md content">
+        <pre><span class="terminal-prompt">$ </span>cat ~/.outpost/worktrees/PROJ-123/AGENTS.md
+
+<span class="terminal-output"># Outpost Workspace
+
+This directory coordinates one ticket workspace. It is not a Git repository.
+
+## Working Rules
+
+- Each listed child directory is an independent Git worktree.
+- Run Git, build, test, and commit commands inside the relevant worktree.
+
+## Workspace
+
+```
+    ticket: "PROJ-123"
+    expectedBranch: "feat/PROJ-123"
+```
+
+### Repository 1
+
+```
+    name: "api"
+    id: "api"
+    worktree: "./api"
+    expectedBranch: "feat/PROJ-123"
+    baseBranch: "main"
+```</span></pre>
+      </div>
+    </section>
+
+    <section aria-labelledby="workflow" class="prose">
+      <h2 id="workflow">Workflow</h2>
+      <div class="terminal-block">
+        <pre><span class="terminal-prompt">$ </span>outpost init
+<span class="terminal-output">outpost init
+outpost home: ~/.outpost
+repos root: ~/.outpost/repos
+worktrees root: ~/.outpost/worktrees</span>
+
+<span class="terminal-prompt">$ </span>outpost repo add ./my-project
+<span class="terminal-output">outpost repo add
+source repo path: ./my-project
+remote name: origin
+remote url: git@github.com:acme/my-project.git
+repo name: my-project
+managed repo path: ~/.outpost/repos/github.com/acme/my-project.git
+action: cloned
+registry action: created
+ready: true</span>
+
+<span class="terminal-prompt">$ </span>outpost create --ticket PROJ-123 --type feat --repo my-project
+<span class="terminal-output">outpost create
+ticket: PROJ-123
+branch: feat/PROJ-123
+workspace directory: ~/.outpost/worktrees/PROJ-123</span>
+
+<span class="terminal-prompt">$ </span>outpost workspace list
+<span class="terminal-output">outpost workspace list
+workspaces: 1
+- PROJ-123 [ready]
+  workspace directory: ~/.outpost/worktrees/PROJ-123
+  type: feat
+  branch: feat/PROJ-123</span>
+
+<span class="terminal-prompt">$ </span>outpost workspace remove PROJ-123
+<span class="terminal-output">outpost workspace remove
+ticket: PROJ-123
+status: success</span></pre>
+      </div>
+    </section>
+
+    <section aria-labelledby="commands" class="prose">
+      <h2 id="commands">Commands</h2>
+      <div class="feature-grid">
+        <div class="feature-item">
+          <h3><code translate="no">outpost create</code></h3>
+          <p>Create branches and worktrees across repos for a ticket. Supports dry-run, --base, and interactive prompting.</p>
+        </div>
+        <div class="feature-item">
+          <h3><code translate="no">outpost workspace</code></h3>
+          <p>List, show, and remove workspaces. Removal checks for uncommitted changes and verifies ownership.</p>
+        </div>
+        <div class="feature-item">
+          <h3><code translate="no">outpost repo</code></h3>
+          <p>Add, list, show, fetch, and remove repositories with managed bare mirrors.</p>
+        </div>
+        <div class="feature-item">
+          <h3><code translate="no">outpost doctor</code></h3>
+          <p>Report environment status including config validity, repo health, and workspace state.</p>
+        </div>
+        <div class="feature-item">
+          <h3><code translate="no">outpost describe</code></h3>
+          <p>Show command specifications with argument and option details. Machine-readable with --json.</p>
+        </div>
+        <div class="feature-item">
+          <h3><code translate="no">--json</code> output</h3>
+          <p>Supported commands expose JSON output with a stable contract including ok, data, and exitCode fields. Help and version output stay plain text.</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="links" class="prose">
+      <h2 id="links">Links</h2>
+      <ul class="link-list">
+        <li><a href="https://github.com/abijith-suresh/outpost">Source on GitHub</a></li>
+        <li><a href="https://www.npmjs.com/package/@abijith-suresh/outpost">Package on npm</a></li>
+      </ul>
+      <p style="margin-top: var(--space-s);">
+        Outpost is pre-v1. Commands and output contracts may change between releases.
+      </p>
+    </section>
+  </article>
+</SiteLayout>
