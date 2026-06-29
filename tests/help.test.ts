@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runCli, setupAfterEach, createTempDir, version } from "./helpers.ts";
+import {
+  createManagedRepoFixture,
+  createTempDir,
+  existsSync,
+  readRegistry,
+  runCli,
+  setupAfterEach,
+  version,
+} from "./helpers.ts";
 
 setupAfterEach();
 
@@ -19,6 +27,19 @@ describe("run", () => {
       "repo add <path> [--remote <name>]",
     );
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo fetch --all [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo remove <id> [--json]");
+  });
+
+  it("prints help for the help command", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["help"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
   });
 
   it("prints the current version", async () => {
@@ -149,6 +170,72 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
+  });
+
+  it.each(["--json", "--help", "--version"])(
+    "rejects duplicate global option %s before short-circuiting",
+    async (option) => {
+      const infoSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation(() => undefined);
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      const exitCode = await runCli([option, option]);
+
+      expect(exitCode).toBe(1);
+      expect(infoSpy).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        `Usage: outpost <command> [options]\n${option} may only be provided once.`,
+      );
+    },
+  );
+
+  it("rejects duplicate --json before repo remove side effects", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+
+    const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", alpha.tempRepo]);
+
+    const registry = readRegistry(tempHome);
+    const repo = registry.repos[0];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli([
+      "repo",
+      "remove",
+      repo.id,
+      "--json",
+      "--json",
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Usage: outpost <command> [options]\n--json may only be provided once.",
+    );
+    expect(readRegistry(tempHome).repos).toEqual(registry.repos);
+    expect(existsSync(repo.managedRepoPath)).toBe(true);
+  });
+
+  it("rejects unexpected arguments for the help command", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["help", "unexpected"]);
+
+    expect(exitCode).toBe(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost help");
   });
 
   it("rejects unexpected positional argument for doctor", async () => {

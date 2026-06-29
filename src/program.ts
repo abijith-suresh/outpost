@@ -44,7 +44,8 @@ Commands:
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
-  repo remove <id>     Remove an imported repository
+  repo remove <id> [--json]
+                       Remove an imported repository
   repo show <id>       Show one imported repository by id
   workspace list [--json]
                          List created ticket workspaces
@@ -569,6 +570,24 @@ function printError(message: string): Effect.Effect<number> {
   return Console.error(message).pipe(Effect.as(1));
 }
 
+function validateGlobalOptions(
+  args: ReadonlyArray<string>,
+): Effect.Effect<void, CliError> {
+  const duplicateOption = ["--json", "--help", "--version"].find(
+    (option) => args.filter((arg) => arg === option).length > 1,
+  );
+
+  if (duplicateOption) {
+    return Effect.fail(
+      new CliError({
+        message: `Usage: outpost <command> [options]\n${duplicateOption} may only be provided once.`,
+      }),
+    );
+  }
+
+  return Effect.void;
+}
+
 function isKnownCommand(positionalArgs: ReadonlyArray<string>): boolean {
   return (
     positionalArgs[0] === "create" ||
@@ -768,6 +787,8 @@ export function run(
       ),
     );
 
+    yield* validateGlobalOptions(input.argv);
+
     if (input.argv.includes("--help")) {
       yield* Console.log(printHelp(input.version));
       return 0;
@@ -785,7 +806,16 @@ export function run(
       (arg) => arg !== "--json" && arg !== "--version",
     );
 
-    if (positionalArgs.length === 0 || positionalArgs[0] === "help") {
+    if (positionalArgs.length === 0) {
+      yield* Console.log(printHelp(input.version));
+      return 0;
+    }
+
+    if (positionalArgs[0] === "help") {
+      if (positionalArgs.length > 1) {
+        return yield* printError("Usage: outpost help");
+      }
+
       yield* Console.log(printHelp(input.version));
       return 0;
     }
