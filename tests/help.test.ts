@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ALL_COMMANDS } from "../src/command-spec.ts";
 import {
   createManagedRepoFixture,
   createTempDir,
@@ -27,10 +28,14 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "repo add <path> [--remote <name>]",
+      "repo add <path> [--remote <name>] [--json]",
     );
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo fetch --all [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo remove <id> [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "workspace remove <ticket> [--json]",
+    );
+    expect(infoSpy.mock.calls[0]?.[0]).not.toContain("[--json] [--json]");
   });
 
   it("prints help for the help command", async () => {
@@ -108,7 +113,7 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Global options:");
   });
 
-  it("prints top-level help when repo add includes --help", async () => {
+  it("prints command-level help when repo add includes --help", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -119,11 +124,19 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "repo add <path> [--remote <name>]",
+      "outpost repo add <path> [--remote <name>] [--json]",
+    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Arguments:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "<path>  Local repository path (required)",
+    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("Options:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "--remote <name>  Remote name (defaults to origin)",
     );
   });
 
-  it("prints top-level help when repo list includes --help", async () => {
+  it("prints command-level help when repo list includes --help", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -133,10 +146,10 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo list [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost repo list [--json]");
   });
 
-  it("prints top-level help when repo fetch includes --help", async () => {
+  it("prints command-level help when repo fetch includes --help", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -146,10 +159,12 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo fetch --all [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "outpost repo fetch --all [--json]",
+    );
   });
 
-  it("prints top-level help when doctor includes --help", async () => {
+  it("prints command-level help when doctor includes --help", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -159,7 +174,7 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("doctor [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost doctor [--json]");
   });
 
   it("prints help instead of json when repo add includes --json and --help", async () => {
@@ -172,7 +187,176 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "outpost repo add <path> [--remote <name>] [--json]",
+    );
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
+  });
+
+  it("prints command-level help through the help command", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["help", "workspace", "remove"]);
+
+    expect(exitCode).toBe(0);
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "outpost workspace remove <ticket> [--json]",
+    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "<ticket>  Ticket workspace identifier (required)",
+    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("interactive: yes");
+  });
+
+  it("returns a JSON error for an unknown help target", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["help", "wat", "--json"]);
+
+    expect(exitCode).toBe(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+      ok: false,
+      command: "help",
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "Unknown command: wat",
+      },
+      exitCode: 1,
+    });
+  });
+
+  it("lists each registered command exactly once in top-level help", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["--help"]);
+
+    expect(exitCode).toBe(0);
+    const helpText = String(infoSpy.mock.calls[0]?.[0]);
+
+    for (const command of ALL_COMMANDS) {
+      const commandPath = command.path.join(" ");
+      const escapedCommandPath = commandPath.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+      const matches = helpText.match(
+        new RegExp(`^  ${escapedCommandPath}(?: |$)`, "gm"),
+      );
+      expect(matches, commandPath).toHaveLength(1);
+    }
+  });
+
+  it("describes the command surface as JSON in registry order", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["describe", "--json"]);
+
+    expect(exitCode).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+
+    const envelope = JSON.parse(String(infoSpy.mock.calls[0]?.[0]));
+    expect(envelope).toEqual({
+      ok: true,
+      command: "describe",
+      data: {
+        commands: ALL_COMMANDS.map((command) => ({
+          path: command.path,
+          usage: command.path.join(" "),
+          description: command.description,
+          mutation: command.mutation,
+          interactive: command.interactive,
+          json: command.json,
+          dryRun: command.dryRun,
+        })),
+      },
+      exitCode: 0,
+    });
+  });
+
+  it("describes one command as JSON with arguments and options", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["describe", "repo", "add", "--json"]);
+
+    expect(exitCode).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toEqual({
+      ok: true,
+      command: "describe",
+      data: {
+        path: ["repo", "add"],
+        usage: "repo add",
+        description: "Validate a local repository for Outpost registration",
+        arguments: [
+          {
+            name: "path",
+            description: "Local repository path",
+            required: true,
+          },
+        ],
+        options: [
+          {
+            name: "--remote",
+            valueName: "name",
+            description: "Remote name (defaults to origin)",
+            required: false,
+          },
+        ],
+        mutation: true,
+        interactive: false,
+        json: true,
+        dryRun: false,
+      },
+      exitCode: 0,
+    });
+  });
+
+  it("returns a JSON error for an unknown describe target", async () => {
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["describe", "wat", "--json"]);
+
+    expect(exitCode).toBe(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+      ok: false,
+      command: "describe",
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "Unknown command: wat",
+      },
+      exitCode: 1,
+    });
   });
 
   it.each(["--help", "--version"])(
@@ -263,7 +447,7 @@ describe("run", () => {
     expect(existsSync(repo.managedRepoPath)).toBe(true);
   });
 
-  it("rejects unexpected arguments for the help command", async () => {
+  it("rejects unknown targets for the help command", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -275,10 +459,10 @@ describe("run", () => {
 
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost help");
+    expect(errorSpy).toHaveBeenCalledWith("Unknown command: unexpected");
   });
 
-  it("returns an exact JSON error for invalid help arguments", async () => {
+  it("returns an exact JSON error for an unknown help target", async () => {
     const infoSpy = vi
       .spyOn(console, "log")
       .mockImplementation(() => undefined);
@@ -296,7 +480,7 @@ describe("run", () => {
       command: "help",
       error: {
         code: "INVALID_ARGUMENT",
-        message: "Usage: outpost help",
+        message: "Unknown command: unexpected",
       },
       exitCode: 1,
     });

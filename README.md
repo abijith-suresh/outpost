@@ -26,19 +26,21 @@ outpost workspace remove PROJ-123     # clean up when done
 outpost <command> [options]
 
 Commands:
-  help                 Show this help output
-  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]
+  help [<command> ...] Show this help output
+  describe [<command> ...] [--json] Show command specifications
+  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
-  repo add <path> [--remote <name>]
+  repo add <path> [--remote <name>] [--json]
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
   repo remove <id> [--json]
                          Remove an imported repository
-  repo show <id>       Show one imported repository by id
+  repo show <id> [--json]
+                       Show one imported repository by id
   workspace list [--json]
                          List created ticket workspaces
   workspace remove <ticket> [--json]
@@ -50,6 +52,8 @@ Global options:
   --version            Show CLI version
   --json               Use JSON output for supported commands
 ```
+
+Use `outpost help <command>` or `outpost <command> --help` for command-level help, such as `outpost help repo add`. Use `outpost describe --json` or `outpost describe <command> --json` when an agent needs the command surface as structured data.
 
 ### Create
 
