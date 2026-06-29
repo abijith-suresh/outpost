@@ -25,17 +25,18 @@ export class RepoRemoveError extends Schema.TaggedError<RepoRemoveError>()(
 ) {}
 
 export function runRepoRemove(
-  repoId: string,
+  repoId: string | undefined,
+  extraArgs: ReadonlyArray<string>,
 ): Effect.Effect<
   CommandOutput,
   RepoRemoveError,
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
-    if (!repoId) {
+    if (!repoId || extraArgs.length > 0) {
       return yield* Effect.fail(
         new RepoRemoveError({
-          message: "Usage: outpost repo remove <id>",
+          message: "Usage: outpost repo remove <id> [--json]",
         }),
       );
     }
