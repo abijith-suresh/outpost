@@ -119,3 +119,15 @@ outpost workspace show PROJ-123 --json
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
 - **Rollback:** if `create` fails partway through, it rolls back branches, worktrees, and generated files.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.
+
+## Website
+
+The marketing landing page is built with Astro and deployed to GitHub Pages at [abijith-suresh.github.io/outpost](https://abijith-suresh.github.io/outpost/). See `.github/workflows/pages.yml` for the deployment workflow.
+
+### One-time repository setup
+
+In your repository Settings:
+
+1. Go to **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. Ensure the `github-pages` environment exists (created automatically on first deployment).

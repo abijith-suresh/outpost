@@ -156,4 +156,4 @@ npm run --prefix website verify   # Type-check with astro check and tsc
 
 ### CI
 
-The website is verified in CI via the `website` job in `.github/workflows/ci.yml`. Deployment is handled separately from the CLI package release flow.
+The website is verified in CI via the `website` job in `.github/workflows/ci.yml`. The site is deployed to GitHub Pages via `.github/workflows/pages.yml` after pushes to `main` that touch website or Pages workflow files, and through manual dispatch. Pull requests validate without deploying.
