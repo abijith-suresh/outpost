@@ -11,7 +11,10 @@ import {
 } from "../config.js";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import type { CommandOutput } from "../types.js";
-import { fetchBareRepository } from "./repo-mirror.js";
+import {
+  fetchBareRepository,
+  type RepoMirrorDiagnostic,
+} from "./repo-mirror.js";
 
 export class RepoFetchError extends Schema.TaggedError<RepoFetchError>()(
   "RepoFetchError",
@@ -30,6 +33,7 @@ type RepoFetchResult = {
   fetchStatus: "fetched" | "failed";
   lastFetchedAt: string;
   error?: string;
+  diagnostics?: ReadonlyArray<RepoMirrorDiagnostic>;
 };
 
 function usageError(): RepoFetchError {
@@ -54,7 +58,11 @@ function buildSuccessResult(
   };
 }
 
-function buildFailureResult(repo: RepoRecord, error: string): RepoFetchResult {
+function buildFailureResult(
+  repo: RepoRecord,
+  error: string,
+  diagnostics: ReadonlyArray<RepoMirrorDiagnostic>,
+): RepoFetchResult {
   return {
     id: repo.id,
     name: repo.name,
@@ -65,6 +73,7 @@ function buildFailureResult(repo: RepoRecord, error: string): RepoFetchResult {
     fetchStatus: "failed",
     lastFetchedAt: repo.lastFetchedAt,
     error,
+    ...(diagnostics.length > 0 ? { diagnostics } : {}),
   };
 }
 
@@ -91,7 +100,7 @@ function fetchOneRepo(
     Effect.catchAll((error) =>
       Effect.succeed({
         registryRepo: repo,
-        result: buildFailureResult(repo, error.message),
+        result: buildFailureResult(repo, error.message, error.diagnostics),
       } satisfies RepoProcessResult),
     ),
   );

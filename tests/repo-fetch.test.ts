@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { chmodSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,7 +15,38 @@ import {
   setupAfterEach,
   createTempDir,
   writeFileSync,
+  writeRegistry,
 } from "./helpers.ts";
+
+const GIT_STDOUT_SENTINEL = "OUTPOST_GIT_STDOUT_SENTINEL";
+const GIT_STDERR_SENTINEL = "OUTPOST_GIT_STDERR_SENTINEL";
+
+function installFailingGitShim(subcommand: "fetch"): void {
+  const shimRoot = createTempDir("outpost-git-shim-");
+  const shimPath = path.join(shimRoot, "git");
+  const realGit = execFileSync("sh", ["-c", "command -v git"], {
+    encoding: "utf8",
+  }).trim();
+
+  writeFileSync(
+    shimPath,
+    `#!/bin/sh
+if [ "$1" = "${subcommand}" ]; then
+  index=0
+  while [ "$index" -lt 2048 ]; do
+    printf '${GIT_STDOUT_SENTINEL}-%s-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' "$index"
+    printf '${GIT_STDERR_SENTINEL}-%s-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\\n' "$index" >&2
+    index=$((index + 1))
+  done
+  exit 23
+fi
+exec "$OUTPOST_TEST_REAL_GIT" "$@"
+`,
+  );
+  chmodSync(shimPath, 0o755);
+  process.env.OUTPOST_TEST_REAL_GIT = realGit;
+  process.env.PATH = `${shimRoot}:${process.env.PATH ?? ""}`;
+}
 
 setupAfterEach();
 
@@ -185,6 +219,72 @@ describe("run", () => {
     expect(output).toContain('"fetchStatus": "failed"');
     expect(output).toContain('"error":');
   });
+
+  it("keeps captured git fetch diagnostics structured in json and out of human output", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const managedRepoPath = path.join(tempHome, "repos", "diagnostic.git");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    mkdirSync(managedRepoPath, { recursive: true });
+    const repo = makeRepoRecord({
+      id: "diagnostic",
+      managedRepoPath,
+    });
+    writeRegistry(tempHome, [repo]);
+    installFailingGitShim("fetch");
+
+    const infoSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "fetch", "--all", "--json"]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+
+    const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
+      data: {
+        results: Array<{
+          error: string;
+          diagnostics: Array<{ stream: string; line: string }>;
+        }>;
+      };
+    };
+    const result = output.data.results[0];
+
+    expect(result?.error).toBe(
+      `git fetch failed for ${managedRepoPath} (exit status 23)`,
+    );
+    expect(result?.diagnostics).toHaveLength(4096);
+    expect(result?.diagnostics).toContainEqual({
+      stream: "stdout",
+      line: `${GIT_STDOUT_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+    });
+    expect(result?.diagnostics).toContainEqual({
+      stream: "stderr",
+      line: `${GIT_STDERR_SENTINEL}-2047-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+    });
+
+    infoSpy.mockClear();
+
+    const humanExitCode = await runCli(["repo", "fetch", "--all"]);
+    const humanOutput = infoSpy.mock.calls
+      .map(([line]) => String(line))
+      .join("\n");
+
+    expect(humanExitCode).toBe(1);
+    expect(humanOutput).toContain(
+      `error: git fetch failed for ${managedRepoPath} (exit status 23)`,
+    );
+    expect(humanOutput).not.toContain(GIT_STDOUT_SENTINEL);
+    expect(humanOutput).not.toContain(GIT_STDERR_SENTINEL);
+    expect(errorSpy).not.toHaveBeenCalled();
+  }, 10_000);
 
   it("updates an existing registry record when repo add is rerun", async () => {
     const tempHome = createTempDir("outpost-test-");

@@ -171,6 +171,35 @@ try {
     "Unknown command: wat\nRun `outpost --help` to see available commands.\n",
   );
 
+  console.log("Test: outpost wat --json (unknown command)");
+  const unknownJsonResult = runInstalled(["wat", "--json"]);
+  assert.equal(unknownJsonResult.status, 1);
+  assert.equal(unknownJsonResult.stdout, "");
+  assert.deepEqual(JSON.parse(unknownJsonResult.stderr), {
+    ok: false,
+    command: null,
+    error: {
+      code: "UNKNOWN_COMMAND",
+      message: "Unknown command: wat",
+    },
+    exitCode: 1,
+  });
+
+  console.log("Test: duplicate --json");
+  const duplicateJsonResult = runInstalled(["doctor", "--json", "--json"]);
+  assert.equal(duplicateJsonResult.status, 1);
+  assert.equal(duplicateJsonResult.stdout, "");
+  assert.deepEqual(JSON.parse(duplicateJsonResult.stderr), {
+    ok: false,
+    command: "doctor",
+    error: {
+      code: "INVALID_ARGUMENT",
+      message:
+        "Usage: outpost <command> [options]\n--json may only be provided once.",
+    },
+    exitCode: 1,
+  });
+
   console.log("Test: outpost create --json (missing args)");
   const createResult = runInstalled(["create", "--json"]);
   assert.equal(createResult.status, 1);
@@ -178,8 +207,8 @@ try {
   const createError = JSON.parse(createResult.stderr);
   assert.equal(createError.ok, false);
   assert.equal(createError.exitCode, 1);
-  assert.equal(createError.command, null);
-  assert.equal(createError.error.code, "USAGE_ERROR");
+  assert.equal(createError.command, "create");
+  assert.equal(createError.error.code, "CREATE_FAILED");
   assert.ok(createError.error.message.includes("Usage: outpost create"));
   assert.ok(createError.error.message.includes("--ticket is required."));
   assert.ok(createError.error.message.includes("--type is required."));
