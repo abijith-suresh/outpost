@@ -1,5 +1,11 @@
 # @abijith-suresh/outpost
 
+## 0.0.25
+
+### Patch Changes
+
+- b3be244: Reorganize Outpost into npm workspaces while preserving the published CLI contract
+
 ## 0.0.24
 
 ### Patch Changes
