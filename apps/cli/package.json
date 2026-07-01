@@ -1,0 +1,64 @@
+{
+  "name": "@abijith-suresh/outpost",
+  "version": "0.0.24",
+  "description": "CLI for managing local repository workspaces.",
+  "type": "module",
+  "bin": {
+    "outpost": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.14.0",
+    "npm": ">=11.5.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abijith-suresh/outpost.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/abijith-suresh/outpost#readme",
+  "bugs": {
+    "url": "https://github.com/abijith-suresh/outpost/issues"
+  },
+  "keywords": [
+    "cli",
+    "developer-tools",
+    "typescript"
+  ],
+  "author": "abijith-suresh",
+  "license": "MIT",
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "clean": "node --eval \"fs.rmSync('dist', { force: true, recursive: true })\"",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "verify": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@effect/platform": "0.96.1",
+    "@effect/platform-node": "0.106.0",
+    "effect": "3.21.2"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  }
+}

@@ -1,14 +1,16 @@
 import js from "@eslint/js";
 import prettierConfig from "eslint-config-prettier";
+import astro from "eslint-plugin-astro";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "coverage", "website"],
+    ignores: ["**/.astro", "**/coverage", "**/dist"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  ...astro.configs.recommended,
   prettierConfig,
   {
     files: ["**/*.ts"],
@@ -28,7 +30,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["tests/**/*.ts", "vitest.config.ts"],
+    files: ["apps/cli/tests/**/*.ts", "apps/cli/vitest.config.ts"],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -39,7 +41,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["apps/cli/scripts/**/*.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,

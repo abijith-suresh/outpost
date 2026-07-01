@@ -42,46 +42,29 @@ jobs:
         run: npm ci
 
       - name: Check formatting
+        if: matrix.node-version == 22
         run: npm run format:check
 
       - name: Lint
+        if: matrix.node-version == 22
         run: npm run lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: npm run typecheck --workspace @abijith-suresh/outpost
 
       - name: Test
-        run: npm run test
+        run: npm run test --workspace @abijith-suresh/outpost
 
       - name: Build
-        run: npm run build
+        run: npm run build --workspace @abijith-suresh/outpost
 
       - name: Installed-package smoke test
-        run: npm run test:smoke
+        run: npm run test:smoke --workspace @abijith-suresh/outpost
 
-  website:
-    runs-on: ubuntu-latest
+      - name: Verify website
+        if: matrix.node-version == 22
+        run: npm run verify --workspace outpost-website
 
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Setup npm
-        run: npm install --global npm@11.16.0
-
-      - name: Install website dependencies
-        run: npm ci --prefix website
-
-      - name: Check types
-        run: npm run --prefix website verify
-
-      - name: Build
-        run: npm run --prefix website build
+      - name: Build website
+        if: matrix.node-version == 22
+        run: npm run build --workspace outpost-website

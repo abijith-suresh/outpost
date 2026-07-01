@@ -1,4 +1,4 @@
-dist
-coverage
-node_modules
-website
+**/.astro
+**/coverage
+**/dist
+**/node_modules

@@ -9,8 +9,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check && npm run typecheck",
-    "test": "echo \"No tests yet\""
+    "verify": "npm run check && npm run typecheck"
   },
   "dependencies": {
     "astro": "^5.7.12"

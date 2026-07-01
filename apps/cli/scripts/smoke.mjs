@@ -1,13 +1,7 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -19,8 +13,6 @@ const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const smokeRoot = mkdtempSync(join(tmpdir(), "outpost-smoke-"));
 const packDir = join(smokeRoot, "pack");
-const unpackDir = join(smokeRoot, "unpack");
-const unpackedPackage = join(unpackDir, "package");
 const installPrefix = join(smokeRoot, "global");
 const outpostHome = join(smokeRoot, "home");
 const npmPrefixEnv = {
@@ -96,7 +88,6 @@ function runInstalled(args, env) {
 
 try {
   mkdirSync(packDir, { recursive: true });
-  mkdirSync(unpackDir, { recursive: true });
 
   console.log("Building...");
   const buildResult = runNpm(["run", "build"]);
@@ -116,32 +107,39 @@ try {
   assert.equal(packOutput.length, 1, "npm pack should produce one tarball");
   const tarball = join(packDir, packOutput[0].filename);
 
-  console.log(`Extracting ${tarball}...`);
-  const extractResult = run("tar", ["-xzf", tarball, "-C", unpackDir]);
-  assertSuccess(extractResult, "tarball extraction");
-
-  symlinkSync(
-    join(projectRoot, "node_modules"),
-    join(unpackedPackage, "node_modules"),
-    process.platform === "win32" ? "junction" : "dir",
-  );
-
-  console.log(`Linking to ${installPrefix}...`);
-  const linkResult = runNpm(
-    ["link", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+  console.log(`Installing ${tarball} to ${installPrefix}...`);
+  const installResult = runNpm(
+    [
+      "install",
+      "--global",
+      tarball,
+      "--prefer-offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+    ],
     {
-      cwd: unpackedPackage,
       env: npmPrefixEnv,
     },
   );
-  assertSuccess(linkResult, "global package link");
+  assertSuccess(installResult, "global packed-package install");
+
+  const globalRootResult = runNpm(["root", "--global"], {
+    env: npmPrefixEnv,
+  });
+  assertSuccess(globalRootResult, "resolve global package root");
+  const installedPackage = join(
+    globalRootResult.stdout.trim(),
+    "@abijith-suresh",
+    "outpost",
+  );
 
   console.log("Test: importing packed package is side-effect-free");
   const importResult = run(process.execPath, [
     "--input-type=module",
     "--eval",
     [
-      `import { runCli } from ${JSON.stringify(pathToFileURL(join(unpackedPackage, "dist", "index.js")).href)};`,
+      `import { runCli } from ${JSON.stringify(pathToFileURL(join(installedPackage, "dist", "index.js")).href)};`,
       'if (typeof runCli !== "function") throw new TypeError("runCli missing");',
       'process.stdout.write("OK\\n");',
     ].join("\n"),

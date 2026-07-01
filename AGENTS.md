@@ -8,7 +8,8 @@ This is the **repository-level** `AGENTS.md`. Each created Outpost workspace als
 
 | Document                          | Scope                                                                       | Audience                     |
 | --------------------------------- | --------------------------------------------------------------------------- | ---------------------------- |
-| `README.md`                       | User-facing: what Outpost is, installation, usage, safety                   | Outpost users                |
+| `README.md`                       | User-facing project overview and workspace navigation                       | Outpost users                |
+| `apps/cli/README.md`              | CLI installation, usage, commands, and safety                               | Outpost CLI users            |
 | `docs/CONTEXT.md`                 | Product truth: problem, goals, non-goals, constraints, UX principles        | Contributors, designers      |
 | `docs/ARCHITECTURE.md`            | Current technical behavior: routing, state, modules, invariants             | Contributors                 |
 | `docs/CONTRIBUTING.md`            | Development workflow: setup, branches, commits, hooks, testing, CI, release | Contributors                 |
@@ -19,21 +20,21 @@ This is the **repository-level** `AGENTS.md`. Each created Outpost workspace als
 
 When documents and implementation disagree:
 
-| Kind of truth                   | Authoritative source        |
-| ------------------------------- | --------------------------- |
-| Product intent                  | `docs/CONTEXT.md`           |
-| Runtime behavior and invariants | Source code and tests       |
-| Dependency versions and scripts | `package.json` and lockfile |
-| CI and release mechanics        | `.github/workflows/`        |
-| Released history                | `CHANGELOG.md`              |
-| Pending release notes           | `.changeset/`               |
+| Kind of truth                   | Authoritative source                                         |
+| ------------------------------- | ------------------------------------------------------------ |
+| Product intent                  | `docs/CONTEXT.md`                                            |
+| Runtime behavior and invariants | Source code and tests                                        |
+| Dependency versions and scripts | Root and workspace package manifests and `package-lock.json` |
+| CI and release mechanics        | `.github/workflows/`                                         |
+| Released history                | `apps/cli/CHANGELOG.md`                                      |
+| Pending release notes           | `.changeset/`                                                |
 
 `docs/ARCHITECTURE.md` describes and explains current technical behavior but does not override executable truth.
 
 ## When to Update Documentation
 
-- **Source changes** that add, remove, or change commands → update `README.md` command listing and `docs/ARCHITECTURE.md`
-- **New or changed safety invariants** → update `README.md` safety section and `docs/ARCHITECTURE.md`
+- **Source changes** that add, remove, or change commands → update `apps/cli/README.md` command listing and `docs/ARCHITECTURE.md`
+- **New or changed safety invariants** → update `apps/cli/README.md` safety section and `docs/ARCHITECTURE.md`
 - **Product direction changes** → update `docs/CONTEXT.md`
 - **CI, hooks, or release workflow changes** → update `docs/CONTRIBUTING.md`
 - **Dependency version bumps** → no documentation update needed (versions are authoritative in `package.json`); do not duplicate versions in docs
@@ -42,8 +43,8 @@ When documents and implementation disagree:
 
 1. **Changesets required** — every PR with source changes must include a changeset. Create one with `npx changeset`.
 2. **Pre-v1: all bumps are `patch`** — never use `minor` or `major` in a changeset.
-3. **Website-only changes** — PRs that only touch `website/`, website-specific workflows, and website-specific docs/config do not require a CLI package changeset.
-4. **Run `npm run verify` before pushing** — this runs format:check, lint, typecheck, and test.
+3. **Website-only changes** — PRs that only touch `apps/website/`, website-specific workflows, and website-specific docs/config do not require a CLI package changeset.
+4. **Run `npm run verify` before pushing** — this checks repository formatting and lint, then verifies every workspace.
 5. **Never use `--no-verify`** — it bypasses husky hooks (lint-staged, commitlint) and can cause CI failures.
 6. **Conventional commits** — use `feat:`, `fix:`, `chore:`, `docs:`, `style:`, `refactor:`, `test:` prefixes.
 7. **Branch naming** — use `feat/`, `fix/`, `chore/`, `docs/` prefixes.
@@ -54,6 +55,6 @@ When documents and implementation disagree:
 - **Runtime:** Node.js >= 22.14.0
 - **Effects system:** Effect-TS — command workflows and project-controlled side effects return `Effect.Effect`; direct Node process boundaries are documented in `docs/ARCHITECTURE.md`
 - **Config/Schema:** `Schema.TaggedError` for errors, `Schema.Struct` for config validation
-- **Testing:** Vitest (CLI integration and focused module tests in `tests/`, with shared helpers in `tests/helpers.ts`)
-- **CI:** GitHub Actions (format:check, lint, typecheck, test, build)
+- **Testing:** Vitest (CLI integration and focused module tests in `apps/cli/tests/`, with shared helpers in `apps/cli/tests/helpers.ts`)
+- **CI:** GitHub Actions (`validate` Node.js matrix with repository quality, CLI verification, and website checks)
 - **Changeset enforcement:** [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs, documented in `docs/CONTRIBUTING.md`
