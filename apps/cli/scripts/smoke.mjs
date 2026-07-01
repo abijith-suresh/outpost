@@ -1,13 +1,7 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -120,11 +114,21 @@ try {
   const extractResult = run("tar", ["-xzf", tarball, "-C", unpackDir]);
   assertSuccess(extractResult, "tarball extraction");
 
-  symlinkSync(
-    join(projectRoot, "node_modules"),
-    join(unpackedPackage, "node_modules"),
-    process.platform === "win32" ? "junction" : "dir",
+  console.log("Installing packed runtime dependencies...");
+  const installResult = runNpm(
+    [
+      "install",
+      "--omit=dev",
+      "--offline",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+    ],
+    {
+      cwd: unpackedPackage,
+    },
   );
+  assertSuccess(installResult, "packed runtime dependency install");
 
   console.log(`Linking to ${installPrefix}...`);
   const linkResult = runNpm(

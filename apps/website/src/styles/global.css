@@ -22,16 +22,25 @@
 
 :root {
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", "Source Code Pro",
-    Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+    Consolas, "DejaVu Sans Mono", monospace;
 
   --color-bg: oklch(14.5% 0 0);
   --color-text: oklch(98.5% 0 0);
   --color-border: oklch(25% 0 0);
   --color-muted: color-mix(in oklch, var(--color-text) 60%, transparent);
-  --color-muted-foreground: color-mix(in oklch, var(--color-text) 68%, transparent);
+  --color-muted-foreground: color-mix(
+    in oklch,
+    var(--color-text) 68%,
+    transparent
+  );
   --color-surface: color-mix(in oklch, var(--color-text) 6%, transparent);
-  --color-surface-strong: color-mix(in oklch, var(--color-text) 8%, transparent);
+  --color-surface-strong: color-mix(
+    in oklch,
+    var(--color-text) 8%,
+    transparent
+  );
 
   --color-accent: oklch(65% 0.15 250);
   --color-success: oklch(65% 0.15 160);
