@@ -119,6 +119,66 @@ describe("run", () => {
     });
   });
 
+  it("supports source repository and remote paths containing spaces", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const root = createTempDir("outpost-spaced-paths-");
+    const tempRepo = path.join(root, "Source Repository");
+    const tempRemote = path.join(root, "Remote Repositories", "Repo Name.git");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    mkdirSync(tempRepo, { recursive: true });
+    mkdirSync(path.dirname(tempRemote), { recursive: true });
+    await initBareGitRepo(tempRemote);
+    await initGitRepo(tempRepo);
+    await addGitRemote(tempRepo, "origin", tempRemote);
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+    const registry = JSON.parse(
+      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
+    ) as {
+      repos: Array<{
+        id: string;
+        name: string;
+        sourceRepoPath: string;
+      }>;
+    };
+
+    expect(exitCode).toBe(0);
+    expect(registry.repos[0]).toMatchObject({
+      id: localRepoId(tempRemote),
+      name: "Repo Name",
+      sourceRepoPath: tempRepo,
+    });
+  });
+
+  it("rejects percent-encoded controls before cloning or registry writes", async () => {
+    const tempHome = createTempDir("outpost-test-");
+    const tempRepo = createTempDir("outpost-repo-");
+    process.env.OUTPOST_HOME = tempHome;
+
+    await runCli(["init"]);
+    await initGitRepo(tempRepo);
+    await addGitRemote(
+      tempRepo,
+      "origin",
+      "https://example.com/group/repo%0Aname.git",
+    );
+    const registryPath = path.join(tempHome, "repos.json");
+    const registryBefore = readFileSync(registryPath, "utf8");
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const exitCode = await runCli(["repo", "add", tempRepo]);
+
+    expect(exitCode).toBe(1);
+    expect(errorSpy.mock.calls[0]?.[0]).toContain(
+      "repository id may not contain ASCII control characters.",
+    );
+    expect(readFileSync(registryPath, "utf8")).toBe(registryBefore);
+  });
+
   it("returns an error when repo add is run before init", async () => {
     const tempHome = createTempDir("outpost-test-");
     const tempRepo = createTempDir("outpost-repo-");

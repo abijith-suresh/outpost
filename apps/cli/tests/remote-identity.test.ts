@@ -64,6 +64,15 @@ describe("remote identity", () => {
     expect(otherHost.id).not.toBe(gitlab.id);
   });
 
+  it("preserves supported percent-encoded spaces and Unicode", async () => {
+    const identity = await resolveIdentity(
+      "https://example.com/Group/Repo%20%E5%90%8D.git",
+    );
+
+    expect(identity.id).toBe("example.com/Group/Repo 名");
+    expect(identity.name).toBe("Repo 名");
+  });
+
   it("omits default ports and retains non-default ports", async () => {
     const httpsDefault = await resolveIdentity(
       "https://example.com:443/Group/Repo.git",

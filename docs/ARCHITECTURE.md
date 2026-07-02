@@ -97,7 +97,7 @@ The identity determines the managed mirror path under `repos/`. Path segments ar
 
 **Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Fetched with `git fetch --all --prune --tags`. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
 
-**Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
+**Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
 
 ## Worktree and Branch Model
 
@@ -114,7 +114,8 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 
 **Validation (pre-flight):**
 
-- Ticket and type are validated for path segment safety
+- Ticket, type, repository IDs, and an explicit base branch are validated as non-empty semantic identifiers without ASCII control characters before state or Git access
+- Ticket and type are also validated for path segment safety
 - Target branches must not already exist
 - Base branches must exist
 - No two repos may produce colliding worktree paths
@@ -199,7 +200,7 @@ Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
 }
 ```
 
-All paths in the manifest are relative to their respective roots (`reposRoot` or `worktreesRoot`). The manifest is validated exhaustively on read: ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
+All paths in the manifest are relative to their respective roots (`reposRoot` or `worktreesRoot`). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
 
 ## Ticket Locks (`apps/cli/src/workspace-manifest.ts`)
 
@@ -222,8 +223,9 @@ Outpost automatically deletes `"generated"` files. A `"foreign"` or `"modified"`
 
 ## Path Safety (`apps/cli/src/path-safety.ts`)
 
-All path operations are validated for containment:
+Path and semantic identifier validation are separate contracts:
 
+- `validateSemanticIdentifier()` and `semanticIdentifierSchema()` — reject empty values and ASCII control characters (`U+0000` through `U+001F`, plus `U+007F`) without trimming, Unicode normalization, or applying identifier rules to filesystem paths and raw remote URLs
 - `validatePathSegment()` — rejects path separators and, by default, traversal segments
 - `resolvePathWithinRoot()` — resolves a path lexically and verifies that it remains within the root directory
 - `getCanonicalPortablePathKey()` — normalizes paths (lowercase, unified separators) for collision detection

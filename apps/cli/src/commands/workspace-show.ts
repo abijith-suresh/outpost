@@ -3,7 +3,11 @@ import * as Path from "@effect/platform/Path";
 import { Either, Effect, Schema } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
-import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
+import {
+  resolvePathWithinRoot,
+  validatePathSegment,
+  validateSemanticIdentifier,
+} from "../path-safety.js";
 import {
   deriveWorkspaceStatus,
   getManifestFilePath,
@@ -39,6 +43,11 @@ export function runWorkspaceShow(
       );
     }
 
+    yield* validateSemanticIdentifier("--ticket", ticket).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message }),
+      ),
+    );
     yield* validatePathSegment("--ticket", ticket).pipe(
       Effect.mapError(
         (error) => new WorkspaceShowError({ message: error.message }),

@@ -3,7 +3,10 @@ import type { PlatformError } from "@effect/platform/Error";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
-import { getCanonicalPortablePathKey } from "./path-safety.js";
+import {
+  getCanonicalPortablePathKey,
+  semanticIdentifierSchema,
+} from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
@@ -49,12 +52,12 @@ export function migrateConfig(
 }
 
 export const RepoRecordSchema = Schema.Struct({
-  id: Schema.String,
+  id: semanticIdentifierSchema("repository id"),
   importedAt: Schema.String,
   lastFetchedAt: Schema.String,
   managedRepoPath: Schema.String,
-  name: Schema.String,
-  remoteName: Schema.String,
+  name: semanticIdentifierSchema("repository name"),
+  remoteName: semanticIdentifierSchema("remote name"),
   remoteUrl: Schema.String,
   sourceRepoPath: Schema.String,
 });
@@ -271,9 +274,19 @@ export function writeRepoRegistry(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    const validatedRegistry = yield* Schema.decodeUnknown(RepoRegistrySchema)(
+      registry,
+    ).pipe(
+      Effect.mapError(
+        (error) =>
+          new ConfigError({
+            message: `Invalid repo registry: ${error.message}`,
+          }),
+      ),
+    );
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
-    yield* writeJsonFileAtomic(registryFilePath, registry).pipe(
+    yield* writeJsonFileAtomic(registryFilePath, validatedRegistry).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({

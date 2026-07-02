@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   getPortablePathKey,
   resolvePathWithinRoot,
+  validateSemanticIdentifier,
   validatePathSegment,
 } from "../src/path-safety.ts";
 import { path } from "./helpers.ts";
@@ -45,6 +46,31 @@ describe("path safety", () => {
         "--ticket may not contain path separators.",
       );
     }
+  });
+
+  it.each([
+    ["empty", ""],
+    ["null", "\u0000"],
+    ["newline", "\n"],
+    ["carriage return", "\r"],
+    ["tab", "\t"],
+    ["escape", "\u001b"],
+    ["delete", "\u007f"],
+  ])("rejects %s semantic identifiers", async (_, value) => {
+    const exit = await Effect.runPromise(
+      Effect.exit(validateSemanticIdentifier("ticket", value)),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it("preserves Unicode semantic identifiers", async () => {
+    await expect(
+      Effect.runPromise(validateSemanticIdentifier("ticket", "工单-１２３")),
+    ).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(validateSemanticIdentifier("ticket", "ticket 123")),
+    ).resolves.toBeUndefined();
   });
 
   it("normalizes case and trailing Windows-aliased characters", async () => {

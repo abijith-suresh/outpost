@@ -15,6 +15,7 @@ import {
   getManagedRepoPath,
   resolveRemoteIdentity,
 } from "../remote-identity.js";
+import { validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import {
   cloneBareRepository,
@@ -148,6 +149,14 @@ export function runRepoAdd(
       );
     }
 
+    if (options.remoteName !== undefined) {
+      yield* validateSemanticIdentifier("--remote", options.remoteName).pipe(
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message }),
+        ),
+      );
+    }
+
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
@@ -194,6 +203,9 @@ export function runRepoAdd(
     }
 
     const remoteName = yield* selectRemoteName(remoteNames, options.remoteName);
+    yield* validateSemanticIdentifier("remote name", remoteName).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
     const remoteUrl = yield* getRemoteUrl(sourceRepoPath, remoteName).pipe(
       Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );
@@ -201,6 +213,12 @@ export function runRepoAdd(
       remoteUrl,
       sourceRepoPath,
     ).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+    yield* validateSemanticIdentifier("repository id", identity.id).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message })),
+    );
+    yield* validateSemanticIdentifier("repository name", identity.name).pipe(
       Effect.mapError((error) => new RepoAddError({ message: error.message })),
     );
     const derivedManagedRepoPath = yield* getManagedRepoPath(

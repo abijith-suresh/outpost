@@ -13,6 +13,7 @@ import type { RepoRecord } from "../config.js";
 import {
   getCanonicalPortablePathKey,
   resolvePathWithinRoot,
+  validateSemanticIdentifier,
   validatePathSegment,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
@@ -268,20 +269,43 @@ function validateBranchName(
   );
 }
 
-function validateCreatePathArgs(
-  parsedArgs: CreateArgs,
+function validateCreateArgs(
+  parsedArgs: CreateArgsInput,
 ): Effect.Effect<void, CreateError> {
   return Effect.gen(function* () {
-    yield* validatePathSegment("--ticket", parsedArgs.ticket, {
-      allowTraversalSegments: true,
-    }).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message })),
-    );
-    yield* validatePathSegment("--type", parsedArgs.type, {
-      allowTraversalSegments: true,
-    }).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message })),
-    );
+    if (parsedArgs.ticket !== undefined) {
+      yield* validateSemanticIdentifier("--ticket", parsedArgs.ticket).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+      yield* validatePathSegment("--ticket", parsedArgs.ticket, {
+        allowTraversalSegments: true,
+      }).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+    }
+
+    if (parsedArgs.type !== undefined) {
+      yield* validateSemanticIdentifier("--type", parsedArgs.type).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+      yield* validatePathSegment("--type", parsedArgs.type, {
+        allowTraversalSegments: true,
+      }).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+    }
+
+    for (const repoId of parsedArgs.repoIds) {
+      yield* validateSemanticIdentifier("--repo", repoId).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+    }
+
+    if (parsedArgs.base !== undefined) {
+      yield* validateSemanticIdentifier("--base", parsedArgs.base).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message })),
+      );
+    }
   });
 }
 
@@ -809,13 +833,14 @@ export function runCreate(
     let parsedArgs: CreateArgs;
 
     if (!hasMissingCreateArgs(parsedArgsInput)) {
+      yield* validateCreateArgs(parsedArgsInput);
       parsedArgs = yield* requireCreateArgs(parsedArgsInput);
-      yield* validateCreatePathArgs(parsedArgs);
     } else {
       if (!options.interactive) {
         yield* requireCreateArgs(parsedArgsInput);
       }
 
+      yield* validateCreateArgs(parsedArgsInput);
       const earlyRegistry = yield* loadRepoRegistry(outpostHome).pipe(
         Effect.mapError((error) => new CreateError({ message: error.message })),
       );
@@ -826,7 +851,7 @@ export function runCreate(
           name: repo.name,
         })),
       });
-      yield* validateCreatePathArgs(parsedArgs);
+      yield* validateCreateArgs(parsedArgs);
     }
 
     const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
