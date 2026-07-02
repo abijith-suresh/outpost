@@ -137,6 +137,29 @@ Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
 push trigger for `changeset-release/**` branches.
 
+### GitHub Actions Pinning
+
+External GitHub Actions referenced from `.github/workflows/` must be pinned to
+full 40-character immutable commit SHAs — never floating tags, branches, or
+abbreviated SHAs. The corresponding release tag must remain as a same-line
+comment on the `uses:` reference so the pinned version stays legible:
+
+```yaml
+uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+```
+
+[Dependabot](https://docs.github.com/code-security/dependabot) is configured in
+`.github/dependabot.yml` to open scheduled (weekly) `github-actions` update
+pull requests against `/`. It proposes updated SHAs and release tags for the
+actions already pinned in the workflows.
+
+When reviewing or merging a Dependabot action update, contributors must verify
+that the proposed SHA refers to the same commit as the documented release tag
+by resolving the tag from the canonical action repository (for example via
+`git ls-remote --tags` or the GitHub API). Annotated tags must be dereferenced
+to their underlying commit SHA; the pinned value is always the commit SHA, not
+the tag-object SHA.
+
 ## Release Process
 
 1. PRs that change CLI source or package behavior merge to `main` with changesets.
