@@ -1,6 +1,8 @@
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 
+import { getSemanticIdentifierError } from "../path-safety.js";
+
 export type CreatePromptRepoOption = {
   id: string;
   name: string;
@@ -53,7 +55,18 @@ async function promptForRequiredValue(
   log?: (message: string) => void,
 ): Promise<string> {
   while (true) {
-    const answer = (await ask(label)).trim();
+    const rawAnswer = await ask(label);
+    const semanticError = getSemanticIdentifierError(
+      label.trim().replace(/:$/, ""),
+      rawAnswer,
+    );
+
+    if (semanticError) {
+      log?.(semanticError);
+      continue;
+    }
+
+    const answer = rawAnswer.trim();
 
     if (answer.length === 0) {
       continue;
@@ -86,6 +99,13 @@ async function promptForRepoIds(
 
   while (true) {
     const answer = await ask("Repo ids (comma-separated): ");
+    const semanticError = getSemanticIdentifierError("Repo ids", answer);
+
+    if (semanticError) {
+      log(semanticError);
+      continue;
+    }
+
     const repoIds = parsePromptedRepoIds(answer);
 
     if (repoIds.length === 0) {

@@ -9,6 +9,48 @@ export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()(
   },
 ) {}
 
+function containsAsciiControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function getSemanticIdentifierError(
+  label: string,
+  value: string,
+): string | undefined {
+  if (value.length === 0) {
+    return `${label} may not be empty.`;
+  }
+
+  if (containsAsciiControlCharacter(value)) {
+    return `${label} may not contain ASCII control characters.`;
+  }
+
+  return undefined;
+}
+
+export function semanticIdentifierSchema(label: string) {
+  return Schema.String.pipe(
+    Schema.filter((value) => getSemanticIdentifierError(label, value)),
+  );
+}
+
+export function validateSemanticIdentifier(
+  label: string,
+  value: string,
+): Effect.Effect<void, PathSafetyError> {
+  const message = getSemanticIdentifierError(label, value);
+
+  return message ? Effect.fail(new PathSafetyError({ message })) : Effect.void;
+}
+
 export function validatePathSegment(
   label: string,
   value: string,

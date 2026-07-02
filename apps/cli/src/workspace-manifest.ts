@@ -9,6 +9,8 @@ import {
   getCanonicalPortablePathKey,
   getPortablePathKey,
   resolvePathWithinRoot,
+  semanticIdentifierSchema,
+  validateSemanticIdentifier,
   validatePathSegment,
 } from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
@@ -32,9 +34,9 @@ export class LockError extends Schema.TaggedError<LockError>()("LockError", {
 }) {}
 
 export const RepositoryEntrySchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  base: Schema.String,
+  id: semanticIdentifierSchema("repository id"),
+  name: semanticIdentifierSchema("repository name"),
+  base: semanticIdentifierSchema("base branch"),
   managedPath: Schema.String,
   worktreePath: Schema.String,
 });
@@ -42,9 +44,9 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  ticket: Schema.String,
-  type: Schema.String,
-  branch: Schema.String,
+  ticket: semanticIdentifierSchema("ticket"),
+  type: semanticIdentifierSchema("branch type"),
+  branch: semanticIdentifierSchema("branch"),
   createdAt: Schema.String,
   workspacePath: Schema.String,
   repositories: Schema.Array(RepositoryEntrySchema),
@@ -53,6 +55,25 @@ export const ManifestSchema = Schema.Struct({
 export type Manifest = Schema.Schema.Type<typeof ManifestSchema>;
 
 export type WorkspaceStatus = "ready" | "missing" | "invalid" | "unmanaged";
+
+function validateTicketIdentifier(ticket: string) {
+  return Effect.gen(function* () {
+    yield* validateSemanticIdentifier("ticket", ticket);
+    yield* validatePathSegment("ticket", ticket);
+  });
+}
+
+function validateManifestTicket(ticket: string) {
+  return validateTicketIdentifier(ticket).pipe(
+    Effect.mapError((error) => new ManifestError({ message: error.message })),
+  );
+}
+
+function validateLockTicket(ticket: string) {
+  return validateTicketIdentifier(ticket).pipe(
+    Effect.mapError((error) => new LockError({ message: error.message })),
+  );
+}
 
 export function getWorkspaceStateRoot(
   outpostHome: string,
@@ -245,6 +266,8 @@ export function readManifest(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    yield* validateManifestTicket(ticket);
+
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
@@ -293,10 +316,6 @@ export function readManifest(
         }),
       );
     }
-
-    yield* validatePathSegment("ticket", ticket).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message })),
-    );
 
     const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
     const allEntries = yield* fs.readDirectory(stateRoot).pipe(
@@ -452,11 +471,22 @@ export function writeManifest(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    const validatedManifest = yield* Schema.decodeUnknown(ManifestSchema)(
+      manifest,
+    ).pipe(
+      Effect.mapError(
+        (error) =>
+          new ManifestError({
+            message: `Invalid manifest: ${error.message}`,
+          }),
+      ),
+    );
+    yield* validateManifestTicket(validatedManifest.ticket);
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const manifestFilePath = yield* getManifestFilePath(
       outpostHome,
-      manifest.ticket,
+      validatedManifest.ticket,
     );
 
     yield* ensureWorkspaceStateRoot(outpostHome).pipe(
@@ -490,13 +520,13 @@ export function writeManifest(
       if (candidateKey === targetKey) {
         return yield* Effect.fail(
           new ManifestError({
-            message: `Ticket identity collision detected for ${manifest.ticket}: manifest ${file} has the same canonical path identity`,
+            message: `Ticket identity collision detected for ${validatedManifest.ticket}: manifest ${file} has the same canonical path identity`,
           }),
         );
       }
     }
 
-    if (path.isAbsolute(manifest.workspacePath)) {
+    if (path.isAbsolute(validatedManifest.workspacePath)) {
       return yield* Effect.fail(
         new ManifestError({
           message: "workspacePath must not be an absolute path",
@@ -509,17 +539,17 @@ export function writeManifest(
     );
     const workspaceDir = yield* resolveWorkspacePath(
       config.worktreesRoot,
-      manifest.workspacePath,
+      validatedManifest.workspacePath,
     );
     yield* ensureWorkspaceMatchesTicket(
       config.worktreesRoot,
-      manifest.ticket,
-      manifest.workspacePath,
+      validatedManifest.ticket,
+      validatedManifest.workspacePath,
       workspaceDir,
     );
 
-    for (let i = 0; i < manifest.repositories.length; i++) {
-      const repo = manifest.repositories[i];
+    for (let i = 0; i < validatedManifest.repositories.length; i++) {
+      const repo = validatedManifest.repositories[i];
 
       if (path.isAbsolute(repo.managedPath)) {
         return yield* Effect.fail(
@@ -541,7 +571,7 @@ export function writeManifest(
       yield* resolveWorktreePath(workspaceDir, repo.worktreePath);
     }
 
-    yield* writeJsonFileAtomic(manifestFilePath, manifest).pipe(
+    yield* writeJsonFileAtomic(manifestFilePath, validatedManifest).pipe(
       Effect.mapError(
         (error) =>
           new ManifestError({
@@ -555,8 +585,13 @@ export function writeManifest(
 export function deleteManifest(
   outpostHome: string,
   ticket: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  void,
+  ManifestError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
   return Effect.gen(function* () {
+    yield* validateManifestTicket(ticket);
     const fs = yield* FileSystem.FileSystem;
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
     yield* fs.remove(manifestFilePath, { force: true });
@@ -566,8 +601,13 @@ export function deleteManifest(
 export function manifestExists(
   outpostHome: string,
   ticket: string,
-): Effect.Effect<boolean, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  boolean,
+  ManifestError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
   return Effect.gen(function* () {
+    yield* validateManifestTicket(ticket);
     const fs = yield* FileSystem.FileSystem;
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
     return yield* fs.exists(manifestFilePath);
@@ -819,6 +859,7 @@ export function acquireTicketLock(
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
+    yield* validateLockTicket(ticket);
     const fs = yield* FileSystem.FileSystem;
     const lockFilePath = yield* getLockFilePath(outpostHome, ticket);
 
@@ -845,8 +886,13 @@ export function acquireTicketLock(
 export function releaseTicketLock(
   outpostHome: string,
   ticket: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  void,
+  LockError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
   return Effect.gen(function* () {
+    yield* validateLockTicket(ticket);
     const fs = yield* FileSystem.FileSystem;
     const lockFilePath = yield* getLockFilePath(outpostHome, ticket);
     yield* fs.remove(lockFilePath, { force: true });
@@ -856,8 +902,13 @@ export function releaseTicketLock(
 export function ticketIsLocked(
   outpostHome: string,
   ticket: string,
-): Effect.Effect<boolean, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  boolean,
+  LockError | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
   return Effect.gen(function* () {
+    yield* validateLockTicket(ticket);
     const fs = yield* FileSystem.FileSystem;
     const lockFilePath = yield* getLockFilePath(outpostHome, ticket);
     return yield* fs.exists(lockFilePath);

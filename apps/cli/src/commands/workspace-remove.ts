@@ -7,7 +7,11 @@ import * as Path from "@effect/platform/Path";
 import { Effect, Either, Schema, Stream } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
-import { resolvePathWithinRoot, validatePathSegment } from "../path-safety.js";
+import {
+  resolvePathWithinRoot,
+  validatePathSegment,
+  validateSemanticIdentifier,
+} from "../path-safety.js";
 import {
   classifyAgentsOwnership,
   deleteAgentsIfSnapshotMatches,
@@ -96,6 +100,11 @@ export function runWorkspaceRemove(
       );
     }
 
+    yield* validateSemanticIdentifier("--ticket", ticket).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message }),
+      ),
+    );
     yield* validatePathSegment("--ticket", ticket).pipe(
       Effect.mapError(
         (error) => new WorkspaceRemoveError({ message: error.message }),

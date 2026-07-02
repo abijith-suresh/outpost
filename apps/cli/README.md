@@ -113,6 +113,7 @@ outpost workspace show PROJ-123 --json
 
 ## Safety
 
+- **Semantic identifier validation:** empty values and ASCII control characters are rejected in tickets, branch inputs, repository identities, remote names, and persisted state before filesystem or Git operations.
 - **Dirty worktree protection:** workspace removal checks `git status --porcelain` and refuses worktrees with uncommitted changes.
 - **Ownership verification:** worktree `.git` files must point to the expected bare repository.
 - **Ticket locks:** concurrent operations on the same ticket are serialized with exclusive lock files.

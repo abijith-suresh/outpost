@@ -8,7 +8,10 @@ import {
   resolveOutpostHome,
   writeRepoRegistry,
 } from "../config.js";
-import { getCanonicalPortablePathKey } from "../path-safety.js";
+import {
+  getCanonicalPortablePathKey,
+  validateSemanticIdentifier,
+} from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import {
   listManifestTickets,
@@ -40,6 +43,12 @@ export function runRepoRemove(
         }),
       );
     }
+
+    yield* validateSemanticIdentifier("repo id", repoId).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message }),
+      ),
+    );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();

@@ -8,6 +8,7 @@ import {
   loadRepoRegistry,
   resolveOutpostHome,
 } from "../config.js";
+import { validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 
 export class RepoShowError extends Schema.TaggedError<RepoShowError>()(
@@ -33,6 +34,10 @@ export function runRepoShow(
         }),
       );
     }
+
+    yield* validateSemanticIdentifier("repo id", repoId).pipe(
+      Effect.mapError((error) => new RepoShowError({ message: error.message })),
+    );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
