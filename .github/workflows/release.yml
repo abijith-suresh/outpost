@@ -7,10 +7,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
-  actions: write
   contents: write
   id-token: write
   pull-requests: write
@@ -67,18 +66,3 @@ jobs:
           version: npm run version:packages
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Trigger CI on changeset release branch
-        if: steps.changesets.outputs.hasChangesets == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for i in 1 2 3; do
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/dispatches" \
-              -f ref="changeset-release/${GITHUB_REF_NAME}" && exit 0
-            sleep 5
-          done
-          exit 1
