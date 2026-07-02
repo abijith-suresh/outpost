@@ -126,12 +126,16 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 
 ## CI
 
-GitHub Actions run on every PR and push to `main`:
+GitHub Actions run on every pull request and push to `main`:
 
 - The protected `validate` matrix typechecks, tests, builds, and smoke-tests the
   packed CLI on Node.js 22 and 24.
 - The Node.js 22 matrix entry additionally checks repository-wide formatting
   and lint, then verifies and builds the Astro website.
+
+Changesets release pull requests (`chore: version packages`) are validated
+through the same `pull_request` path as ordinary PRs; there is no separate
+push trigger for `changeset-release/**` branches.
 
 ## Release Process
 
@@ -139,6 +143,10 @@ GitHub Actions run on every PR and push to `main`:
 2. The [Changesets Action](https://github.com/changesets/action) opens or updates a `chore: version packages` PR.
 3. The version command updates the CLI package and regenerates the root lockfile.
 4. Merging that PR publishes through npm trusted publishing (`npm run publish:release`).
+
+Publication runs are non-cancellable: the Release workflow sets
+`cancel-in-progress: false`, so a newer push to `main` must not terminate an
+in-progress publication.
 
 Published workspace releases use Changesets package-qualified Git tags, such
 as `@abijith-suresh/outpost@0.0.25`.
