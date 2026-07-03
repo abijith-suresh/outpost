@@ -234,9 +234,9 @@ function tryParseChangeset(content) {
  *
  * A changeset satisfies the policy when at least one of the supplied files
  * — each a non-generated `.changeset/*.md` added or modified by the PR and
- * still present at head — has an `@abijith-suresh/outpost: patch` release
- * entry. Malformed, wrong-package, minor, and major entries do not satisfy
- * the policy.
+ * still present at head — contains exactly one release entry:
+ * `@abijith-suresh/outpost: patch`. Malformed, wrong-package, minor, major,
+ * and mixed additional entries do not satisfy the policy.
  *
  * @param {Array<{ path: string, content: string }>} changesetFiles
  * @returns {{ ok: boolean, reason?: string }}
@@ -257,19 +257,19 @@ export function changesetSatisfies(changesetFiles) {
       failureReasons.push(`${file.path}: ${parsed.reason}`);
       continue;
     }
-    const match = parsed.releases.find(
-      (release) =>
-        release.name === RELEASE_PACKAGE &&
-        release.type === REQUIRED_RELEASE_TYPE,
-    );
-    if (match) {
+    const [release] = parsed.releases;
+    if (
+      parsed.releases.length === 1 &&
+      release.name === RELEASE_PACKAGE &&
+      release.type === REQUIRED_RELEASE_TYPE
+    ) {
       return { ok: true };
     }
     const releaseSummary = parsed.releases
       .map((release) => `${release.name}: ${release.type}`)
       .join(", ");
     failureReasons.push(
-      `${file.path}: expected ${RELEASE_PACKAGE}: ${REQUIRED_RELEASE_TYPE}, found ${releaseSummary || "no releases"}`,
+      `${file.path}: expected ${RELEASE_PACKAGE}: ${REQUIRED_RELEASE_TYPE} as the only release, found ${releaseSummary || "no releases"}`,
     );
   }
 

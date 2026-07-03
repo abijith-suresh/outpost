@@ -194,7 +194,7 @@ test("changeset content is read from the head revision, not the working tree", (
   }
 });
 
-test("merge-base selection: divergent base changes are excluded from the diff", () => {
+test("merge-base selection excludes base-only releasable paths", () => {
   const { root, run, cleanup } = useRepo();
   try {
     writeFile(root, "README.md", "init\n");
@@ -202,22 +202,22 @@ test("merge-base selection: divergent base changes are excluded from the diff", 
     run(["commit", "-qm", "init"]);
     const base = run(["rev-parse", "HEAD"]);
 
-    // "base" branch advances with a docs-only change.
+    // The base branch advances with a releasable change that is not in head.
     run(["checkout", "-q", "-b", "basebranch"]);
-    writeFile(root, "docs/notes.md", "notes\n");
+    writeFile(root, "apps/cli/src/base-only.ts", "base\n");
     run(["add", "-A"]);
-    run(["commit", "-qm", "docs on base"]);
+    run(["commit", "-qm", "source on base"]);
     const baseSha = run(["rev-parse", "HEAD"]);
 
-    // "head" branch changes CLI source.
+    // The head branch advances from the merge base with an exempt change.
     run(["checkout", "-q", base]);
     run(["checkout", "-q", "-b", "headbranch"]);
-    writeFile(root, "apps/cli/src/program.ts", "b\n");
+    writeFile(root, "docs/head-only.md", "notes\n");
     run(["add", "-A"]);
-    run(["commit", "-qm", "src change on head"]);
+    run(["commit", "-qm", "docs on head"]);
 
-    // A naive base..head diff would include docs/notes.md; the adapter must
-    // use merge-base(base, head) so only the head's source change appears.
+    // A naive base..head diff reports base-only.ts as deleted and fails policy.
+    // merge-base..head sees only the exempt head change and passes.
     const result = runAdapter(root, [
       "--base",
       baseSha,
@@ -226,9 +226,109 @@ test("merge-base selection: divergent base changes are excluded from the diff", 
       "--head-ref",
       "feat/x",
     ]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /no releasable CLI paths changed/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("valid pending changeset modified relative to base satisfies policy", () => {
+  const { root, run, cleanup } = useRepo();
+  try {
+    writeFile(root, "apps/cli/src/program.ts", "a\n");
+    writeFileSync(
+      join(root, ".changeset/fix.md"),
+      `---\n"@abijith-suresh/outpost": patch\n---\ninitial summary\n`,
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "init"]);
+
+    writeFile(root, "apps/cli/src/program.ts", "b\n");
+    writeFileSync(
+      join(root, ".changeset/fix.md"),
+      `---\n"@abijith-suresh/outpost": patch\n---\nupdated summary\n`,
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "src + modified changeset"]);
+
+    const result = runAdapter(root, [
+      "--base",
+      "HEAD~1",
+      "--head",
+      "HEAD",
+      "--head-ref",
+      "fix/x",
+    ]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /a valid patch changeset is present/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("unchanged valid pending changeset does not satisfy policy", () => {
+  const { root, run, cleanup } = useRepo();
+  try {
+    writeFile(root, "apps/cli/src/program.ts", "a\n");
+    writeFileSync(
+      join(root, ".changeset/fix.md"),
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "init"]);
+
+    writeFile(root, "apps/cli/src/program.ts", "b\n");
+    run(["add", "-A"]);
+    run(["commit", "-qm", "src change"]);
+
+    const result = runAdapter(root, [
+      "--base",
+      "HEAD~1",
+      "--head",
+      "HEAD",
+      "--head-ref",
+      "fix/x",
+    ]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /apps\/cli\/src\/program\.ts/);
-    assert.doesNotMatch(result.stderr, /docs\/notes\.md/);
+    assert.match(
+      result.stderr,
+      /no changeset was added or modified by this PR/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("deleted valid pending changeset does not satisfy policy", () => {
+  const { root, run, cleanup } = useRepo();
+  try {
+    writeFile(root, "apps/cli/src/program.ts", "a\n");
+    writeFileSync(
+      join(root, ".changeset/fix.md"),
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "init"]);
+
+    writeFile(root, "apps/cli/src/program.ts", "b\n");
+    run(["rm", "-q", ".changeset/fix.md"]);
+    run(["add", "-A"]);
+    run(["commit", "-qm", "src + deleted changeset"]);
+
+    const result = runAdapter(root, [
+      "--base",
+      "HEAD~1",
+      "--head",
+      "HEAD",
+      "--head-ref",
+      "fix/x",
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /no changeset was added or modified by this PR/,
+    );
   } finally {
     cleanup();
   }

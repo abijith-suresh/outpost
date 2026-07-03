@@ -69,7 +69,7 @@ Releasable CLI paths require a patch changeset:
 
 Exempt unless mixed with a releasable path: tests, `dist`, documentation, website files, typecheck/test configuration, workflows, and root tooling.
 
-A changeset satisfies the policy only when it is a non-generated `.changeset/*.md` file (excluding `.changeset/README.md`) that is added or modified by the pull request and still exists at the head revision, parsed with `@changesets/parse`, containing an `@abijith-suresh/outpost: patch` release entry. A changeset already pending on `main`, a changeset deleted by the PR, or a malformed, wrong-package, minor, or major entry does not satisfy the policy.
+A changeset satisfies the policy only when it is a non-generated `.changeset/*.md` file (excluding `.changeset/README.md`) that is added or modified by the pull request and still exists at the head revision, parsed with `@changesets/parse`, and contains exactly one release entry: `@abijith-suresh/outpost: patch`. A changeset already pending on `main`, a changeset deleted by the PR, or a malformed, additional-package, wrong-package, minor, or major entry does not satisfy the policy.
 
 Generated release PRs (`changeset-release/main`) are exempt only when every diff entry is structurally valid generated output — deleted pending changeset Markdown files, `apps/cli/CHANGELOG.md`, `apps/cli/package.json`, and `package-lock.json`. A branch-name prefix alone never grants the exemption; any source or unexpected path disables it.
 

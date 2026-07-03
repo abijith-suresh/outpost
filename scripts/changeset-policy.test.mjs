@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  changesetSatisfies,
   classifyChangesetPolicy,
   isChangesetMarkdown,
   isExemptReleasePr,
@@ -178,6 +179,31 @@ test("wrong package does not satisfy policy", () => {
   });
   assert.equal(result.ok, false);
   assert.match(result.reason ?? "", /expected @abijith-suresh\/outpost: patch/);
+});
+
+test("patch mixed with the private website package does not satisfy policy", () => {
+  const result = changesetSatisfies([
+    {
+      path: ".changeset/mixed-releases.md",
+      content: rawChangeset(`"${PKG}": patch\n"outpost-website": major`),
+    },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.match(result.reason ?? "", /as the only release/);
+  assert.match(result.reason ?? "", /outpost-website: major/);
+});
+
+test("unknown package entry does not satisfy policy", () => {
+  const result = changesetSatisfies([
+    {
+      path: ".changeset/unknown-package.md",
+      content: rawChangeset('"unknown-package": patch'),
+    },
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.match(result.reason ?? "", /unknown-package: patch/);
 });
 
 test("minor bump does not satisfy policy", () => {
