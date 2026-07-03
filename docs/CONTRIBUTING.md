@@ -56,7 +56,34 @@ While Outpost is pre-v1, all changesets use the `patch` bump level — never `mi
 
 Website-only PRs that touch `apps/website/`, website-specific workflows, or website-specific docs/config do not require a CLI package changeset because the website is not published with `@abijith-suresh/outpost`.
 
-The [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs if a changeset is missing.
+The [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs if a changeset is missing. CI additionally enforces the policy on the Node.js 22 `validate` matrix entry: a pull request that changes a releasable CLI path without a pending patch changeset for `@abijith-suresh/outpost` fails the build.
+
+### Changeset Policy Enforcement
+
+Releasable CLI paths require a patch changeset:
+
+- `apps/cli/src/**`
+- `apps/cli/scripts/**`
+- `apps/cli/package.json`
+- `apps/cli/tsconfig.json`
+
+Exempt unless mixed with a releasable path: tests, `dist`, documentation, website files, typecheck/test configuration, workflows, and root tooling.
+
+A changeset satisfies the policy only when it is a non-generated `.changeset/*.md` file (excluding `.changeset/README.md`) that is added or modified by the pull request and still exists at the head revision, parsed with `@changesets/parse`, containing an `@abijith-suresh/outpost: patch` release entry. A changeset already pending on `main`, a changeset deleted by the PR, or a malformed, wrong-package, minor, or major entry does not satisfy the policy.
+
+Generated release PRs (`changeset-release/main`) are exempt only when every diff entry is structurally valid generated output — deleted pending changeset Markdown files, `apps/cli/CHANGELOG.md`, `apps/cli/package.json`, and `package-lock.json`. A branch-name prefix alone never grants the exemption; any source or unexpected path disables it.
+
+Run the policy locally with explicit base, head, and head-ref arguments (the same arguments CI passes from the pull-request event):
+
+```bash
+npm run changeset:check -- --base <base-sha> --head <head-sha> --head-ref <head-ref>
+```
+
+The pure classifier has `node:test` coverage run as part of `npm run verify`:
+
+```bash
+npm run test:policy
+```
 
 ### Verification
 
