@@ -203,3 +203,7 @@ The website is verified by the Node.js 22 `validate` matrix entry in
 `.github/workflows/pages.yml` after pushes to `main` that touch the website,
 root workspace manifests, or Pages workflow files, and through manual
 dispatch. Pull requests validate without deploying.
+
+The Pages deployment step allows up to 20 minutes for GitHub's deployment
+queue before failing. This bounded window tolerates queue backlogs without
+indicating that deployments are expected to take that long.
