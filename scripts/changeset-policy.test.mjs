@@ -58,11 +58,19 @@ test("isReleasablePath matches CLI source and package behavior", () => {
   assert.equal(isReleasablePath(".github/workflows/ci.yml"), false);
 });
 
-test("isChangesetMarkdown excludes README and non-markdown files", () => {
+test("isChangesetMarkdown mirrors @changesets/read discovery", () => {
   assert.equal(isChangesetMarkdown(".changeset/quiet-tickets-stand.md"), true);
+  assert.equal(isChangesetMarkdown(".changeset/fix.md"), true);
   assert.equal(isChangesetMarkdown(".changeset/README.md"), false);
+  assert.equal(isChangesetMarkdown(".changeset/readme.md"), false);
+  assert.equal(isChangesetMarkdown(".changeset/Readme.MD"), false);
   assert.equal(isChangesetMarkdown(".changeset/config.json"), false);
+  assert.equal(isChangesetMarkdown(".changeset/.fake.md"), false);
+  assert.equal(isChangesetMarkdown(".changeset/nested/fake.md"), false);
+  assert.equal(isChangesetMarkdown(".changeset//fake.md"), false);
+  assert.equal(isChangesetMarkdown(".changeset/a/b/c.md"), false);
   assert.equal(isChangesetMarkdown("apps/cli/src/foo.ts"), false);
+  assert.equal(isChangesetMarkdown(".changeset"), false);
 });
 
 test("toPosixPath normalizes backslashes", () => {
@@ -336,6 +344,8 @@ test("rename entirely outside releasable paths is exempt", () => {
   assert.equal(result.changesetRequired, false);
 });
 
+const REPO = "abijith-suresh/outpost";
+
 test("generated release PR with deleted changesets is exempt", () => {
   const result = classifyChangesetPolicy({
     diffEntries: [
@@ -347,9 +357,50 @@ test("generated release PR with deleted changesets is exempt", () => {
     ],
     changesetFiles: [],
     headRef: "changeset-release/main",
+    headRepository: REPO,
+    baseRepository: REPO,
   });
   assert.equal(result.ok, true);
   assert.equal(result.releasePrExemption, true);
+  assert.equal(result.changesetRequired, false);
+});
+
+test("fork reusing the changeset-release/main branch name is not exempt", () => {
+  const diffEntries = [
+    entry("D", ".changeset/fix-thing.md"),
+    entry("M", "apps/cli/CHANGELOG.md"),
+    entry("M", "apps/cli/package.json"),
+    entry("M", "package-lock.json"),
+  ];
+  const result = classifyChangesetPolicy({
+    diffEntries,
+    changesetFiles: [],
+    headRef: "changeset-release/main",
+    headRepository: "attacker/outpost",
+    baseRepository: REPO,
+  });
+  assert.equal(result.releasePrExemption, false);
+  // After the exemption is denied, the releasable package.json change still
+  // requires a changeset that the release PR does not carry.
+  assert.equal(result.ok, false);
+  assert.equal(result.changesetRequired, true);
+  assert.deepEqual(result.releasablePaths, ["apps/cli/package.json"]);
+});
+
+test("fork release PR with only non-releasable generated paths is denied exemption but allowed", () => {
+  const result = classifyChangesetPolicy({
+    diffEntries: [
+      entry("D", ".changeset/fix-thing.md"),
+      entry("M", "apps/cli/CHANGELOG.md"),
+    ],
+    changesetFiles: [],
+    headRef: "changeset-release/main",
+    headRepository: "attacker/outpost",
+    baseRepository: REPO,
+  });
+  assert.equal(result.releasePrExemption, false);
+  // CHANGELOG only is not releasable, so no changeset is required.
+  assert.equal(result.ok, true);
   assert.equal(result.changesetRequired, false);
 });
 
@@ -420,21 +471,39 @@ test("unexpected non-generated path on a release PR disables the exemption", () 
   assert.equal(result.changesetRequired, false);
 });
 
-test("isExemptReleasePr requires the exact head ref", () => {
+test("isExemptReleasePr requires the exact head ref and matching repositories", () => {
   const releaseEntries = [
     entry("D", ".changeset/a.md"),
     entry("M", "apps/cli/package.json"),
   ];
   assert.equal(
+    isExemptReleasePr(releaseEntries, "changeset-release/main", REPO, REPO),
+    true,
+  );
+  // Default empty repositories are treated as equal for local use.
+  assert.equal(
     isExemptReleasePr(releaseEntries, "changeset-release/main"),
     true,
   );
+  // A fork (mismatched repo identity) is never exempt.
   assert.equal(
-    isExemptReleasePr(releaseEntries, "changeset-release/next"),
+    isExemptReleasePr(
+      releaseEntries,
+      "changeset-release/main",
+      "fork/outpost",
+      REPO,
+    ),
     false,
   );
-  assert.equal(isExemptReleasePr(releaseEntries, ""), false);
-  assert.equal(isExemptReleasePr([], "changeset-release/main"), false);
+  assert.equal(
+    isExemptReleasePr(releaseEntries, "changeset-release/next", REPO, REPO),
+    false,
+  );
+  assert.equal(isExemptReleasePr(releaseEntries, "", REPO, REPO), false);
+  assert.equal(
+    isExemptReleasePr([], "changeset-release/main", REPO, REPO),
+    false,
+  );
 });
 
 test("multiple changesets: any valid patch entry satisfies policy", () => {
@@ -467,6 +536,60 @@ test("changeset present but for a non-changeset markdown file is ignored", () =>
       { path: ".changeset/README.md", content: patchChangeset() },
     ],
     headRef: "feat/odd",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.changesetRequired, true);
+});
+
+test("nested changeset path does not satisfy policy even with patch content", () => {
+  const result = classifyChangesetPolicy({
+    diffEntries: [
+      entry("M", "apps/cli/src/program.ts"),
+      entry("A", ".changeset/nested/fake.md"),
+    ],
+    changesetFiles: [
+      {
+        path: ".changeset/nested/fake.md",
+        content: patchChangeset("bypass"),
+      },
+    ],
+    headRef: "feat/bypass",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.changesetRequired, true);
+});
+
+test("dotfile changeset path does not satisfy policy", () => {
+  const result = classifyChangesetPolicy({
+    diffEntries: [
+      entry("M", "apps/cli/src/program.ts"),
+      entry("A", ".changeset/.hidden.md"),
+    ],
+    changesetFiles: [
+      {
+        path: ".changeset/.hidden.md",
+        content: patchChangeset("bypass"),
+      },
+    ],
+    headRef: "feat/bypass",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.changesetRequired, true);
+});
+
+test("case-variant readme changeset path does not satisfy policy", () => {
+  const result = classifyChangesetPolicy({
+    diffEntries: [
+      entry("M", "apps/cli/src/program.ts"),
+      entry("A", ".changeset/readme.md"),
+    ],
+    changesetFiles: [
+      {
+        path: ".changeset/readme.md",
+        content: patchChangeset("bypass"),
+      },
+    ],
+    headRef: "feat/bypass",
   });
   assert.equal(result.ok, false);
   assert.equal(result.changesetRequired, true);

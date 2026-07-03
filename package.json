@@ -23,7 +23,7 @@
     "prepare": "husky",
     "publish:release": "changeset publish",
     "test": "npm run test --workspaces --if-present",
-    "test:policy": "node --test scripts/changeset-policy.test.mjs",
+    "test:policy": "node --test scripts/changeset-policy.test.mjs scripts/check-changeset.test.mjs",
     "test:smoke": "npm run test:smoke --workspace @abijith-suresh/outpost",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run format:check && npm run lint && npm run test:policy && npm run verify --workspaces --if-present",

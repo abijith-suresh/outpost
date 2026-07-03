@@ -10,7 +10,6 @@ import parse from "@changesets/parse";
 
 const RELEASE_PACKAGE = "@abijith-suresh/outpost";
 const REQUIRED_RELEASE_TYPE = "patch";
-const CHANGESET_README = "README.md";
 
 /**
  * Normalize a Git path to forward slashes so matching is deterministic
@@ -49,18 +48,31 @@ export function isReleasablePath(path) {
 }
 
 /**
- * True when a path is a non-generated changeset Markdown file eligible to
- * satisfy the policy. `.changeset/README.md` is excluded.
+ * True when a path is a pending changeset Markdown file that Changesets
+ * itself recognizes. Mirrors `@changesets/read`'s discovery:
+ *
+ *   - the file must be a direct child of `.changeset/` (not nested);
+ *   - the basename must not start with `.` (dotfiles are ignored);
+ *   - the basename must end with `.md`;
+ *   - the basename must not match `README.md` case-insensitively.
+ *
+ * Anything else (`.changeset/nested/fake.md`, `.changeset/.fake.md`,
+ * `.changeset/readme.md`, `.changeset/config.json`) is not a usable
+ * changeset and cannot satisfy the policy.
  *
  * @param {string} path
  * @returns {boolean}
  */
 export function isChangesetMarkdown(path) {
   const normalized = toPosixPath(path);
-  if (!normalized.startsWith(".changeset/")) return false;
-  if (!normalized.endsWith(".md")) return false;
-  const basename = normalized.slice(".changeset/".length);
-  if (basename === CHANGESET_README) return false;
+  const prefix = ".changeset/";
+  if (!normalized.startsWith(prefix)) return false;
+  const basename = normalized.slice(prefix.length);
+  if (basename === "") return false;
+  if (basename.includes("/")) return false;
+  if (basename.startsWith(".")) return false;
+  if (!basename.endsWith(".md")) return false;
+  if (/^readme\.md$/i.test(basename)) return false;
   return true;
 }
 
@@ -163,16 +175,34 @@ function isGeneratedReleaseEntry(entry) {
 }
 
 /**
- * True only when the head ref is exactly `changeset-release/main` and every
- * diff entry is structurally valid generated output. A branch-name prefix
- * alone never grants the exemption; an unexpected path disables it.
+ * True only when the head ref is exactly `changeset-release/main`, the head
+ * and base repositories are identical (so a fork reusing the branch name
+ * cannot claim the exemption), and every diff entry is structurally valid
+ * generated output. A branch-name prefix alone never grants the exemption;
+ * an unexpected path or a cross-repository (fork) PR disables it.
+ *
+ * Repository identity (`headRepository === baseRepository`) is supplied by the
+ * caller from trusted GitHub event data. When both are empty (e.g. a local
+ * invocation without repository context) they are treated as equal so local
+ * release-PR testing continues to work; CI always supplies real values, so a
+ * fork is denied there.
  *
  * @param {DiffEntry[]} entries
  * @param {string} headRef
+ * @param {string} [headRepository]
+ * @param {string} [baseRepository]
  * @returns {boolean}
  */
-export function isExemptReleasePr(entries, headRef) {
+export function isExemptReleasePr(
+  entries,
+  headRef,
+  headRepository,
+  baseRepository,
+) {
   if (headRef !== "changeset-release/main") return false;
+  const headRepo = headRepository ?? "";
+  const baseRepo = baseRepository ?? "";
+  if (headRepo !== baseRepo) return false;
   if (entries.length === 0) return false;
   return entries.every(isGeneratedReleaseEntry);
 }
@@ -256,6 +286,11 @@ export function changesetSatisfies(changesetFiles) {
  *   Non-generated `.changeset/*.md` files added or modified by the PR and
  *   still existing at head, each with its content read at head.
  * @property {string} headRef Head ref name (may be empty for push events).
+ * @property {string} [headRepository] Full name of the head repository
+ *   (e.g. `owner/repo`); checked against `baseRepository` for the release-PR
+ *   exemption so a fork reusing the `changeset-release/main` branch name
+ *   cannot claim it.
+ * @property {string} [baseRepository] Full name of the base repository.
  */
 
 /**
@@ -282,8 +317,10 @@ export function changesetSatisfies(changesetFiles) {
 export function classifyChangesetPolicy(input) {
   const entries = input.diffEntries ?? [];
   const headRef = input.headRef ?? "";
+  const headRepository = input.headRepository;
+  const baseRepository = input.baseRepository;
 
-  if (isExemptReleasePr(entries, headRef)) {
+  if (isExemptReleasePr(entries, headRef, headRepository, baseRepository)) {
     return {
       ok: true,
       changesetRequired: false,

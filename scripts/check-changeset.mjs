@@ -221,7 +221,13 @@ function formatFailure(result) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const { base, head, "head-ref": headRef = "" } = args;
+  const {
+    base,
+    head,
+    "head-ref": headRef = "",
+    "head-repo": headRepo,
+    "base-repo": baseRepo,
+  } = args;
   if (!base) throw new Error("Missing required --base argument");
   if (!head) throw new Error("Missing required --head argument");
 
@@ -231,6 +237,8 @@ function main() {
     diffEntries,
     changesetFiles,
     headRef,
+    headRepository: headRepo,
+    baseRepository: baseRepo,
   });
 
   if (result.ok) {
