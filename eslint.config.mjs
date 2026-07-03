@@ -51,4 +51,15 @@ export default tseslint.config(
       "no-console": "off",
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      "no-console": "off",
+    },
+  },
 );
