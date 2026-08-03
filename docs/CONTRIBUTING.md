@@ -155,28 +155,41 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 
 GitHub Actions run on every pull request and push to `main`:
 
-- `npm quality (Node 22) / Install and verify` calls the central npm quality
-  workflow. It installs the exact Node.js 22 and npm 11.16.0 versions, runs
-  `npm ci`, and executes the root `npm run verify` command. This preserves the
-  repository-wide format, lint, policy-test, CLI verify, and website verify
-  coverage in one primary quality gate.
+- `npm quality (Node 22) / Install and verify` calls the central
+  `.github/workflows/npm-quality.yml` workflow at central PR #7 commit
+  `3f5d559a9f9484deef9f881d4ee10f82ec097d21`. It installs the exact Node.js
+  `22.14.0` baseline and npm `11.16.0`, runs `npm ci`, and executes the root
+  `npm run verify` command. This preserves the repository-wide format, lint,
+  policy-test, CLI verify, and website verify coverage in one primary quality
+  gate.
 - `Changeset policy` remains local because it needs pull-request base/head
-  metadata and the outpost-specific release-path rules.
-- `CLI compatibility (Node 24)` keeps CLI typecheck and test coverage on Node 24. `CLI build and smoke (Node 22)` retains the package build and installed
-  package smoke test once on the primary runtime rather than repeating those
-  expensive checks across every runtime.
+  metadata and the Outpost-specific release-path rules.
+- `CLI compatibility (Node 24)` uses the same central workflow with exact Node.js
+  `24.19.0` and a different `verify-command` containing only the existing CLI
+  typecheck and test commands. `CLI build and smoke (Node 22)` retains the
+  package build and installed-package smoke test once on the primary runtime.
 - `Website build (Node 22)` remains local because website compilation is an
-  outpost-specific application check; website verification runs through the
+  Outpost-specific application check; website verification runs through the
   central quality command.
 - The `validate (22)` and `validate (24)` jobs are lightweight aggregation
   checks retaining the existing required-check names. They do not duplicate
-  work; they report the status of the new component jobs to branch protection.
+  work; they report the status of the component jobs to branch protection.
+
+Outpost intentionally tests only two maintained runtime lines: the declared
+Node.js `22.14.0` baseline for full verification and the maintained Node.js
+`24.19.0` line for CLI compatibility. These are exact patch versions, not
+moving major aliases; the Node 24 value was checked against the official Node.js
+release index. Updating either patch version is an explicit maintenance change
+that should verify the new release against the package policy and official
+Node.js releases rather than being introduced through a runtime-resolving
+matrix. The repository continues to use its declared exact npm version,
+`npm@11.16.0`.
 
 The generic PR-title and dependency-review callers use the released central
 workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`). The
-npm quality caller temporarily uses central PR #7's immutable head
-`9f88af4b953bae37830ec062ea5094e319eb3d08`, which contains the reusable npm
-workflow but is not part of `v0.1.0`; update that pin to the released central
+npm-quality callers temporarily use central PR #7's immutable head
+`3f5d559a9f9484deef9f881d4ee10f82ec097d21`, which contains the reusable npm
+workflow but is not part of `v0.1.0`; update both pins to the released central
 commit after PR #7 is merged and released.
 
 Changesets release pull requests (`chore: version packages`) are validated
@@ -208,9 +221,12 @@ the tag-object SHA.
 
 Reusable workflows are also pinned to full immutable SHAs. The central
 PR-title and dependency-review callers use the released
-`abijith-suresh/workflows` v0.1.0 commit. The npm quality caller is a temporary
-pin to central PR #7 until that reusable workflow is released; its follow-up
-must replace the PR pin with the new released commit and update the comment.
+`abijith-suresh/workflows` v0.1.0 commit. The two npm-quality callers are
+temporary pins to central PR #7 until that reusable workflow is released; the
+follow-up must replace both PR pins with the new released commit and update the
+comments. Dependency review remains intentionally configured in
+`.github/workflows/dependency-review.yml`; if its check is blocked, a
+repository owner must enable the dependency graph in repository settings.
 
 ## Release Process
 
