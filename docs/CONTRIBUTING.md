@@ -159,8 +159,8 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 GitHub Actions run on every pull request and push to `main`:
 
 - `npm quality (Node 24) / Install and verify` calls the zero-input central
-  `.github/workflows/npm-quality.yml` workflow at central PR #7's exact head
-  `9bdb73a2291cd38324751293f02062b6c303744e5`. The central workflow reads
+  `.github/workflows/npm-quality.yml` workflow at released central workflows
+  v0.2.0 commit `5ed781e53cbc2c985682393e7de9449f555888ae`. The central workflow reads
   `.node-version` and `packageManager` from the repository, installs
   dependencies with `npm ci`, and runs root `npm run verify`.
 - `Changeset policy` remains local because it needs pull-request base/head
@@ -190,9 +190,10 @@ The generic PR-title and dependency-review callers remain pinned to released
 central workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`).
 Dependency review stays enabled through the central caller; if its check is
 blocked, a repository owner must enable the dependency graph in repository
-settings. The npm-quality caller uses central PR #7's immutable head
-`9bdb73a2291cd38324751293f02062b6c303744e5` because that is the requested
-zero-input workflow contract.
+settings. The npm-quality caller uses the released central workflows v0.2.0
+commit `5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no
+inputs; the central workflow owns Node and npm setup from the caller
+repository's root contract.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
@@ -224,9 +225,9 @@ the tag-object SHA.
 Reusable workflows are also pinned to full immutable SHAs. The central
 PR-title and dependency-review callers use the released
 `abijith-suresh/workflows` v0.1.0 commit
-`b42be9571985efb1ce10970340250fcccc657050`. The npm-quality caller uses
-central PR #7's immutable head
-`9bdb73a2291cd38324751293f02062b6c303744e5` and intentionally has no inputs;
+`b42be9571985efb1ce10970340250fcccc657050`. The npm-quality caller uses the
+released central workflows v0.2.0 commit
+`5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs;
 the central workflow owns Node and npm setup from the caller repository's root
 contract.
 
