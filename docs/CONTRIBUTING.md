@@ -158,7 +158,7 @@ GitHub Actions run on every pull request and push to `main`:
 - `npm quality (Node 22) / Install and verify` calls the central
   `.github/workflows/npm-quality.yml` workflow at central PR #7 commit
   `3f5d559a9f9484deef9f881d4ee10f82ec097d21`. It installs the exact Node.js
-  `22.14.0` baseline and npm `11.16.0`, runs `npm ci`, and executes the root
+  `22.23.2` baseline and npm `11.16.0`, runs `npm ci`, and executes the root
   `npm run verify` command. This preserves the repository-wide format, lint,
   policy-test, CLI verify, and website verify coverage in one primary quality
   gate.
@@ -176,14 +176,16 @@ GitHub Actions run on every pull request and push to `main`:
   work; they report the status of the component jobs to branch protection.
 
 Outpost intentionally tests only two maintained runtime lines: the declared
-Node.js `22.14.0` baseline for full verification and the maintained Node.js
-`24.19.0` line for CLI compatibility. These are exact patch versions, not
-moving major aliases; the Node 24 value was checked against the official Node.js
-release index. Updating either patch version is an explicit maintenance change
-that should verify the new release against the package policy and official
-Node.js releases rather than being introduced through a runtime-resolving
-matrix. The repository continues to use its declared exact npm version,
-`npm@11.16.0`.
+Node.js `22.23.2` baseline for full verification and the maintained Node.js
+`24.19.0` line for CLI compatibility. The package policy permits Node.js
+`>=22.14.0`, while the current lockfile includes `lint-staged@17.0.7`, which
+requires Node.js `>=22.22.1`; `22.23.2` satisfies both constraints. These are
+exact patch versions, not moving major aliases; both values were checked
+against the official Node.js release index. Updating either patch version is an
+explicit maintenance change that should verify the new release against the
+package policy and official Node.js releases rather than being introduced
+through a runtime-resolving matrix. The repository continues to use its
+exact declared npm version, `npm@11.16.0`.
 
 The generic PR-title and dependency-review callers use the released central
 workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`). The
