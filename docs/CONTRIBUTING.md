@@ -155,10 +155,29 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 
 GitHub Actions run on every pull request and push to `main`:
 
-- The protected `validate` matrix typechecks, tests, builds, and smoke-tests the
-  packed CLI on Node.js 22 and 24.
-- The Node.js 22 matrix entry additionally checks repository-wide formatting
-  and lint, then verifies and builds the Astro website.
+- `npm quality (Node 22) / Install and verify` calls the central npm quality
+  workflow. It installs the exact Node.js 22 and npm 11.16.0 versions, runs
+  `npm ci`, and executes the root `npm run verify` command. This preserves the
+  repository-wide format, lint, policy-test, CLI verify, and website verify
+  coverage in one primary quality gate.
+- `Changeset policy` remains local because it needs pull-request base/head
+  metadata and the outpost-specific release-path rules.
+- `CLI compatibility (Node 24)` keeps CLI typecheck and test coverage on Node 24. `CLI build and smoke (Node 22)` retains the package build and installed
+  package smoke test once on the primary runtime rather than repeating those
+  expensive checks across every runtime.
+- `Website build (Node 22)` remains local because website compilation is an
+  outpost-specific application check; website verification runs through the
+  central quality command.
+- The `validate (22)` and `validate (24)` jobs are lightweight aggregation
+  checks retaining the existing required-check names. They do not duplicate
+  work; they report the status of the new component jobs to branch protection.
+
+The generic PR-title and dependency-review callers use the released central
+workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`). The
+npm quality caller temporarily uses central PR #7's immutable head
+`9f88af4b953bae37830ec062ea5094e319eb3d08`, which contains the reusable npm
+workflow but is not part of `v0.1.0`; update that pin to the released central
+commit after PR #7 is merged and released.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
@@ -186,6 +205,12 @@ by resolving the tag from the canonical action repository (for example via
 `git ls-remote --tags` or the GitHub API). Annotated tags must be dereferenced
 to their underlying commit SHA; the pinned value is always the commit SHA, not
 the tag-object SHA.
+
+Reusable workflows are also pinned to full immutable SHAs. The central
+PR-title and dependency-review callers use the released
+`abijith-suresh/workflows` v0.1.0 commit. The npm quality caller is a temporary
+pin to central PR #7 until that reusable workflow is released; its follow-up
+must replace the PR pin with the new released commit and update the comment.
 
 ## Release Process
 
