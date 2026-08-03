@@ -27,7 +27,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 
 ## Constraints
 
-- **Runtime:** Node.js >= 22.14.0, npm >= 11.5.1
+- **Runtime:** Node.js >= 24.19.0 <25 (Node.js 24 only), npm >= 11.5.1
 - **Delivery:** npm package (`@abijith-suresh/outpost`), installed globally
 - **Zero implicit network access during workspace creation**
 - **No native binary dependencies** — uses system `git` CLI only

@@ -41,7 +41,7 @@ When documents and implementation disagree:
 
 ## Key Rules
 
-1. **Changesets required** — every PR with source changes must include a changeset. Create one with `npx changeset`. CI enforces this on the Node.js 22 `validate` matrix entry via `npm run changeset:check`; the [Changeset Bot](https://github.com/apps/changeset-bot) also comments on PRs.
+1. **Changesets required** — every PR with source changes must include a changeset. Create one with `npx changeset`. CI enforces this with the local `Changeset policy` job; the [Changeset Bot](https://github.com/apps/changeset-bot) also comments on PRs.
 2. **Pre-v1: all bumps are `patch`** — never use `minor` or `major` in a changeset.
 3. **Website-only changes** — PRs that only touch `apps/website/`, website-specific workflows, and website-specific docs/config do not require a CLI package changeset.
 4. **Run `npm run verify` before pushing** — this checks repository formatting and lint, then verifies every workspace.
@@ -52,9 +52,9 @@ When documents and implementation disagree:
 ## Stack
 
 - **Language:** TypeScript (strict, ES2022, ES modules)
-- **Runtime:** Node.js >= 22.14.0
+- **Runtime:** Node.js >= 24.19.0 <25 (Node.js 24 only)
 - **Effects system:** Effect-TS — command workflows and project-controlled side effects return `Effect.Effect`; direct Node process boundaries are documented in `docs/ARCHITECTURE.md`
 - **Config/Schema:** `Schema.TaggedError` for errors, `Schema.Struct` for config validation
 - **Testing:** Vitest (CLI integration and focused module tests in `apps/cli/tests/`, with shared helpers in `apps/cli/tests/helpers.ts`)
-- **CI:** GitHub Actions (`validate` Node.js matrix with repository quality, CLI verification, and website checks)
-- **Changeset enforcement:** [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs, documented in `docs/CONTRIBUTING.md`; CI runs `npm run changeset:check` on the Node.js 22 `validate` matrix entry
+- **CI:** GitHub Actions (one Node.js 24 quality job with local CLI, Changesets, and website checks)
+- **Changeset enforcement:** [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs, documented in `docs/CONTRIBUTING.md`; CI runs `npm run changeset:check` in the local `Changeset policy` job
