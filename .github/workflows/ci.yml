@@ -8,42 +8,53 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.job }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version:
-          - 22
-          - 24
+permissions:
+  contents: read
 
+jobs:
+  npm-quality:
+    name: npm quality (Node 24)
+    uses: abijith-suresh/workflows/.github/workflows/npm-quality.yml@5ed781e53cbc2c985682393e7de9449f555888ae # central workflows v0.2.0; zero-input root-contract workflow
     permissions:
       contents: read
 
+  changeset-policy:
+    name: Changeset policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js from repository version file
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version-file: .node-version
           cache: npm
 
-      - name: Setup npm
-        run: npm install --global npm@11.16.0
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Changeset policy
-        if: github.event_name == 'pull_request' && matrix.node-version == 22
+      - name: Check Changeset policy
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -58,34 +69,138 @@ jobs:
             --head-repo "$HEAD_REPO" \
             --base-repo "$BASE_REPO"
 
-      - name: Check formatting
-        if: matrix.node-version == 22
-        run: npm run format:check
+  cli-build-smoke:
+    name: CLI build and smoke (Node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Lint
-        if: matrix.node-version == 22
-        run: npm run lint
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
 
-      - name: Test policy
-        if: matrix.node-version == 22
-        run: npm run test:policy
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
 
-      - name: Typecheck
-        run: npm run typecheck --workspace @abijith-suresh/outpost
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Test
-        run: npm run test --workspace @abijith-suresh/outpost
-
-      - name: Build
+      - name: Build CLI
         run: npm run build --workspace @abijith-suresh/outpost
 
       - name: Installed-package smoke test
         run: npm run test:smoke --workspace @abijith-suresh/outpost
 
-      - name: Verify website
-        if: matrix.node-version == 22
-        run: npm run verify --workspace outpost-website
+  website-build:
+    name: Website build (Node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build website
-        if: matrix.node-version == 22
         run: npm run build --workspace outpost-website
+
+  # main still requires these historical names. They are temporary aggregation
+  # aliases only: both report the same Node 24 jobs above and never set up Node 22.
+  # Remove them in the branch-protection migration after this PR.
+  validate-22:
+    name: validate (22)
+    if: always()
+    needs:
+      - npm-quality
+      - changeset-policy
+      - cli-build-smoke
+      - website-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Confirm Node 24-only verification
+        env:
+          QUALITY_RESULT: ${{ needs.npm-quality.result }}
+          CHANGESET_RESULT: ${{ needs.changeset-policy.result }}
+          CLI_BUILD_RESULT: ${{ needs.cli-build-smoke.result }}
+          WEBSITE_BUILD_RESULT: ${{ needs.website-build.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
+            printf 'Node 24 verification failed: quality=%s changeset=%s cli-build=%s website-build=%s\n' \
+              "$QUALITY_RESULT" "$CHANGESET_RESULT" "$CLI_BUILD_RESULT" "$WEBSITE_BUILD_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$CHANGESET_RESULT" != success && "$CHANGESET_RESULT" != skipped ]]; then
+            printf 'Changeset policy failed: %s\n' "$CHANGESET_RESULT" >&2
+            exit 1
+          fi
+          echo 'Temporary validate (22) alias passed using Node 24-only jobs.'
+
+  validate-24:
+    name: validate (24)
+    if: always()
+    needs:
+      - npm-quality
+      - changeset-policy
+      - cli-build-smoke
+      - website-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Confirm Node 24-only verification
+        env:
+          QUALITY_RESULT: ${{ needs.npm-quality.result }}
+          CHANGESET_RESULT: ${{ needs.changeset-policy.result }}
+          CLI_BUILD_RESULT: ${{ needs.cli-build-smoke.result }}
+          WEBSITE_BUILD_RESULT: ${{ needs.website-build.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
+            printf 'Node 24 verification failed: quality=%s changeset=%s cli-build=%s website-build=%s\n' \
+              "$QUALITY_RESULT" "$CHANGESET_RESULT" "$CLI_BUILD_RESULT" "$WEBSITE_BUILD_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$CHANGESET_RESULT" != success && "$CHANGESET_RESULT" != skipped ]]; then
+            printf 'Changeset policy failed: %s\n' "$CHANGESET_RESULT" >&2
+            exit 1
+          fi
+          echo 'Temporary validate (24) alias passed using Node 24-only jobs.'

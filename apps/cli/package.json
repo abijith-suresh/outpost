@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=22.14.0",
+    "node": ">=24.19.0 <25",
     "npm": ">=11.5.1"
   },
   "publishConfig": {

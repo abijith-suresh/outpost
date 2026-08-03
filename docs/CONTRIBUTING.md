@@ -4,7 +4,10 @@ Welcome to Outpost — a CLI tool for managing local Git repository workspaces. 
 
 ## Getting Started
 
-**Prerequisites:** Node.js >= 22.14.0, npm >= 11.5.1.
+**Prerequisites:** Node.js >= 24.19.0 <25 (Node.js 24 only), npm >= 11.5.1.
+
+Use a version manager that reads the checked-in `.node-version`; it pins local
+work and CI to Node.js `24.19.0`.
 
 ```bash
 git clone https://github.com/abijith-suresh/outpost.git
@@ -56,7 +59,7 @@ While Outpost is pre-v1, all changesets use the `patch` bump level — never `mi
 
 Website-only PRs that touch `apps/website/`, website-specific workflows, or website-specific docs/config do not require a CLI package changeset because the website is not published with `@abijith-suresh/outpost`.
 
-The [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs if a changeset is missing. CI additionally enforces the policy on the Node.js 22 `validate` matrix entry: a pull request that changes a releasable CLI path without a pending patch changeset for `@abijith-suresh/outpost` fails the build.
+The [Changeset Bot](https://github.com/apps/changeset-bot) comments on PRs if a changeset is missing. CI additionally enforces the policy in the local `Changeset policy` job: a pull request that changes a releasable CLI path without a pending patch changeset for `@abijith-suresh/outpost` fails the build.
 
 ### Changeset Policy Enforcement
 
@@ -155,10 +158,42 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 
 GitHub Actions run on every pull request and push to `main`:
 
-- The protected `validate` matrix typechecks, tests, builds, and smoke-tests the
-  packed CLI on Node.js 22 and 24.
-- The Node.js 22 matrix entry additionally checks repository-wide formatting
-  and lint, then verifies and builds the Astro website.
+- `npm quality (Node 24) / Install and verify` calls the zero-input central
+  `.github/workflows/npm-quality.yml` workflow at released central workflows
+  v0.2.0 commit `5ed781e53cbc2c985682393e7de9449f555888ae`. The central workflow reads
+  `.node-version` and `packageManager` from the repository, installs
+  dependencies with `npm ci`, and runs root `npm run verify`.
+- `Changeset policy` remains local because it needs pull-request base/head
+  metadata and the Outpost-specific release-path rules. It reads the same
+  `.node-version` file.
+- `CLI build and smoke (Node 24)` remains local because building the published
+  CLI and testing its installed package are Outpost-specific checks.
+- `Website build (Node 24)` remains local because website compilation is an
+  Outpost-specific application check; website verification runs through the
+  central quality command. Pages deployment and release validation also read
+  `.node-version`.
+- Outpost has one runtime policy: Node.js 24. The root and published CLI
+  manifests declare `>=24.19.0 <25`, which means every Node.js 24 patch from
+  the verified LTS baseline onward, but no Node.js 22 or 25 runtime. The
+  checked-in `.node-version` pins CI and local development to `24.19.0`, the
+  latest Node.js 24 LTS patch verified against official Node release metadata.
+  This is a range for the package contract rather than an exact patch lock, so
+  later compatible Node.js 24 security patches remain supported. npm remains
+  the exact `npm@11.16.0` declared by `packageManager`.
+- Main branch protection still requires `validate (22)` and `validate (24)`.
+  Those names are retained as documented temporary aggregation aliases only;
+  both report the same Node 24 jobs and neither sets up or tests Node 22. A
+  later settings PR should replace those historical required names with the
+  actual Node 24 job names and remove the aliases.
+
+The generic PR-title and dependency-review callers remain pinned to released
+central workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`).
+Dependency review stays enabled through the central caller; if its check is
+blocked, a repository owner must enable the dependency graph in repository
+settings. The npm-quality caller uses the released central workflows v0.2.0
+commit `5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no
+inputs; the central workflow owns Node and npm setup from the caller
+repository's root contract.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
@@ -186,6 +221,15 @@ by resolving the tag from the canonical action repository (for example via
 `git ls-remote --tags` or the GitHub API). Annotated tags must be dereferenced
 to their underlying commit SHA; the pinned value is always the commit SHA, not
 the tag-object SHA.
+
+Reusable workflows are also pinned to full immutable SHAs. The central
+PR-title and dependency-review callers use the released
+`abijith-suresh/workflows` v0.1.0 commit
+`b42be9571985efb1ce10970340250fcccc657050`. The npm-quality caller uses the
+released central workflows v0.2.0 commit
+`5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs;
+the central workflow owns Node and npm setup from the caller repository's root
+contract.
 
 ## Release Process
 
@@ -225,10 +269,11 @@ npm run verify --workspace outpost-website
 
 ### CI
 
-The website is verified by the Node.js 22 `validate` matrix entry in
+The website is verified by the Node.js 24 jobs in
 `.github/workflows/ci.yml`. The site is deployed to GitHub Pages via
 `.github/workflows/pages.yml` after pushes to `main` that touch the website,
-root workspace manifests, or Pages workflow files, and through manual
+`.node-version`, root workspace manifests, or Pages workflow files, and through
+manual
 dispatch. Pull requests validate without deploying.
 
 The Pages deployment step allows up to 20 minutes for GitHub's deployment

@@ -8,7 +8,7 @@ CLI for managing local Git repository workspaces. Bootstrap multiple repos into 
 npm install -g @abijith-suresh/outpost
 ```
 
-**Requirements:** Node.js >= 22.14.0, npm >= 11.5.1, and Git available on PATH.
+**Requirements:** Node.js >= 24.19.0 <25 (Node.js 24 only), npm >= 11.5.1, and Git available on PATH.
 
 ## Quick start
 

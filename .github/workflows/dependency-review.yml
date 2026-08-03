@@ -1,0 +1,16 @@
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    uses: abijith-suresh/workflows/.github/workflows/dependency-review.yml@b42be9571985efb1ce10970340250fcccc657050 # central workflows v0.1.0
+    with:
+      fail-on-severity: high
+    permissions:
+      contents: read
