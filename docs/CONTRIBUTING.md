@@ -186,14 +186,16 @@ GitHub Actions run on every pull request and push to `main`:
   later settings PR should replace those historical required names with the
   actual Node 24 job names and remove the aliases.
 
-The generic PR-title and dependency-review callers remain pinned to released
-central workflows commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`).
-Dependency review stays enabled through the central caller; if its check is
-blocked, a repository owner must enable the dependency graph in repository
-settings. The npm-quality caller uses the released central workflows v0.2.0
-commit `5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no
-inputs; the central workflow owns Node and npm setup from the caller
-repository's root contract.
+The dependency-review caller remains pinned to released central workflows
+commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`). The
+conventional-commit-title caller uses the finalized central workflows v0.3.0
+commit `0f257b2642d2a010fefe0ff9d03374799d73eb44`. Dependency review stays
+enabled through the central caller; if its check is blocked, a repository owner
+must enable the dependency graph in repository settings. The npm-quality caller
+uses the released central workflows v0.2.0 commit
+`5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs; the
+central workflow owns Node and npm setup from the caller repository's root
+contract.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
@@ -223,8 +225,10 @@ to their underlying commit SHA; the pinned value is always the commit SHA, not
 the tag-object SHA.
 
 Reusable workflows are also pinned to full immutable SHAs. The central
-PR-title and dependency-review callers use the released
-`abijith-suresh/workflows` v0.1.0 commit
+conventional-commit-title caller uses the finalized
+`abijith-suresh/workflows` v0.3.0 commit
+`0f257b2642d2a010fefe0ff9d03374799d73eb44`; the dependency-review caller
+remains on v0.1.0 commit
 `b42be9571985efb1ce10970340250fcccc657050`. The npm-quality caller uses the
 released central workflows v0.2.0 commit
 `5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs;
