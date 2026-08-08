@@ -1,17 +1,16 @@
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
-
+import { CURRENT_CONFIG_VERSION, migrateConfig } from "../src/config.js";
 import {
+  createTempDir,
   mkdirSync,
   path,
   readRegistry,
   runCli,
   setupAfterEach,
-  createTempDir,
-  writeRegistry,
   writeFileSync,
+  writeRegistry,
 } from "./helpers.ts";
-import { Effect } from "effect";
-import { migrateConfig, CURRENT_CONFIG_VERSION } from "../src/config.js";
 
 setupAfterEach();
 
@@ -20,19 +19,14 @@ describe("run", () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
     expect(infoSpy).toHaveBeenNthCalledWith(2, "status: not-initialized");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      3,
-      `resolved outpost home: ${tempHome}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(3, `resolved outpost home: ${tempHome}`);
     expect(infoSpy).toHaveBeenNthCalledWith(4, "initialized: false");
     expect(infoSpy).toHaveBeenNthCalledWith(5, "missing repos: 0");
   });
@@ -41,9 +35,7 @@ describe("run", () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json"]);
 
@@ -56,9 +48,7 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"initialized": false');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 0');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepos": []');
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      `"outpostHome": "${tempHome}"`,
-    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(`"outpostHome": "${tempHome}"`);
   });
 
   it("prints initialized doctor output", async () => {
@@ -67,36 +57,28 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
     expect(infoSpy).toHaveBeenNthCalledWith(2, "status: ok");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      3,
-      `resolved outpost home: ${tempHome}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(3, `resolved outpost home: ${tempHome}`);
     expect(infoSpy).toHaveBeenNthCalledWith(4, "initialized: true");
     expect(infoSpy).toHaveBeenNthCalledWith(5, "missing repos: 0");
     expect(infoSpy).toHaveBeenNthCalledWith(
       6,
-      `config file path: ${path.join(tempHome, "config.json")}`,
+      `config file path: ${path.join(tempHome, "config.json")}`
     );
     expect(infoSpy).toHaveBeenNthCalledWith(
       7,
-      `repo registry file path: ${path.join(tempHome, "repos.json")}`,
+      `repo registry file path: ${path.join(tempHome, "repos.json")}`
     );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      8,
-      `repos root: ${path.join(tempHome, "repos")}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(8, `repos root: ${path.join(tempHome, "repos")}`);
     expect(infoSpy).toHaveBeenNthCalledWith(
       9,
-      `worktrees root: ${path.join(tempHome, "worktrees")}`,
+      `worktrees root: ${path.join(tempHome, "worktrees")}`
     );
     expect(infoSpy).toHaveBeenNthCalledWith(10, "repo count: 0");
   });
@@ -134,19 +116,14 @@ describe("run", () => {
       },
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(2, "status: degraded");
     expect(infoSpy).toHaveBeenNthCalledWith(5, "missing repos: 1");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      11,
-      `missing managed repo: ${missingManagedRepoPath}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(11, `missing managed repo: ${missingManagedRepoPath}`);
   });
 
   it("prints degraded doctor output as json when managed repos are missing", async () => {
@@ -170,9 +147,7 @@ describe("run", () => {
       },
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json"]);
 
@@ -184,7 +159,7 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "degraded"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"missingRepoCount": 1');
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      `"missingRepos": [\n      "${missingManagedRepoPath}"`,
+      `"missingRepos": [\n      "${missingManagedRepoPath}"`
     );
   });
 
@@ -197,18 +172,14 @@ describe("run", () => {
     const configPath = path.join(tempHome, "config.json");
     writeFileSync(configPath, "{invalid json\n");
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost doctor");
     expect(infoSpy.mock.calls[1]?.[0]).toContain("status: error:");
-    expect(infoSpy.mock.calls[1]?.[0]).toContain(
-      `Invalid JSON in config file ${configPath}`,
-    );
+    expect(infoSpy.mock.calls[1]?.[0]).toContain(`Invalid JSON in config file ${configPath}`);
   });
 
   it("prints error doctor output as json when config JSON is invalid", async () => {
@@ -220,9 +191,7 @@ describe("run", () => {
     const configPath = path.join(tempHome, "config.json");
     writeFileSync(configPath, "{invalid json\n");
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json"]);
     const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
@@ -242,9 +211,7 @@ describe("run", () => {
     expect(output.data.status).toContain("error:");
     expect(output.data.status).not.toBe("ok");
     expect(output.data.diagnostics).toHaveLength(1);
-    expect(output.data.diagnostics[0]).toContain(
-      `Invalid JSON in config file ${configPath}`,
-    );
+    expect(output.data.diagnostics[0]).toContain(`Invalid JSON in config file ${configPath}`);
   });
 
   it("prints error doctor output when repo registry JSON is invalid", async () => {
@@ -256,17 +223,13 @@ describe("run", () => {
     const registryPath = path.join(tempHome, "repos.json");
     writeFileSync(registryPath, "{invalid json\n");
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy.mock.calls[1]?.[0]).toContain("status: error:");
-    expect(infoSpy.mock.calls[1]?.[0]).toContain(
-      `Invalid JSON in repo registry ${registryPath}`,
-    );
+    expect(infoSpy.mock.calls[1]?.[0]).toContain(`Invalid JSON in repo registry ${registryPath}`);
   });
 
   it("prints error doctor output as json when repo registry shape is invalid", async () => {
@@ -276,14 +239,9 @@ describe("run", () => {
     await runCli(["init"]);
 
     const registryPath = path.join(tempHome, "repos.json");
-    writeFileSync(
-      registryPath,
-      `${JSON.stringify({ repos: [{ id: "alpha" }] }, null, 2)}\n`,
-    );
+    writeFileSync(registryPath, `${JSON.stringify({ repos: [{ id: "alpha" }] }, null, 2)}\n`);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json"]);
     const output = JSON.parse(String(infoSpy.mock.calls[0]?.[0])) as {
@@ -303,31 +261,24 @@ describe("run", () => {
     expect(output.data.status).toContain("error:");
     expect(output.data.status).not.toBe("ok");
     expect(output.data.diagnostics).toHaveLength(1);
-    expect(output.data.diagnostics[0]).toContain(
-      `Invalid repo registry ${registryPath}`,
-    );
+    expect(output.data.diagnostics[0]).toContain(`Invalid repo registry ${registryPath}`);
   });
 
   it("initializes outpost home and worktrees root", async () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["init"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost init");
     expect(infoSpy).toHaveBeenNthCalledWith(2, `outpost home: ${tempHome}`);
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      3,
-      `repos root: ${path.join(tempHome, "repos")}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(3, `repos root: ${path.join(tempHome, "repos")}`);
     expect(infoSpy).toHaveBeenNthCalledWith(
       4,
-      `worktrees root: ${path.join(tempHome, "worktrees")}`,
+      `worktrees root: ${path.join(tempHome, "worktrees")}`
     );
 
     const registry = readRegistry(tempHome);
@@ -359,7 +310,7 @@ describe("migrateConfig", () => {
     };
 
     await expect(Effect.runPromise(migrateConfig(raw))).rejects.toThrow(
-      `Config version 2 is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`,
+      `Config version 2 is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`
     );
   });
 

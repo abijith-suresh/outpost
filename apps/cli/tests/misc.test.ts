@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createManagedRepoFixture,
+  createTempDir,
   existsSync,
+  localRepoId,
   path,
   runCli,
-  localRepoId,
   setupAfterEach,
-  createTempDir,
 } from "./helpers.ts";
 
 setupAfterEach();
@@ -31,9 +31,7 @@ describe("run", () => {
     await runCli(["repo", "add", alpha.tempRepo]);
     await runCli(["repo", "add", beta.tempRepo]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -50,25 +48,18 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `Selected repos share the same name shared-repo: ${localRepoId(alpha.tempRemote)}, ${localRepoId(beta.tempRemote)}.`,
+      `Selected repos share the same name shared-repo: ${localRepoId(alpha.tempRemote)}, ${localRepoId(beta.tempRemote)}.`
     );
-    expect(existsSync(path.join(tempHome, "worktrees", "PATH-123"))).toBe(
-      false,
-    );
+    expect(existsSync(path.join(tempHome, "worktrees", "PATH-123"))).toBe(false);
   });
 
   it("returns an error for unknown commands", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["wat"]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown command: wat");
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      2,
-      "Run `outpost --help` to see available commands.",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(2, "Run `outpost --help` to see available commands.");
   });
 });

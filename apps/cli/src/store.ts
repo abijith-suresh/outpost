@@ -11,14 +11,14 @@ export class StoreError extends Schema.TaggedError<StoreError>()("StoreError", {
 
 export function writeTextFileAtomic(
   filePath: string,
-  contents: string,
+  contents: string
 ): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const temporaryPath = path.join(
       path.dirname(filePath),
-      `.${path.basename(filePath)}.${randomUUID()}.tmp`,
+      `.${path.basename(filePath)}.${randomUUID()}.tmp`
     );
 
     yield* fs.writeFileString(temporaryPath, contents).pipe(
@@ -26,20 +26,16 @@ export function writeTextFileAtomic(
       Effect.onExit((exit) =>
         Exit.isFailure(exit)
           ? fs.remove(temporaryPath, { force: true }).pipe(Effect.ignore)
-          : Effect.void,
-      ),
+          : Effect.void
+      )
     );
   });
 }
 
 export function writeJsonFileAtomic(
   filePath: string,
-  value: unknown,
-): Effect.Effect<
-  void,
-  StoreError | PlatformError,
-  FileSystem.FileSystem | Path.Path
-> {
+  value: unknown
+): Effect.Effect<void, StoreError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const contents = yield* Effect.try({
       try: () => {

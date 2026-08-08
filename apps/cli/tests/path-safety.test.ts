@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   getPortablePathKey,
   resolvePathWithinRoot,
-  validateSemanticIdentifier,
   validatePathSegment,
+  validateSemanticIdentifier,
 } from "../src/path-safety.ts";
 import { path } from "./helpers.ts";
 
@@ -16,8 +16,8 @@ describe("path safety", () => {
 
     const resolved = await Effect.runPromise(
       resolvePathWithinRoot(root, "TICKET-123", "manifest.json").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+        Effect.provide(NodeContext.layer)
+      )
     );
 
     expect(resolved).toBe(path.join(root, "TICKET-123", "manifest.json"));
@@ -27,24 +27,20 @@ describe("path safety", () => {
     const root = path.join(path.sep, "tmp", "outpost", "worktrees");
 
     const exit = await Effect.runPromise(
-      Effect.exit(
-        resolvePathWithinRoot(root, "..", "repos", "repos.json"),
-      ).pipe(Effect.provide(NodeContext.layer)),
+      Effect.exit(resolvePathWithinRoot(root, "..", "repos", "repos.json")).pipe(
+        Effect.provide(NodeContext.layer)
+      )
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
   });
 
   it("centralizes ticket segment validation", async () => {
-    const exit = await Effect.runPromise(
-      Effect.exit(validatePathSegment("--ticket", "../repos")),
-    );
+    const exit = await Effect.runPromise(Effect.exit(validatePathSegment("--ticket", "../repos")));
 
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      expect(exit.cause.toString()).toContain(
-        "--ticket may not contain path separators.",
-      );
+      expect(exit.cause.toString()).toContain("--ticket may not contain path separators.");
     }
   });
 
@@ -57,32 +53,26 @@ describe("path safety", () => {
     ["escape", "\u001b"],
     ["delete", "\u007f"],
   ])("rejects %s semantic identifiers", async (_, value) => {
-    const exit = await Effect.runPromise(
-      Effect.exit(validateSemanticIdentifier("ticket", value)),
-    );
+    const exit = await Effect.runPromise(Effect.exit(validateSemanticIdentifier("ticket", value)));
 
     expect(Exit.isFailure(exit)).toBe(true);
   });
 
   it("preserves Unicode semantic identifiers", async () => {
     await expect(
-      Effect.runPromise(validateSemanticIdentifier("ticket", "工单-１２３")),
+      Effect.runPromise(validateSemanticIdentifier("ticket", "工单-１２３"))
     ).resolves.toBeUndefined();
     await expect(
-      Effect.runPromise(validateSemanticIdentifier("ticket", "ticket 123")),
+      Effect.runPromise(validateSemanticIdentifier("ticket", "ticket 123"))
     ).resolves.toBeUndefined();
   });
 
   it("normalizes case and trailing Windows-aliased characters", async () => {
     const upper = await Effect.runPromise(
-      getPortablePathKey("/tmp/repos/Group/Repo.git").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      getPortablePathKey("/tmp/repos/Group/Repo.git").pipe(Effect.provide(NodeContext.layer))
     );
     const lowerAliased = await Effect.runPromise(
-      getPortablePathKey("/tmp/repos/group/repo.git. ").pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      getPortablePathKey("/tmp/repos/group/repo.git. ").pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(upper).toBe(lowerAliased);

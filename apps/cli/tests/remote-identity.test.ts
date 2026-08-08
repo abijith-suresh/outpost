@@ -26,9 +26,7 @@ setupAfterEach();
 
 function resolveIdentity(remoteUrl: string, sourceRepoPath = "/tmp/source") {
   return Effect.runPromise(
-    resolveRemoteIdentity(remoteUrl, sourceRepoPath).pipe(
-      Effect.provide(NodeContext.layer),
-    ),
+    resolveRemoteIdentity(remoteUrl, sourceRepoPath).pipe(Effect.provide(NodeContext.layer))
   );
 }
 
@@ -49,14 +47,12 @@ describe("remote identity", () => {
   });
 
   it("preserves full namespaces and distinguishes hosts and namespaces", async () => {
-    const gitlab = await resolveIdentity(
-      "https://gitlab.example.com/Platform/Services/Repo.git",
-    );
+    const gitlab = await resolveIdentity("https://gitlab.example.com/Platform/Services/Repo.git");
     const otherNamespace = await resolveIdentity(
-      "https://gitlab.example.com/Other/Services/Repo.git",
+      "https://gitlab.example.com/Other/Services/Repo.git"
     );
     const otherHost = await resolveIdentity(
-      "https://mirror.example.com/Platform/Services/Repo.git",
+      "https://mirror.example.com/Platform/Services/Repo.git"
     );
 
     expect(gitlab.id).toBe("gitlab.example.com/Platform/Services/Repo");
@@ -65,36 +61,26 @@ describe("remote identity", () => {
   });
 
   it("preserves supported percent-encoded spaces and Unicode", async () => {
-    const identity = await resolveIdentity(
-      "https://example.com/Group/Repo%20%E5%90%8D.git",
-    );
+    const identity = await resolveIdentity("https://example.com/Group/Repo%20%E5%90%8D.git");
 
     expect(identity.id).toBe("example.com/Group/Repo 名");
     expect(identity.name).toBe("Repo 名");
   });
 
   it("omits default ports and retains non-default ports", async () => {
-    const httpsDefault = await resolveIdentity(
-      "https://example.com:443/Group/Repo.git",
-    );
-    const sshDefault = await resolveIdentity(
-      "ssh://git@example.com:22/Group/Repo.git",
-    );
-    const custom = await resolveIdentity(
-      "https://example.com:8443/Group/Repo.git",
-    );
+    const httpsDefault = await resolveIdentity("https://example.com:443/Group/Repo.git");
+    const sshDefault = await resolveIdentity("ssh://git@example.com:22/Group/Repo.git");
+    const custom = await resolveIdentity("https://example.com:8443/Group/Repo.git");
 
     expect(httpsDefault.id).toBe("example.com/Group/Repo");
     expect(sshDefault.id).toBe("example.com/Group/Repo");
     expect(custom.id).toBe("example.com:8443/Group/Repo");
 
     const managedPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", custom).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      getManagedRepoPath("/tmp/repos", custom).pipe(Effect.provide(NodeContext.layer))
     );
     expect(managedPath).toBe(
-      path.join("/tmp/repos", "example.com%3A8443", "%47roup", "%52epo.git"),
+      path.join("/tmp/repos", "example.com%3A8443", "%47roup", "%52epo.git")
     );
   });
 
@@ -107,8 +93,8 @@ describe("remote identity", () => {
     ]) {
       const exit = await Effect.runPromise(
         Effect.exit(resolveRemoteIdentity(remoteUrl, "/tmp/source")).pipe(
-          Effect.provide(NodeContext.layer),
-        ),
+          Effect.provide(NodeContext.layer)
+        )
       );
       expect(Exit.isFailure(exit)).toBe(true);
     }
@@ -164,22 +150,16 @@ describe("remote identity", () => {
 
   it("classifies Windows paths before SCP syntax and encodes portable segments", () => {
     expect(isWindowsLocalPath("C:\\work\\Repo.git", "win32")).toBe(true);
-    expect(isWindowsLocalPath("\\\\server\\share\\Repo.git", "win32")).toBe(
-      true,
-    );
-    expect(isWindowsLocalPath("git@example.com:Group/Repo.git", "win32")).toBe(
-      false,
-    );
+    expect(isWindowsLocalPath("\\\\server\\share\\Repo.git", "win32")).toBe(true);
+    expect(isWindowsLocalPath("git@example.com:Group/Repo.git", "win32")).toBe(false);
 
-    expect(encodeManagedPathSegment("example.com:8443")).toBe(
-      "example.com%3A8443",
-    );
+    expect(encodeManagedPathSegment("example.com:8443")).toBe("example.com%3A8443");
     expect(encodeManagedPathSegment("C:")).toBe("%43%3A");
     expect(encodeManagedPathSegment("D:")).toBe("%44%3A");
     expect(encodeManagedPathSegment("CON")).toBe("%43%4F%4E");
     expect(encodeManagedPathSegment("repo.")).toBe("repo%2E");
     expect(getFileManagedPathSegments("file:///C:/work/Repo")).not.toEqual(
-      getFileManagedPathSegments("file:///D:/work/Repo"),
+      getFileManagedPathSegments("file:///D:/work/Repo")
     );
   });
 
@@ -187,14 +167,10 @@ describe("remote identity", () => {
     const upper = await resolveIdentity("https://example.com/Group/Repo.git");
     const lower = await resolveIdentity("https://example.com/group/repo.git");
     const upperPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", upper).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      getManagedRepoPath("/tmp/repos", upper).pipe(Effect.provide(NodeContext.layer))
     );
     const lowerPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", lower).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      getManagedRepoPath("/tmp/repos", lower).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(upperPath.toLowerCase()).not.toBe(lowerPath.toLowerCase());

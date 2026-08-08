@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   addGitRemote,
+  createTempDir,
   initBareGitRepo,
   initGitRepo,
   makeRepoRecord,
@@ -13,7 +14,6 @@ import {
   readFileSync,
   runCli,
   setupAfterEach,
-  createTempDir,
   writeFileSync,
   writeRegistry,
 } from "./helpers.ts";
@@ -41,7 +41,7 @@ if [ "$1" = "${subcommand}" ]; then
   exit 23
 fi
 exec "$OUTPOST_TEST_REAL_GIT" "$@"
-`,
+`
   );
   chmodSync(shimPath, 0o755);
   process.env.OUTPOST_TEST_REAL_GIT = realGit;
@@ -57,9 +57,7 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--all"]);
 
@@ -102,9 +100,7 @@ describe("run", () => {
     };
 
     expect(exitCode).toBe(0);
-    expect(nextRegistry.repos[0]?.lastFetchedAt).not.toBe(
-      previousLastFetchedAt,
-    );
+    expect(nextRegistry.repos[0]?.lastFetchedAt).not.toBe(previousLastFetchedAt);
   });
 
   it("continues across repo fetch failures, reports both results, and exits 1", async () => {
@@ -135,13 +131,11 @@ describe("run", () => {
         managedRepoPath: invalidManagedRepoPath,
         sourceRepoPath: "/tmp/broken",
         remoteUrl: "https://example.com/broken.git",
-      }),
+      })
     );
     writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--all"]);
 
@@ -149,19 +143,11 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(2, "repos: 2");
     expect(infoSpy).toHaveBeenNthCalledWith(3, "fetched: 1");
     expect(infoSpy).toHaveBeenNthCalledWith(4, "failed: 1");
-    expect(
-      infoSpy.mock.calls.some(
-        (call) => call[0] === "- broken (id: broken) [failed]",
-      ),
-    ).toBe(true);
-    expect(
-      infoSpy.mock.calls.some((call) =>
-        String(call[0]).startsWith("  error: "),
-      ),
-    ).toBe(true);
-    expect(
-      infoSpy.mock.calls.some((call) => String(call[0]).includes("[fetched]")),
-    ).toBe(true);
+    expect(infoSpy.mock.calls.some((call) => call[0] === "- broken (id: broken) [failed]")).toBe(
+      true
+    );
+    expect(infoSpy.mock.calls.some((call) => String(call[0]).startsWith("  error: "))).toBe(true);
+    expect(infoSpy.mock.calls.some((call) => String(call[0]).includes("[fetched]"))).toBe(true);
   });
 
   it("prints repo fetch partial failure as json with counts, statuses, and errors", async () => {
@@ -179,11 +165,7 @@ describe("run", () => {
     await addGitRemote(tempRepo, "origin", tempRemote);
     await runCli(["repo", "add", tempRepo]);
 
-    const invalidManagedRepoPath = path.join(
-      tempHome,
-      "repos",
-      "broken-json.git",
-    );
+    const invalidManagedRepoPath = path.join(tempHome, "repos", "broken-json.git");
     mkdirSync(invalidManagedRepoPath, { recursive: true });
 
     const registryPath = path.join(tempHome, "repos.json");
@@ -196,13 +178,11 @@ describe("run", () => {
         managedRepoPath: invalidManagedRepoPath,
         sourceRepoPath: "/tmp/broken-json",
         remoteUrl: "https://example.com/broken-json.git",
-      }),
+      })
     );
     writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--all", "--json"]);
     const output = infoSpy.mock.calls[0]?.[0] as string;
@@ -234,12 +214,8 @@ describe("run", () => {
     writeRegistry(tempHome, [repo]);
     installFailingGitShim("fetch");
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--all", "--json"]);
 
@@ -257,9 +233,7 @@ describe("run", () => {
     };
     const result = output.data.results[0];
 
-    expect(result?.error).toBe(
-      `git fetch failed for ${managedRepoPath} (exit status 23)`,
-    );
+    expect(result?.error).toBe(`git fetch failed for ${managedRepoPath} (exit status 23)`);
     expect(result?.diagnostics).toHaveLength(4096);
     expect(result?.diagnostics).toContainEqual({
       stream: "stdout",
@@ -273,13 +247,11 @@ describe("run", () => {
     infoSpy.mockClear();
 
     const humanExitCode = await runCli(["repo", "fetch", "--all"]);
-    const humanOutput = infoSpy.mock.calls
-      .map(([line]) => String(line))
-      .join("\n");
+    const humanOutput = infoSpy.mock.calls.map(([line]) => String(line)).join("\n");
 
     expect(humanExitCode).toBe(1);
     expect(humanOutput).toContain(
-      `error: git fetch failed for ${managedRepoPath} (exit status 23)`,
+      `error: git fetch failed for ${managedRepoPath} (exit status 23)`
     );
     expect(humanOutput).not.toContain(GIT_STDOUT_SENTINEL);
     expect(humanOutput).not.toContain(GIT_STDERR_SENTINEL);
@@ -302,9 +274,7 @@ describe("run", () => {
 
     await runCli(["repo", "add", tempRepo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const secondExitCode = await runCli(["repo", "add", tempRepo]);
 
@@ -313,9 +283,9 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(8, "registry action: updated");
     expect(infoSpy).toHaveBeenNthCalledWith(9, "ready: true");
 
-    const registry = JSON.parse(
-      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
-    ) as { repos: Array<unknown> };
+    const registry = JSON.parse(readFileSync(path.join(tempHome, "repos.json"), "utf8")) as {
+      repos: Array<unknown>;
+    };
 
     expect(registry.repos).toHaveLength(1);
   });

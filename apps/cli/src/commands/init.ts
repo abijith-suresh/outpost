@@ -1,5 +1,5 @@
-import * as FileSystem from "@effect/platform/FileSystem";
 import type { PlatformError } from "@effect/platform/Error";
+import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
@@ -44,8 +44,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to create Outpost home ${outpostHome}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     yield* fs.makeDirectory(config.worktreesRoot, { recursive: true }).pipe(
@@ -53,8 +53,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to create worktrees root ${config.worktreesRoot}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     yield* fs.makeDirectory(config.reposRoot, { recursive: true }).pipe(
@@ -62,8 +62,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to create repos root ${config.reposRoot}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     yield* ensureWorkspaceStateRoot(outpostHome).pipe(
@@ -71,8 +71,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to create workspace state root: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     yield* writeJsonFileAtomic(configFilePath, config).pipe(
@@ -80,8 +80,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to write config file ${configFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     yield* writeJsonFileAtomic(repoRegistryFilePath, emptyRepoRegistry).pipe(
@@ -89,8 +89,8 @@ export function runInit(): Effect.Effect<
         (error) =>
           new InitError({
             message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     return {

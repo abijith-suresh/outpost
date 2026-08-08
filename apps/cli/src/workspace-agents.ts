@@ -8,12 +8,9 @@ import { Effect, Schema } from "effect";
 
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
-import { PathSafetyError, resolvePathWithinRoot } from "./path-safety.js";
+import { type PathSafetyError, resolvePathWithinRoot } from "./path-safety.js";
 import type { Manifest } from "./workspace-manifest.js";
-import {
-  resolveWorkspacePath,
-  resolveWorktreePath,
-} from "./workspace-manifest.js";
+import { resolveWorkspacePath, resolveWorktreePath } from "./workspace-manifest.js";
 
 export type AgentsOwnership = "missing" | "generated" | "modified" | "foreign";
 
@@ -39,17 +36,13 @@ export type GeneratedAgentsFile = {
 
 export type AgentsDeleteResult = "deleted" | "unchanged-missing" | "mismatch";
 
-export class AgentsError extends Schema.TaggedError<AgentsError>()(
-  "AgentsError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class AgentsError extends Schema.TaggedError<AgentsError>()("AgentsError", {
+  message: Schema.String,
+}) {}
 
 export const AGENTS_MARKER_PREFIX = "<!-- outpost:workspace-agents sha256=";
 
-const markerRegex =
-  /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
+const markerRegex = /^<!-- outpost:workspace-agents sha256=([a-f0-9]{64}) -->\r?\n/;
 
 export function computeSha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
@@ -82,10 +75,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
-export function agentsSnapshotsEqual(
-  left: AgentsSnapshot,
-  right: AgentsSnapshot,
-): boolean {
+export function agentsSnapshotsEqual(left: AgentsSnapshot, right: AgentsSnapshot): boolean {
   if (left.state !== right.state) {
     return false;
   }
@@ -99,40 +89,29 @@ export function agentsSnapshotsEqual(
 
 function resolveAgentsMarkdownWorkspaceDir(
   manifest: Manifest,
-  config: OutpostConfig,
+  config: OutpostConfig
 ): Effect.Effect<string, AgentsError, FileSystem.FileSystem | Path.Path> {
-  return resolveWorkspacePath(
-    config.worktreesRoot,
-    manifest.workspacePath,
-  ).pipe(
-    Effect.mapError((error) => new AgentsError({ message: error.message })),
+  return resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath).pipe(
+    Effect.mapError((error) => new AgentsError({ message: error.message }))
   );
 }
 
 export function renderAgentsMarkdown(
   manifest: Manifest,
-  config: OutpostConfig,
+  config: OutpostConfig
 ): Effect.Effect<string, AgentsError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const p = yield* Path.Path;
-    const workspaceDir = yield* resolveAgentsMarkdownWorkspaceDir(
-      manifest,
-      config,
-    );
+    const workspaceDir = yield* resolveAgentsMarkdownWorkspaceDir(manifest, config);
 
     const repoBlocks: Array<string> = [];
 
     for (let i = 0; i < manifest.repositories.length; i++) {
       const repo = manifest.repositories[i];
-      const worktreeDir = yield* resolveWorktreePath(
-        workspaceDir,
-        repo.worktreePath,
-      ).pipe(
-        Effect.mapError((error) => new AgentsError({ message: error.message })),
+      const worktreeDir = yield* resolveWorktreePath(workspaceDir, repo.worktreePath).pipe(
+        Effect.mapError((error) => new AgentsError({ message: error.message }))
       );
-      const relativeWorktree = (
-        p.relative(workspaceDir, worktreeDir) || "."
-      ).replace(/\\/g, "/");
+      const relativeWorktree = (p.relative(workspaceDir, worktreeDir) || ".").replace(/\\/g, "/");
 
       repoBlocks.push(
         [
@@ -145,21 +124,19 @@ export function renderAgentsMarkdown(
           `    expectedBranch: ${jsonEncode(manifest.branch)}`,
           `    baseBranch: ${jsonEncode(repo.base)}`,
           "```",
-        ].join("\n"),
+        ].join("\n")
       );
     }
 
     let body = "";
     body += "# Outpost Workspace\n";
     body += "\n";
-    body +=
-      "This directory coordinates one ticket workspace. It is not a Git repository.\n";
+    body += "This directory coordinates one ticket workspace. It is not a Git repository.\n";
     body += "\n";
     body += "## Working Rules\n";
     body += "\n";
     body += "- Each listed child directory is an independent Git worktree.\n";
-    body +=
-      "- Run Git, build, test, and commit commands inside the relevant worktree.\n";
+    body += "- Run Git, build, test, and commit commands inside the relevant worktree.\n";
     body += "- Read that worktree's own AGENTS.md before modifying it.\n";
     body +=
       "- Verify the current branch before committing; branch values below are creation-time expectations.\n";
@@ -185,13 +162,13 @@ export function renderAgentsMarkdown(
 }
 
 export function getAgentsFilePath(
-  workspaceDir: string,
+  workspaceDir: string
 ): Effect.Effect<string, PathSafetyError, Path.Path> {
   return resolvePathWithinRoot(workspaceDir, "AGENTS.md");
 }
 
 export function readAgentsSnapshot(
-  filePath: string,
+  filePath: string
 ): Effect.Effect<AgentsSnapshot, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -206,7 +183,7 @@ export function readAgentsSnapshot(
 }
 
 export function classifyAgentsOwnership(
-  filePath: string,
+  filePath: string
 ): Effect.Effect<AgentsClassification, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const snapshot = yield* readAgentsSnapshot(filePath);
@@ -223,8 +200,7 @@ export function classifyAgentsOwnership(
     }
 
     return {
-      ownership:
-        match[1] === getAgentsBodyHash(content) ? "generated" : "modified",
+      ownership: match[1] === getAgentsBodyHash(content) ? "generated" : "modified",
       snapshot,
     };
   });
@@ -232,7 +208,7 @@ export function classifyAgentsOwnership(
 
 export function writeAgentsMarkdownExclusive(
   workspaceDir: string,
-  content: string,
+  content: string
 ): Effect.Effect<
   GeneratedAgentsFile,
   AgentsError | PlatformError,
@@ -242,12 +218,12 @@ export function writeAgentsMarkdownExclusive(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const filePath = yield* getAgentsFilePath(workspaceDir).pipe(
-      Effect.mapError((error) => new AgentsError({ message: error.message })),
+      Effect.mapError((error) => new AgentsError({ message: error.message }))
     );
     const bytes = new TextEncoder().encode(content);
     const temporaryPath = path.join(
       path.dirname(filePath),
-      `.${path.basename(filePath)}.${randomUUID()}.tmp`,
+      `.${path.basename(filePath)}.${randomUUID()}.tmp`
     );
 
     yield* fs.writeFile(temporaryPath, bytes, { flag: "wx" }).pipe(
@@ -258,11 +234,9 @@ export function writeAgentsMarkdownExclusive(
             new AgentsError({
               message: `Failed to create AGENTS.md at ${filePath} without overwriting an existing file: ${String(error)}`,
             }),
-        }),
+        })
       ),
-      Effect.ensuring(
-        fs.remove(temporaryPath, { force: true }).pipe(Effect.ignore),
-      ),
+      Effect.ensuring(fs.remove(temporaryPath, { force: true }).pipe(Effect.ignore))
     );
 
     return {
@@ -274,7 +248,7 @@ export function writeAgentsMarkdownExclusive(
 
 export function generateAgentsMarkdown(
   outpostHome: string,
-  manifest: Manifest,
+  manifest: Manifest
 ): Effect.Effect<
   GeneratedAgentsFile,
   AgentsError | PlatformError,
@@ -282,12 +256,9 @@ export function generateAgentsMarkdown(
 > {
   return Effect.gen(function* () {
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new AgentsError({ message: error.message })),
+      Effect.mapError((error) => new AgentsError({ message: error.message }))
     );
-    const workspaceDir = yield* resolveAgentsMarkdownWorkspaceDir(
-      manifest,
-      config,
-    );
+    const workspaceDir = yield* resolveAgentsMarkdownWorkspaceDir(manifest, config);
     const renderedContent = yield* renderAgentsMarkdown(manifest, config);
 
     return yield* writeAgentsMarkdownExclusive(workspaceDir, renderedContent);
@@ -296,7 +267,7 @@ export function generateAgentsMarkdown(
 
 export function deleteAgentsIfSnapshotMatches(
   filePath: string,
-  approvedSnapshot: AgentsSnapshot,
+  approvedSnapshot: AgentsSnapshot
 ): Effect.Effect<AgentsDeleteResult, PlatformError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

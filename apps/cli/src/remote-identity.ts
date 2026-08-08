@@ -11,7 +11,7 @@ export class RemoteIdentityError extends Schema.TaggedError<RemoteIdentityError>
   "RemoteIdentityError",
   {
     message: Schema.String,
-  },
+  }
 ) {}
 
 export type RemoteIdentity = {
@@ -22,10 +22,7 @@ export type RemoteIdentity = {
   transportUrl: string;
 };
 
-function invalidRemote(
-  remoteUrl: string,
-  details: string,
-): RemoteIdentityError {
+function invalidRemote(remoteUrl: string, details: string): RemoteIdentityError {
   return new RemoteIdentityError({
     message: `Invalid remote URL ${remoteUrl}: ${details}`,
   });
@@ -37,12 +34,9 @@ function stripTerminalGit(value: string): string {
 
 export function isWindowsLocalPath(
   remoteUrl: string,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = process.platform
 ): boolean {
-  return (
-    platform === "win32" &&
-    (/^[a-z]:[\\/]/i.test(remoteUrl) || remoteUrl.startsWith("\\\\"))
-  );
+  return platform === "win32" && (/^[a-z]:[\\/]/i.test(remoteUrl) || remoteUrl.startsWith("\\\\"));
 }
 
 export function encodeManagedPathSegment(segment: string): string {
@@ -60,9 +54,7 @@ export function encodeManagedPathSegment(segment: string): string {
 
   const windowsComparable = encoded.replace(/[ .]+$/g, "");
   const windowsBaseName = windowsComparable.split(".")[0] ?? "";
-  const isWindowsReserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(
-    windowsBaseName,
-  );
+  const isWindowsReserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(windowsBaseName);
 
   if (isWindowsReserved) {
     const firstByte = bytes[0] as number;
@@ -72,9 +64,7 @@ export function encodeManagedPathSegment(segment: string): string {
   return encoded;
 }
 
-export function getFileManagedPathSegments(
-  canonicalFileUrl: string,
-): ReadonlyArray<string> {
+export function getFileManagedPathSegments(canonicalFileUrl: string): ReadonlyArray<string> {
   const url = new URL(canonicalFileUrl);
   const pathSegments = url.pathname
     .split("/")
@@ -88,30 +78,20 @@ export function getFileManagedPathSegments(
 
 function decodePathSegments(
   remoteUrl: string,
-  rawPath: string,
+  rawPath: string
 ): Effect.Effect<ReadonlyArray<string>, RemoteIdentityError> {
-  const withoutTrailingSlash = rawPath.endsWith("/")
-    ? rawPath.slice(0, -1)
-    : rawPath;
+  const withoutTrailingSlash = rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
   const rawSegments = withoutTrailingSlash.replace(/^\/+/, "").split("/");
 
-  if (
-    rawSegments.length === 0 ||
-    rawSegments.some((segment) => segment.length === 0)
-  ) {
-    return Effect.fail(
-      invalidRemote(remoteUrl, "path components may not be empty."),
-    );
+  if (rawSegments.length === 0 || rawSegments.some((segment) => segment.length === 0)) {
+    return Effect.fail(invalidRemote(remoteUrl, "path components may not be empty."));
   }
 
   return Effect.try({
     try: () =>
       rawSegments.map((segment, index) => {
         const decoded = decodeURIComponent(segment);
-        const value =
-          index === rawSegments.length - 1
-            ? stripTerminalGit(decoded)
-            : decoded;
+        const value = index === rawSegments.length - 1 ? stripTerminalGit(decoded) : decoded;
 
         if (
           value.length === 0 ||
@@ -131,7 +111,7 @@ function decodePathSegments(
         remoteUrl,
         error instanceof URIError
           ? "path contains invalid percent encoding."
-          : "path contains an unsafe or empty component.",
+          : "path contains an unsafe or empty component."
       ),
   });
 }
@@ -140,7 +120,7 @@ function buildNetworkIdentity(
   remoteUrl: string,
   hostname: string,
   port: string,
-  rawPath: string,
+  rawPath: string
 ): Effect.Effect<RemoteIdentity, RemoteIdentityError> {
   return Effect.gen(function* () {
     const normalizedHost = hostname.toLowerCase();
@@ -163,7 +143,7 @@ function buildNetworkIdentity(
 }
 
 function parseNetworkRemote(
-  remoteUrl: string,
+  remoteUrl: string
 ): Effect.Effect<RemoteIdentity | undefined, RemoteIdentityError> {
   if (isWindowsLocalPath(remoteUrl)) {
     return Effect.succeed(undefined);
@@ -179,9 +159,7 @@ function parseNetworkRemote(
     }
 
     if (protocol !== "https" && protocol !== "ssh") {
-      return Effect.fail(
-        invalidRemote(remoteUrl, `unsupported scheme ${protocol ?? ""}.`),
-      );
+      return Effect.fail(invalidRemote(remoteUrl, `unsupported scheme ${protocol ?? ""}.`));
     }
 
     return Effect.try({
@@ -191,10 +169,7 @@ function parseNetworkRemote(
       Effect.flatMap((url) => {
         if (url.search.length > 0 || url.hash.length > 0) {
           return Effect.fail(
-            invalidRemote(
-              remoteUrl,
-              "query strings and fragments are not allowed.",
-            ),
+            invalidRemote(remoteUrl, "query strings and fragments are not allowed.")
           );
         }
 
@@ -204,42 +179,28 @@ function parseNetworkRemote(
         const queryStart = remoteUrl.search(/[?#]/);
         const pathEnd = queryStart === -1 ? remoteUrl.length : queryStart;
         const rawPath =
-          pathStart === -1 || pathStart >= pathEnd
-            ? ""
-            : remoteUrl.slice(pathStart, pathEnd);
+          pathStart === -1 || pathStart >= pathEnd ? "" : remoteUrl.slice(pathStart, pathEnd);
         return buildNetworkIdentity(remoteUrl, url.hostname, port, rawPath);
-      }),
+      })
     );
   }
 
-  const scpMatch = /^(?:[^@/:\s]+@)?(\[[^\]]+\]|[^/\\:\s]+):(.+)$/.exec(
-    remoteUrl,
-  );
+  const scpMatch = /^(?:[^@/:\s]+@)?(\[[^\]]+\]|[^/\\:\s]+):(.+)$/.exec(remoteUrl);
 
   if (!scpMatch) {
     return Effect.succeed(undefined);
   }
 
-  if (
-    (scpMatch[2] as string).includes("?") ||
-    (scpMatch[2] as string).includes("#")
-  ) {
-    return Effect.fail(
-      invalidRemote(remoteUrl, "query strings and fragments are not allowed."),
-    );
+  if ((scpMatch[2] as string).includes("?") || (scpMatch[2] as string).includes("#")) {
+    return Effect.fail(invalidRemote(remoteUrl, "query strings and fragments are not allowed."));
   }
 
-  return buildNetworkIdentity(
-    remoteUrl,
-    scpMatch[1] as string,
-    "",
-    scpMatch[2] as string,
-  );
+  return buildNetworkIdentity(remoteUrl, scpMatch[1] as string, "", scpMatch[2] as string);
 }
 
 function parseLocalRemotePath(
   remoteUrl: string,
-  sourceRepoPath: string,
+  sourceRepoPath: string
 ): Effect.Effect<string, RemoteIdentityError, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
@@ -255,10 +216,7 @@ function parseLocalRemotePath(
 
     if (url.search.length > 0 || url.hash.length > 0) {
       return yield* Effect.fail(
-        invalidRemote(
-          remoteUrl,
-          "query strings and fragments are not allowed.",
-        ),
+        invalidRemote(remoteUrl, "query strings and fragments are not allowed.")
       );
     }
 
@@ -271,7 +229,7 @@ function parseLocalRemotePath(
 
 function buildLocalIdentity(
   remoteUrl: string,
-  sourceRepoPath: string,
+  sourceRepoPath: string
 ): Effect.Effect<
   RemoteIdentity,
   RemoteIdentityError | PlatformError,
@@ -281,21 +239,14 @@ function buildLocalIdentity(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const canonicalSourceRepoPath = yield* fs.realPath(sourceRepoPath);
-    const localPath = yield* parseLocalRemotePath(
-      remoteUrl,
-      canonicalSourceRepoPath,
-    );
+    const localPath = yield* parseLocalRemotePath(remoteUrl, canonicalSourceRepoPath);
     const realPath = yield* fs.realPath(localPath);
-    const transportPath = realPath.endsWith(path.sep)
-      ? realPath.slice(0, -1)
-      : realPath;
+    const transportPath = realPath.endsWith(path.sep) ? realPath.slice(0, -1) : realPath;
     const canonicalPath = stripTerminalGit(transportPath);
     const name = path.basename(canonicalPath);
 
     if (name.length === 0 || name === "." || name === "..") {
-      return yield* Effect.fail(
-        invalidRemote(remoteUrl, "path must identify a repository."),
-      );
+      return yield* Effect.fail(invalidRemote(remoteUrl, "path must identify a repository."));
     }
 
     const canonicalFileUrl = pathToFileURL(canonicalPath).href;
@@ -311,10 +262,7 @@ function buildLocalIdentity(
         segment.includes("\0")
       ) {
         return yield* Effect.fail(
-          invalidRemote(
-            remoteUrl,
-            "path contains an unsafe or empty component.",
-          ),
+          invalidRemote(remoteUrl, "path contains an unsafe or empty component.")
         );
       }
     }
@@ -331,7 +279,7 @@ function buildLocalIdentity(
 
 export function resolveRemoteIdentity(
   remoteUrl: string,
-  sourceRepoPath: string,
+  sourceRepoPath: string
 ): Effect.Effect<
   RemoteIdentity,
   RemoteIdentityError | PlatformError,
@@ -343,36 +291,28 @@ export function resolveRemoteIdentity(
     }
 
     const networkIdentity = yield* parseNetworkRemote(remoteUrl);
-    return (
-      networkIdentity ?? (yield* buildLocalIdentity(remoteUrl, sourceRepoPath))
-    );
+    return networkIdentity ?? (yield* buildLocalIdentity(remoteUrl, sourceRepoPath));
   });
 }
 
 export function getManagedRepoPath(
   reposRoot: string,
-  identity: RemoteIdentity,
+  identity: RemoteIdentity
 ): Effect.Effect<string, RemoteIdentityError, Path.Path> {
   return Effect.gen(function* () {
     const managedSegments = identity.pathSegments.map((segment, index) => {
       const encoded = encodeManagedPathSegment(segment);
-      return index === identity.pathSegments.length - 1
-        ? `${encoded}.git`
-        : encoded;
+      return index === identity.pathSegments.length - 1 ? `${encoded}.git` : encoded;
     });
 
     for (const segment of managedSegments) {
       yield* validatePathSegment("Remote path component", segment).pipe(
-        Effect.mapError(
-          (error) => new RemoteIdentityError({ message: error.message }),
-        ),
+        Effect.mapError((error) => new RemoteIdentityError({ message: error.message }))
       );
     }
 
     return yield* resolvePathWithinRoot(reposRoot, ...managedSegments).pipe(
-      Effect.mapError(
-        (error) => new RemoteIdentityError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new RemoteIdentityError({ message: error.message }))
     );
   });
 }

@@ -1,57 +1,46 @@
-import { createRequire } from "node:module";
-import os from "node:os";
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { afterEach, vi } from "vitest";
-
-import { runCli } from "../src/index.ts";
 import type { RepoRecord } from "../src/config.js";
-import {
-  encodeManagedPathSegment,
-  getFileManagedPathSegments,
-} from "../src/remote-identity.js";
+import { runCli } from "../src/index.ts";
+import { encodeManagedPathSegment, getFileManagedPathSegments } from "../src/remote-identity.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 const ORIGINAL_ENV = { ...process.env };
 
 export {
-  version,
+  existsSync,
+  mkdirSync,
   ORIGINAL_ENV,
   os,
   path,
-  existsSync,
-  mkdirSync,
   readFileSync,
   runCli,
+  version,
   writeFileSync,
 };
 
 export function localRepoId(remotePath: string): string {
   const realPath = realpathSync(remotePath);
-  const canonicalPath = realPath.endsWith(".git")
-    ? realPath.slice(0, -4)
-    : realPath;
+  const canonicalPath = realPath.endsWith(".git") ? realPath.slice(0, -4) : realPath;
   return pathToFileURL(canonicalPath).href;
 }
 
-export function localManagedRepoPath(
-  tempHome: string,
-  remotePathOrId: string,
-): string {
-  const id = remotePathOrId.startsWith("file://")
-    ? remotePathOrId
-    : localRepoId(remotePathOrId);
+export function localManagedRepoPath(tempHome: string, remotePathOrId: string): string {
+  const id = remotePathOrId.startsWith("file://") ? remotePathOrId : localRepoId(remotePathOrId);
   const segments = getFileManagedPathSegments(id).map(encodeManagedPathSegment);
   const repoName = segments.pop() as string;
 
@@ -94,11 +83,7 @@ export async function initBareGitRepo(repoPath: string) {
   execFileSync("git", ["init", "--bare", repoPath]);
 }
 
-export async function addGitRemote(
-  repoPath: string,
-  remoteName: string,
-  remotePath: string,
-) {
+export async function addGitRemote(repoPath: string, remoteName: string, remotePath: string) {
   const { execFileSync } = await import("node:child_process");
   execFileSync("git", ["remote", "add", remoteName, remotePath], {
     cwd: repoPath,
@@ -119,7 +104,7 @@ export async function commitFile(
   repoPath: string,
   fileName: string,
   contents: string,
-  message: string,
+  message: string
 ) {
   const { execFileSync } = await import("node:child_process");
   writeFileSync(path.join(repoPath, fileName), contents);
@@ -131,14 +116,12 @@ export async function pushBranch(
   repoPath: string,
   remoteName: string,
   branchName: string,
-  extraArgs: ReadonlyArray<string> = [],
+  extraArgs: ReadonlyArray<string> = []
 ) {
   const { execFileSync } = await import("node:child_process");
-  execFileSync(
-    "git",
-    ["push", ...extraArgs, remoteName, `HEAD:refs/heads/${branchName}`],
-    { cwd: repoPath },
-  );
+  execFileSync("git", ["push", ...extraArgs, remoteName, `HEAD:refs/heads/${branchName}`], {
+    cwd: repoPath,
+  });
 }
 
 export async function setBareRepoHead(repoPath: string, branchName: string) {
@@ -153,14 +136,9 @@ export async function createManagedRepoFixture(options?: {
   repoName?: string;
 }) {
   const tempRepoRoot = createTempDir("outpost-create-repo-");
-  const tempRepo = options?.repoName
-    ? path.join(tempRepoRoot, options.repoName)
-    : tempRepoRoot;
+  const tempRepo = options?.repoName ? path.join(tempRepoRoot, options.repoName) : tempRepoRoot;
   const tempRemoteRoot = createTempDir("outpost-create-remote-");
-  const tempRemote = path.join(
-    tempRemoteRoot,
-    `${path.basename(tempRepo)}.git`,
-  );
+  const tempRemote = path.join(tempRemoteRoot, `${path.basename(tempRepo)}.git`);
   const defaultBranch = options?.defaultBranch ?? "main";
 
   mkdirSync(tempRepo, { recursive: true });
@@ -168,12 +146,7 @@ export async function createManagedRepoFixture(options?: {
   await initGitRepo(tempRepo);
   await configureGitIdentity(tempRepo);
   await addGitRemote(tempRepo, "origin", tempRemote);
-  await commitFile(
-    tempRepo,
-    "README.md",
-    `# ${path.basename(tempRepoRoot)}\n`,
-    "initial",
-  );
+  await commitFile(tempRepo, "README.md", `# ${path.basename(tempRepoRoot)}\n`, "initial");
 
   if (defaultBranch !== "master") {
     const { execFileSync } = await import("node:child_process");
@@ -208,7 +181,7 @@ export async function currentCommit(repoPath: string) {
 
 export function restoreTtyProperty(
   stream: NodeJS.ReadStream | NodeJS.WriteStream,
-  descriptor: PropertyDescriptor | undefined,
+  descriptor: PropertyDescriptor | undefined
 ) {
   if (descriptor) {
     Object.defineProperty(stream, "isTTY", descriptor);

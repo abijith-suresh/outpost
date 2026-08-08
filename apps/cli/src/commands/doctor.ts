@@ -1,12 +1,12 @@
 import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
+import type * as Path from "@effect/platform/Path";
 import { Effect } from "effect";
 
 import {
   buildInitialConfig,
   emptyRepoRegistry,
-  getRepoHealthDiagnostics,
   getConfigFilePath,
+  getRepoHealthDiagnostics,
   getRepoRegistryFilePath,
   loadConfig,
   loadRepoRegistry,
@@ -15,9 +15,7 @@ import {
 import type { CommandOutput } from "../types.js";
 
 function formatErrorStatus(diagnostics: ReadonlyArray<string>): string {
-  const summaries = diagnostics.map(
-    (diagnostic) => diagnostic.split(/\r?\n/)[0] ?? diagnostic,
-  );
+  const summaries = diagnostics.map((diagnostic) => diagnostic.split(/\r?\n/)[0] ?? diagnostic);
   return `error: ${summaries.join("; ")}`;
 }
 
@@ -31,9 +29,7 @@ export function runDoctor(): Effect.Effect<
     const outpostHome = yield* resolveOutpostHome();
     const configFilePath = yield* getConfigFilePath(outpostHome);
     const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
-    const initialized = yield* fs
-      .exists(configFilePath)
-      .pipe(Effect.orElseSucceed(() => false));
+    const initialized = yield* fs.exists(configFilePath).pipe(Effect.orElseSucceed(() => false));
 
     if (!initialized) {
       return {
@@ -60,14 +56,14 @@ export function runDoctor(): Effect.Effect<
             Effect.map((config) => ({
               config,
               diagnostic: error.message,
-            })),
+            }))
           ),
         onSuccess: (config) =>
           Effect.succeed({
             config,
             diagnostic: undefined,
           }),
-      }),
+      })
     );
 
     if (configResult.diagnostic !== undefined) {
@@ -84,7 +80,7 @@ export function runDoctor(): Effect.Effect<
           repoRegistry,
           diagnostic: undefined,
         }),
-      }),
+      })
     );
 
     if (repoRegistryResult.diagnostic !== undefined) {
@@ -92,7 +88,7 @@ export function runDoctor(): Effect.Effect<
     }
 
     const { missingRepoCount, missingRepos } = yield* getRepoHealthDiagnostics(
-      repoRegistryResult.repoRegistry.repos,
+      repoRegistryResult.repoRegistry.repos
     );
     const status =
       diagnostics.length > 0

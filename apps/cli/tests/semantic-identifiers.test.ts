@@ -48,11 +48,9 @@ const validManifest = {
 
 async function getSchemaFailure(
   schema: Schema.Schema.AnyNoContext,
-  value: unknown,
+  value: unknown
 ): Promise<string> {
-  const exit = await Effect.runPromise(
-    Effect.exit(Schema.decodeUnknown(schema)(value)),
-  );
+  const exit = await Effect.runPromise(Effect.exit(Schema.decodeUnknown(schema)(value)));
   expect(Exit.isFailure(exit)).toBe(true);
 
   return Exit.isFailure(exit) ? exit.cause.toString() : "";
@@ -63,56 +61,47 @@ describe("semantic identifier schemas", () => {
     ["id", "\u0000"],
     ["name", "repo\nname"],
     ["remoteName", "origin\u007f"],
-  ])(
-    "rejects control characters in persisted repo %s",
-    async (field, value) => {
-      const message = await getSchemaFailure(RepoRegistrySchema, {
-        repos: [{ ...validRepo, [field]: value }],
-      });
+  ])("rejects control characters in persisted repo %s", async (field, value) => {
+    const message = await getSchemaFailure(RepoRegistrySchema, {
+      repos: [{ ...validRepo, [field]: value }],
+    });
 
-      expect(message).toContain(`["${field}"]`);
-      expect(message).toContain("may not contain ASCII control characters.");
-    },
-  );
+    expect(message).toContain(`["${field}"]`);
+    expect(message).toContain("may not contain ASCII control characters.");
+  });
 
   it.each([
     ["ticket", "BAD\nTICKET"],
     ["type", "feat\t"],
     ["branch", "feat/BAD\u001b"],
-  ])(
-    "rejects control characters in persisted manifest %s",
-    async (field, value) => {
-      const message = await getSchemaFailure(ManifestSchema, {
-        ...validManifest,
-        [field]: value,
-      });
+  ])("rejects control characters in persisted manifest %s", async (field, value) => {
+    const message = await getSchemaFailure(ManifestSchema, {
+      ...validManifest,
+      [field]: value,
+    });
 
-      expect(message).toContain(`["${field}"]`);
-      expect(message).toContain("may not contain ASCII control characters.");
-    },
-  );
+    expect(message).toContain(`["${field}"]`);
+    expect(message).toContain("may not contain ASCII control characters.");
+  });
 
   it.each([
     ["id", "repo\u0000"],
     ["name", "repo\rname"],
     ["base", "main\u007f"],
-  ])(
-    "rejects control characters in persisted manifest repository %s",
-    async (field, value) => {
-      const message = await getSchemaFailure(ManifestSchema, {
-        ...validManifest,
-        repositories: [
-          {
-            ...validManifest.repositories[0],
-            [field]: value,
-          },
-        ],
-      });
+  ])("rejects control characters in persisted manifest repository %s", async (field, value) => {
+    const message = await getSchemaFailure(ManifestSchema, {
+      ...validManifest,
+      repositories: [
+        {
+          ...validManifest.repositories[0],
+          [field]: value,
+        },
+      ],
+    });
 
-      expect(message).toContain(`["${field}"]`);
-      expect(message).toContain("may not contain ASCII control characters.");
-    },
-  );
+    expect(message).toContain(`["${field}"]`);
+    expect(message).toContain("may not contain ASCII control characters.");
+  });
 
   it("rejects empty persisted semantic identifiers", async () => {
     const registryMessage = await getSchemaFailure(RepoRegistrySchema, {
@@ -140,12 +129,12 @@ describe("semantic identifier schemas", () => {
               name: "リポジトリ",
             },
           ],
-        }),
-      ),
+        })
+      )
     ).resolves.toBeDefined();
 
     await expect(
-      Effect.runPromise(Schema.decodeUnknown(ManifestSchema)(validManifest)),
+      Effect.runPromise(Schema.decodeUnknown(ManifestSchema)(validManifest))
     ).resolves.toEqual(validManifest);
   });
 });
@@ -169,7 +158,7 @@ describe("interactive semantic identifier boundaries", () => {
         base: undefined,
         availableRepos: [{ id: "alpha", name: "alpha" }],
       },
-      { ask, log },
+      { ask, log }
     );
 
     expect(result).toEqual({
@@ -178,12 +167,8 @@ describe("interactive semantic identifier boundaries", () => {
       repoIds: ["alpha"],
       base: undefined,
     });
-    expect(log).toHaveBeenCalledWith(
-      "Ticket id may not contain ASCII control characters.",
-    );
-    expect(log).toHaveBeenCalledWith(
-      "Repo ids may not contain ASCII control characters.",
-    );
+    expect(log).toHaveBeenCalledWith("Ticket id may not contain ASCII control characters.");
+    expect(log).toHaveBeenCalledWith("Repo ids may not contain ASCII control characters.");
   });
 });
 
@@ -191,41 +176,17 @@ describe("semantic identifier command boundaries", () => {
   it.each([
     {
       name: "create ticket",
-      argv: [
-        "create",
-        "--ticket",
-        "BAD\nTICKET",
-        "--type",
-        "feat",
-        "--repo",
-        "alpha",
-      ],
+      argv: ["create", "--ticket", "BAD\nTICKET", "--type", "feat", "--repo", "alpha"],
       message: "--ticket may not contain ASCII control characters.",
     },
     {
       name: "create branch type",
-      argv: [
-        "create",
-        "--ticket",
-        "TICKET-1",
-        "--type",
-        "feat\t",
-        "--repo",
-        "alpha",
-      ],
+      argv: ["create", "--ticket", "TICKET-1", "--type", "feat\t", "--repo", "alpha"],
       message: "--type may not contain ASCII control characters.",
     },
     {
       name: "create repository id",
-      argv: [
-        "create",
-        "--ticket",
-        "TICKET-1",
-        "--type",
-        "feat",
-        "--repo",
-        "alpha\u001b",
-      ],
+      argv: ["create", "--ticket", "TICKET-1", "--type", "feat", "--repo", "alpha\u001b"],
       message: "--repo may not contain ASCII control characters.",
     },
     {
@@ -272,9 +233,7 @@ describe("semantic identifier command boundaries", () => {
     const parent = createTempDir("outpost-semantic-input-");
     const outpostHome = path.join(parent, "not-initialized");
     process.env.OUTPOST_HOME = outpostHome;
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(argv);
 
@@ -299,16 +258,14 @@ describe("semantic identifier command boundaries", () => {
     ]);
     const registryPath = path.join(outpostHome, "repos.json");
     const registryBefore = readFileSync(registryPath, "utf8");
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "remove", "alpha"]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy.mock.calls[0]?.[0]).toContain("Invalid repo registry");
     expect(errorSpy.mock.calls[0]?.[0]).toContain(
-      "repository id may not contain ASCII control characters.",
+      "repository id may not contain ASCII control characters."
     );
     expect(existsSync(managedRepoPath)).toBe(true);
     expect(readFileSync(registryPath, "utf8")).toBe(registryBefore);
@@ -341,24 +298,20 @@ describe("semantic identifier command boundaries", () => {
           ],
         },
         null,
-        2,
-      )}\n`,
+        2
+      )}\n`
     );
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "remove", ticket]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy.mock.calls[0]?.[0]).toContain("Invalid manifest");
     expect(errorSpy.mock.calls[0]?.[0]).toContain(
-      "base branch may not contain ASCII control characters.",
+      "base branch may not contain ASCII control characters."
     );
     expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
     expect(existsSync(manifestPath)).toBe(true);
-    expect(
-      existsSync(path.join(outpostHome, "workspaces", ".ticket-1.lock")),
-    ).toBe(false);
+    expect(existsSync(path.join(outpostHome, "workspaces", ".ticket-1.lock"))).toBe(false);
   });
 });

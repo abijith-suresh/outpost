@@ -1,10 +1,14 @@
 import process from "node:process";
-
-import * as FileSystem from "@effect/platform/FileSystem";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import * as Path from "@effect/platform/Path";
+import type * as FileSystem from "@effect/platform/FileSystem";
+import type * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
-
+import {
+  findCommand,
+  findCommandPrefix,
+  formatCommandDetail,
+  formatHelpText,
+} from "./command-spec.js";
 import { runCreate } from "./commands/create.js";
 import { runDescribe } from "./commands/describe.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -17,20 +21,14 @@ import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
-import {
-  findCommand,
-  findCommandPrefix,
-  formatCommandDetail,
-  formatHelpText,
-} from "./command-spec.js";
-import { CLI_ERROR_CODES } from "./types.js";
 import type {
-  CliErrorDiagnostic,
   CliErrorCode,
+  CliErrorDiagnostic,
   CommandOutput,
   JsonErrorEnvelope,
   JsonSuccessEnvelope,
 } from "./types.js";
+import { CLI_ERROR_CODES } from "./types.js";
 
 const cliVersionSchema = Schema.Struct({
   argv: Schema.Array(Schema.String),
@@ -45,15 +43,15 @@ export class CliError extends Schema.TaggedError<CliError>()("CliError", {
       Schema.Record({
         key: Schema.String,
         value: Schema.Unknown,
-      }),
-    ),
+      })
+    )
   ),
 }) {}
 
 function cliError(
   code: CliErrorCode,
   message: string,
-  diagnostics?: ReadonlyArray<CliErrorDiagnostic>,
+  diagnostics?: ReadonlyArray<CliErrorDiagnostic>
 ): CliError {
   return new CliError({
     message,
@@ -81,14 +79,11 @@ function jsonPartialEnvelope(output: CommandOutput): string {
       exitCode: 1,
     },
     null,
-    2,
+    2
   );
 }
 
-function jsonErrorEnvelope(
-  command: string | null,
-  error: JsonErrorEnvelope["error"],
-): string {
+function jsonErrorEnvelope(command: string | null, error: JsonErrorEnvelope["error"]): string {
   const envelope = {
     ok: false,
     command,
@@ -114,10 +109,7 @@ function printJson(output: CommandOutput): Effect.Effect<void> {
   return Console.log(jsonSuccessEnvelope(output));
 }
 
-function printCommandOutput(
-  output: CommandOutput,
-  asJson: boolean,
-): Effect.Effect<void> {
+function printCommandOutput(output: CommandOutput, asJson: boolean): Effect.Effect<void> {
   if (asJson) {
     return printJson(output);
   }
@@ -127,29 +119,19 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost doctor"),
         Console.log(`status: ${String(output.data.status)}`),
-        Console.log(
-          `resolved outpost home: ${String(output.data.outpostHome)}`,
-        ),
+        Console.log(`resolved outpost home: ${String(output.data.outpostHome)}`),
         Console.log(`initialized: ${String(output.data.initialized)}`),
         Console.log(`missing repos: ${String(output.data.missingRepoCount)}`),
         ...(output.data.initialized === true
           ? [
-              Console.log(
-                `config file path: ${String(output.data.configFilePath)}`,
-              ),
-              Console.log(
-                `repo registry file path: ${String(output.data.repoRegistryFilePath)}`,
-              ),
+              Console.log(`config file path: ${String(output.data.configFilePath)}`),
+              Console.log(`repo registry file path: ${String(output.data.repoRegistryFilePath)}`),
               Console.log(`repos root: ${String(output.data.reposRoot)}`),
-              Console.log(
-                `worktrees root: ${String(output.data.worktreesRoot)}`,
-              ),
+              Console.log(`worktrees root: ${String(output.data.worktreesRoot)}`),
               Console.log(`repo count: ${String(output.data.repoCount)}`),
               ...(Array.isArray(output.data.missingRepos)
                 ? output.data.missingRepos.map((missingRepoPath) =>
-                    Console.log(
-                      `missing managed repo: ${String(missingRepoPath)}`,
-                    ),
+                    Console.log(`missing managed repo: ${String(missingRepoPath)}`)
                   )
                 : []),
             ]
@@ -173,42 +155,30 @@ function printCommandOutput(
         ...(typeof output.data.dryRun === "boolean" && output.data.dryRun
           ? [Console.log("dry run: true")]
           : []),
+        Console.log(`workspace directory: ${String(output.data.ticketDirectory)}`),
         Console.log(
-          `workspace directory: ${String(output.data.ticketDirectory)}`,
-        ),
-        Console.log(
-          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`,
+          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`
         ),
         ...(Array.isArray(output.data.worktrees)
           ? output.data.worktrees.flatMap((worktree) => {
               const repoId =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "repoId" in worktree
+                typeof worktree === "object" && worktree !== null && "repoId" in worktree
                   ? String(worktree.repoId)
                   : "";
               const repoName =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "repoName" in worktree
+                typeof worktree === "object" && worktree !== null && "repoName" in worktree
                   ? String(worktree.repoName)
                   : "";
               const worktreePath =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "path" in worktree
+                typeof worktree === "object" && worktree !== null && "path" in worktree
                   ? String(worktree.path)
                   : "";
               const branch =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "branch" in worktree
+                typeof worktree === "object" && worktree !== null && "branch" in worktree
                   ? String(worktree.branch)
                   : "";
               const base =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "base" in worktree
+                typeof worktree === "object" && worktree !== null && "base" in worktree
                   ? String(worktree.base)
                   : "";
 
@@ -232,21 +202,16 @@ function printCommandOutput(
         Console.log(`action: ${String(output.data.action)}`),
         Console.log(`registry action: ${String(output.data.registryAction)}`),
         Console.log(`ready: ${String(output.data.ready)}`),
-        ...(Array.isArray(output.data.blockers) &&
-        output.data.blockers.length > 0
-          ? output.data.blockers.map((blocker) =>
-              Console.log(`blocker: ${String(blocker)}`),
-            )
+        ...(Array.isArray(output.data.blockers) && output.data.blockers.length > 0
+          ? output.data.blockers.map((blocker) => Console.log(`blocker: ${String(blocker)}`))
           : []),
       ]).pipe(Effect.asVoid);
     case "repo list":
       return Effect.all([
         Console.log("outpost repo list"),
+        Console.log(`repos: ${Array.isArray(output.data.repos) ? output.data.repos.length : 0}`),
         Console.log(
-          `repos: ${Array.isArray(output.data.repos) ? output.data.repos.length : 0}`,
-        ),
-        Console.log(
-          `missing repos: ${typeof output.data.missingRepoCount === "number" ? output.data.missingRepoCount : 0}`,
+          `missing repos: ${typeof output.data.missingRepoCount === "number" ? output.data.missingRepoCount : 0}`
         ),
         ...(Array.isArray(output.data.repos)
           ? output.data.repos.map((repo) => {
@@ -255,23 +220,17 @@ function printCommandOutput(
                   ? String(repo.name)
                   : "";
               const id =
-                typeof repo === "object" && repo !== null && "id" in repo
-                  ? String(repo.id)
-                  : "";
+                typeof repo === "object" && repo !== null && "id" in repo ? String(repo.id) : "";
               const status =
                 typeof repo === "object" && repo !== null && "status" in repo
                   ? String(repo.status)
                   : "";
               const managedRepoPath =
-                typeof repo === "object" &&
-                repo !== null &&
-                "managedRepoPath" in repo
+                typeof repo === "object" && repo !== null && "managedRepoPath" in repo
                   ? String(repo.managedRepoPath)
                   : "";
 
-              return Console.log(
-                `- ${name} (id: ${id}) [${status}]: ${managedRepoPath}`,
-              );
+              return Console.log(`- ${name} (id: ${id}) [${status}]: ${managedRepoPath}`);
             })
           : []),
       ]).pipe(Effect.asVoid);
@@ -279,13 +238,13 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost repo fetch"),
         Console.log(
-          `repos: ${typeof output.data.repoCount === "number" ? output.data.repoCount : 0}`,
+          `repos: ${typeof output.data.repoCount === "number" ? output.data.repoCount : 0}`
         ),
         Console.log(
-          `fetched: ${typeof output.data.fetchedCount === "number" ? output.data.fetchedCount : 0}`,
+          `fetched: ${typeof output.data.fetchedCount === "number" ? output.data.fetchedCount : 0}`
         ),
         Console.log(
-          `failed: ${typeof output.data.failedCount === "number" ? output.data.failedCount : 0}`,
+          `failed: ${typeof output.data.failedCount === "number" ? output.data.failedCount : 0}`
         ),
         ...(Array.isArray(output.data.results)
           ? output.data.results.flatMap((result) => {
@@ -294,51 +253,35 @@ function printCommandOutput(
                   ? String(result.id)
                   : "";
               const name =
-                typeof result === "object" &&
-                result !== null &&
-                "name" in result
+                typeof result === "object" && result !== null && "name" in result
                   ? String(result.name)
                   : "";
               const managedRepoPath =
-                typeof result === "object" &&
-                result !== null &&
-                "managedRepoPath" in result
+                typeof result === "object" && result !== null && "managedRepoPath" in result
                   ? String(result.managedRepoPath)
                   : "";
               const remoteName =
-                typeof result === "object" &&
-                result !== null &&
-                "remoteName" in result
+                typeof result === "object" && result !== null && "remoteName" in result
                   ? String(result.remoteName)
                   : "";
               const remoteUrl =
-                typeof result === "object" &&
-                result !== null &&
-                "remoteUrl" in result
+                typeof result === "object" && result !== null && "remoteUrl" in result
                   ? String(result.remoteUrl)
                   : "";
               const sourceRepoPath =
-                typeof result === "object" &&
-                result !== null &&
-                "sourceRepoPath" in result
+                typeof result === "object" && result !== null && "sourceRepoPath" in result
                   ? String(result.sourceRepoPath)
                   : "";
               const fetchStatus =
-                typeof result === "object" &&
-                result !== null &&
-                "fetchStatus" in result
+                typeof result === "object" && result !== null && "fetchStatus" in result
                   ? String(result.fetchStatus)
                   : "";
               const lastFetchedAt =
-                typeof result === "object" &&
-                result !== null &&
-                "lastFetchedAt" in result
+                typeof result === "object" && result !== null && "lastFetchedAt" in result
                   ? String(result.lastFetchedAt)
                   : "";
               const error =
-                typeof result === "object" &&
-                result !== null &&
-                "error" in result
+                typeof result === "object" && result !== null && "error" in result
                   ? String(result.error)
                   : undefined;
 
@@ -359,9 +302,7 @@ function printCommandOutput(
         Console.log("outpost repo remove"),
         Console.log(`id: ${String(output.data.id)}`),
         Console.log(`name: ${String(output.data.name)}`),
-        Console.log(
-          `managed repo path: ${String(output.data.managedRepoPath)}`,
-        ),
+        Console.log(`managed repo path: ${String(output.data.managedRepoPath)}`),
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
       ]).pipe(Effect.asVoid);
@@ -371,9 +312,7 @@ function printCommandOutput(
         Console.log(`id: ${String(output.data.id)}`),
         Console.log(`name: ${String(output.data.name)}`),
         Console.log(`status: ${String(output.data.status)}`),
-        Console.log(
-          `managed repo path: ${String(output.data.managedRepoPath)}`,
-        ),
+        Console.log(`managed repo path: ${String(output.data.managedRepoPath)}`),
         Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
         Console.log(`remote name: ${String(output.data.remoteName)}`),
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
@@ -385,11 +324,7 @@ function printCommandOutput(
         Console.log("outpost workspace show"),
         Console.log(`ticket: ${String(output.data.ticket)}`),
         ...(typeof output.data.ticketDirectory === "string"
-          ? [
-              Console.log(
-                `workspace directory: ${String(output.data.ticketDirectory)}`,
-              ),
-            ]
+          ? [Console.log(`workspace directory: ${String(output.data.ticketDirectory)}`)]
           : []),
         ...(typeof output.data.type === "string"
           ? [Console.log(`type: ${String(output.data.type)}`)]
@@ -401,47 +336,34 @@ function printCommandOutput(
           ? [Console.log(`created at: ${String(output.data.createdAt)}`)]
           : []),
         ...(typeof output.data.workspacePath === "string"
-          ? [
-              Console.log(
-                `workspace path: ${String(output.data.workspacePath)}`,
-              ),
-            ]
+          ? [Console.log(`workspace path: ${String(output.data.workspacePath)}`)]
           : []),
         Console.log(`status: ${String(output.data.status)}`),
         ...(typeof output.data.manifestPath === "string"
           ? [Console.log(`manifest: ${String(output.data.manifestPath)}`)]
           : []),
-        ...(Array.isArray(output.data.diagnostics) &&
-        output.data.diagnostics.length > 0
+        ...(Array.isArray(output.data.diagnostics) && output.data.diagnostics.length > 0
           ? output.data.diagnostics.map((diag: unknown) =>
-              Console.log(`diagnostic: ${String(diag)}`),
+              Console.log(`diagnostic: ${String(diag)}`)
             )
           : []),
         Console.log(
-          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`,
+          `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`
         ),
         ...(Array.isArray(output.data.worktrees)
           ? output.data.worktrees.flatMap((worktree) => {
               const repoName =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "repoName" in worktree
+                typeof worktree === "object" && worktree !== null && "repoName" in worktree
                   ? String(worktree.repoName)
-                  : typeof worktree === "object" &&
-                      worktree !== null &&
-                      "name" in worktree
+                  : typeof worktree === "object" && worktree !== null && "name" in worktree
                     ? String(worktree.name)
                     : "";
               const repoId =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "id" in worktree
+                typeof worktree === "object" && worktree !== null && "id" in worktree
                   ? String(worktree.id)
                   : "";
               const worktreePath =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "path" in worktree
+                typeof worktree === "object" && worktree !== null && "path" in worktree
                   ? String(worktree.path)
                   : typeof worktree === "object" &&
                       worktree !== null &&
@@ -449,9 +371,7 @@ function printCommandOutput(
                     ? String(worktree.resolvedWorktreePath)
                     : "";
               const base =
-                typeof worktree === "object" &&
-                worktree !== null &&
-                "base" in worktree
+                typeof worktree === "object" && worktree !== null && "base" in worktree
                   ? String(worktree.base)
                   : "";
               const resolvedManagedPath =
@@ -461,16 +381,11 @@ function printCommandOutput(
                   ? String(worktree.resolvedManagedPath)
                   : "";
 
-              const lines = [
-                Console.log(`- ${repoName}${repoId ? ` (id: ${repoId})` : ""}`),
-              ];
-              if (worktreePath)
-                lines.push(Console.log(`  path: ${worktreePath}`));
+              const lines = [Console.log(`- ${repoName}${repoId ? ` (id: ${repoId})` : ""}`)];
+              if (worktreePath) lines.push(Console.log(`  path: ${worktreePath}`));
               if (base) lines.push(Console.log(`  base: ${base}`));
               if (resolvedManagedPath)
-                lines.push(
-                  Console.log(`  managed repo: ${resolvedManagedPath}`),
-                );
+                lines.push(Console.log(`  managed repo: ${resolvedManagedPath}`));
               return lines;
             })
           : []),
@@ -482,45 +397,32 @@ function printCommandOutput(
           ? [Console.log(`ticket: ${String(output.data.ticket)}`)]
           : []),
         ...(typeof output.data.ticketDirectory === "string"
-          ? [
-              Console.log(
-                `workspace directory: ${String(output.data.ticketDirectory)}`,
-              ),
-            ]
+          ? [Console.log(`workspace directory: ${String(output.data.ticketDirectory)}`)]
           : []),
         ...(typeof output.data.status === "string"
           ? [Console.log(`status: ${String(output.data.status)}`)]
           : []),
         Console.log(
-          `worktrees: ${typeof output.data.worktreeCount === "number" ? output.data.worktreeCount : 0}`,
+          `worktrees: ${typeof output.data.worktreeCount === "number" ? output.data.worktreeCount : 0}`
         ),
         ...(Array.isArray(output.data.worktreeNames)
-          ? output.data.worktreeNames.map((name: unknown) =>
-              Console.log(`  - ${String(name)}`),
-            )
+          ? output.data.worktreeNames.map((name: unknown) => Console.log(`  - ${String(name)}`))
           : []),
-        ...(Array.isArray(output.data.completed) &&
-        output.data.completed.length > 0
+        ...(Array.isArray(output.data.completed) && output.data.completed.length > 0
           ? [
               Console.log("completed:"),
-              ...output.data.completed.map((name: unknown) =>
-                Console.log(`  - ${String(name)}`),
-              ),
+              ...output.data.completed.map((name: unknown) => Console.log(`  - ${String(name)}`)),
             ]
           : []),
-        ...(Array.isArray(output.data.remaining) &&
-        output.data.remaining.length > 0
+        ...(Array.isArray(output.data.remaining) && output.data.remaining.length > 0
           ? [
               Console.log("remaining:"),
-              ...output.data.remaining.map((name: unknown) =>
-                Console.log(`  - ${String(name)}`),
-              ),
+              ...output.data.remaining.map((name: unknown) => Console.log(`  - ${String(name)}`)),
             ]
           : []),
-        ...(Array.isArray(output.data.diagnostics) &&
-        output.data.diagnostics.length > 0
+        ...(Array.isArray(output.data.diagnostics) && output.data.diagnostics.length > 0
           ? output.data.diagnostics.map((diag: unknown) =>
-              Console.log(`diagnostic: ${String(diag)}`),
+              Console.log(`diagnostic: ${String(diag)}`)
             )
           : []),
       ]).pipe(Effect.asVoid);
@@ -528,14 +430,12 @@ function printCommandOutput(
       return Effect.all([
         Console.log("outpost workspace list"),
         Console.log(
-          `workspaces: ${Array.isArray(output.data.workspaces) ? output.data.workspaces.length : 0}`,
+          `workspaces: ${Array.isArray(output.data.workspaces) ? output.data.workspaces.length : 0}`
         ),
         ...(Array.isArray(output.data.workspaces)
           ? output.data.workspaces.flatMap((workspace) => {
               const ticket =
-                typeof workspace === "object" &&
-                workspace !== null &&
-                "ticket" in workspace
+                typeof workspace === "object" && workspace !== null && "ticket" in workspace
                   ? String(workspace.ticket)
                   : "";
               const ticketDirectory =
@@ -546,15 +446,11 @@ function printCommandOutput(
                   ? String(workspace.ticketDirectory)
                   : "";
               const worktreeCount =
-                typeof workspace === "object" &&
-                workspace !== null &&
-                "worktreeCount" in workspace
+                typeof workspace === "object" && workspace !== null && "worktreeCount" in workspace
                   ? String(workspace.worktreeCount)
                   : "0";
               const status =
-                typeof workspace === "object" &&
-                workspace !== null &&
-                "status" in workspace
+                typeof workspace === "object" && workspace !== null && "status" in workspace
                   ? String(workspace.status)
                   : "";
               const type =
@@ -579,25 +475,20 @@ function printCommandOutput(
                   ? String(workspace.createdAt)
                   : "";
 
-              const header = [
-                Console.log(`- ${ticket}${status ? ` [${status}]` : ""}`),
-              ];
+              const header = [Console.log(`- ${ticket}${status ? ` [${status}]` : ""}`)];
               if (ticketDirectory)
-                header.push(
-                  Console.log(`  workspace directory: ${ticketDirectory}`),
-                );
+                header.push(Console.log(`  workspace directory: ${ticketDirectory}`));
               if (type) header.push(Console.log(`  type: ${type}`));
               if (branch) header.push(Console.log(`  branch: ${branch}`));
-              if (createdAt)
-                header.push(Console.log(`  created at: ${createdAt}`));
+              if (createdAt) header.push(Console.log(`  created at: ${createdAt}`));
               header.push(Console.log(`  worktrees: ${worktreeCount}`));
 
               const w = workspace as Record<string, unknown>;
               if (Array.isArray(w.diagnostics) && w.diagnostics.length > 0) {
                 header.push(
                   ...w.diagnostics.map((diag: unknown) =>
-                    Console.log(`  diagnostic: ${String(diag)}`),
-                  ),
+                    Console.log(`  diagnostic: ${String(diag)}`)
+                  )
                 );
               }
 
@@ -632,9 +523,7 @@ function printCommandOutput(
           yield* Console.log(`interactive: ${String(data.interactive)}`);
           yield* Console.log(`json: ${String(data.json)}`);
           yield* Console.log(`dryRun: ${String(data.dryRun)}`);
-          const commandArguments = data.arguments as Array<
-            Record<string, unknown>
-          >;
+          const commandArguments = data.arguments as Array<Record<string, unknown>>;
           if (Array.isArray(commandArguments) && commandArguments.length > 0) {
             yield* Console.log("arguments:");
             for (const argument of commandArguments) {
@@ -642,9 +531,7 @@ function printCommandOutput(
               const desc = String(argument.description);
               const required = argument.required ? " (required)" : "";
               const repeatable = argument.repeatable ? " (repeatable)" : "";
-              yield* Console.log(
-                `  <${name}>  ${desc}${required}${repeatable}`,
-              );
+              yield* Console.log(`  <${name}>  ${desc}${required}${repeatable}`);
             }
           }
           const options = data.options as Array<Record<string, unknown>>;
@@ -656,9 +543,7 @@ function printCommandOutput(
               const required = opt.required ? " (required)" : "";
               const repeatable = opt.repeatable ? " (repeatable)" : "";
               const value = opt.valueName ? ` <${String(opt.valueName)}>` : "";
-              yield* Console.log(
-                `  ${name}${value}  ${desc}${required}${repeatable}`,
-              );
+              yield* Console.log(`  ${name}${value}  ${desc}${required}${repeatable}`);
             }
           }
         }
@@ -668,16 +553,13 @@ function printCommandOutput(
   }
 }
 
-function printUnknownCommand(
-  command: string,
-  asJson: boolean,
-): Effect.Effect<number> {
+function printUnknownCommand(command: string, asJson: boolean): Effect.Effect<number> {
   if (asJson) {
     return Console.error(
       jsonErrorEnvelope(null, {
         code: "UNKNOWN_COMMAND",
         message: `Unknown command: ${command}`,
-      }),
+      })
     ).pipe(Effect.as(1));
   }
   return Effect.all([
@@ -689,27 +571,23 @@ function printUnknownCommand(
 function printError(
   command: string | null,
   error: JsonErrorEnvelope["error"],
-  asJson: boolean,
+  asJson: boolean
 ): Effect.Effect<number> {
   if (asJson) {
     return Console.error(
       jsonErrorEnvelope(command, {
         code: error.code,
         message: error.message,
-        ...(error.diagnostics === undefined
-          ? {}
-          : { diagnostics: error.diagnostics }),
-      }),
+        ...(error.diagnostics === undefined ? {} : { diagnostics: error.diagnostics }),
+      })
     ).pipe(Effect.as(1));
   }
   return Console.error(error.message).pipe(Effect.as(1));
 }
 
-function validateGlobalOptions(
-  args: ReadonlyArray<string>,
-): Effect.Effect<void, CliError> {
+function validateGlobalOptions(args: ReadonlyArray<string>): Effect.Effect<void, CliError> {
   const duplicateOption = ["--json", "--help", "--version"].find(
-    (option) => args.filter((arg) => arg === option).length > 1,
+    (option) => args.filter((arg) => arg === option).length > 1
   );
 
   if (duplicateOption) {
@@ -717,7 +595,7 @@ function validateGlobalOptions(
       new CliError({
         code: "INVALID_ARGUMENT",
         message: `Usage: outpost <command> [options]\n${duplicateOption} may only be provided once.`,
-      }),
+      })
     );
   }
 
@@ -728,20 +606,17 @@ type KnownCommand = Exclude<ReturnType<typeof resolveCommandIdentity>, null>;
 
 function resolveCommandIdentity(args: ReadonlyArray<string>): string | null {
   const positionalArgs = args.filter(
-    (arg) => arg !== "--json" && arg !== "--help" && arg !== "--version",
+    (arg) => arg !== "--json" && arg !== "--help" && arg !== "--version"
   );
   return findCommandPrefix(positionalArgs)?.path.join(" ") ?? null;
 }
 
 function resolveRepoAddArgs(
-  args: ReadonlyArray<string>,
+  args: ReadonlyArray<string>
 ): Effect.Effect<{ inputPath: string; remoteName?: string }, CliError> {
   if (args.length === 0) {
     return Effect.fail(
-      cliError(
-        "INVALID_ARGUMENT",
-        "Usage: outpost repo add <path> [--remote <name>]",
-      ),
+      cliError("INVALID_ARGUMENT", "Usage: outpost repo add <path> [--remote <name>]")
     );
   }
 
@@ -749,10 +624,7 @@ function resolveRepoAddArgs(
 
   if (!inputPath) {
     return Effect.fail(
-      cliError(
-        "INVALID_ARGUMENT",
-        "Usage: outpost repo add <path> [--remote <name>]",
-      ),
+      cliError("INVALID_ARGUMENT", "Usage: outpost repo add <path> [--remote <name>]")
     );
   }
 
@@ -764,10 +636,7 @@ function resolveRepoAddArgs(
 
     if (arg !== "--remote") {
       return Effect.fail(
-        cliError(
-          "INVALID_ARGUMENT",
-          "Usage: outpost repo add <path> [--remote <name>]",
-        ),
+        cliError("INVALID_ARGUMENT", "Usage: outpost repo add <path> [--remote <name>]")
       );
     }
 
@@ -775,8 +644,8 @@ function resolveRepoAddArgs(
       return Effect.fail(
         cliError(
           "INVALID_ARGUMENT",
-          "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once.",
-        ),
+          "Usage: outpost repo add <path> [--remote <name>]\n--remote may only be provided once."
+        )
       );
     }
 
@@ -786,8 +655,8 @@ function resolveRepoAddArgs(
       return Effect.fail(
         cliError(
           "INVALID_ARGUMENT",
-          "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value.",
-        ),
+          "Usage: outpost repo add <path> [--remote <name>]\n--remote requires a value."
+        )
       );
     }
 
@@ -801,7 +670,7 @@ function resolveRepoAddArgs(
 function resolveCommand(
   command: KnownCommand,
   positionalArgs: ReadonlyArray<string>,
-  options: { interactive: boolean },
+  options: { interactive: boolean }
 ): Effect.Effect<
   CommandOutput,
   CliError,
@@ -812,103 +681,74 @@ function resolveCommand(
       return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost help"));
     case "describe":
       return runDescribe(positionalArgs.slice(1)).pipe(
-        Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)),
+        Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message))
       );
     case "doctor":
       if (positionalArgs.length > 1) {
-        return Effect.fail(
-          cliError("INVALID_ARGUMENT", "Usage: outpost doctor [--json]"),
-        );
+        return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost doctor [--json]"));
       }
       return runDoctor();
     case "create":
       return runCreate(positionalArgs.slice(1), {
         interactive: options.interactive,
-      }).pipe(
-        Effect.mapError((error) => cliError("CREATE_FAILED", error.message)),
-      );
+      }).pipe(Effect.mapError((error) => cliError("CREATE_FAILED", error.message)));
     case "init":
       if (positionalArgs.length > 1) {
-        return Effect.fail(
-          cliError("INVALID_ARGUMENT", "Usage: outpost init [--json]"),
-        );
+        return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost init [--json]"));
       }
-      return runInit().pipe(
-        Effect.mapError((error) => cliError("INIT_FAILED", error.message)),
-      );
+      return runInit().pipe(Effect.mapError((error) => cliError("INIT_FAILED", error.message)));
     case "repo add":
       return resolveRepoAddArgs(positionalArgs.slice(2)).pipe(
         Effect.flatMap(({ inputPath, remoteName }) =>
           runRepoAdd(inputPath, { remoteName }).pipe(
             Effect.mapError((error) =>
-              cliError("REPO_ADD_FAILED", error.message, error.diagnostics),
-            ),
-          ),
-        ),
+              cliError("REPO_ADD_FAILED", error.message, error.diagnostics)
+            )
+          )
+        )
       );
     case "repo list":
       if (positionalArgs.length > 2) {
-        return Effect.fail(
-          cliError("INVALID_ARGUMENT", "Usage: outpost repo list [--json]"),
-        );
+        return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost repo list [--json]"));
       }
       return runRepoList().pipe(
-        Effect.mapError((error) => cliError("REPO_LIST_FAILED", error.message)),
+        Effect.mapError((error) => cliError("REPO_LIST_FAILED", error.message))
       );
     case "repo fetch":
       return runRepoFetch(positionalArgs.slice(2)).pipe(
-        Effect.mapError((error) =>
-          cliError("REPO_FETCH_FAILED", error.message),
-        ),
+        Effect.mapError((error) => cliError("REPO_FETCH_FAILED", error.message))
       );
     case "repo show":
       return runRepoShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
-        Effect.mapError((error) => cliError("REPO_SHOW_FAILED", error.message)),
+        Effect.mapError((error) => cliError("REPO_SHOW_FAILED", error.message))
       );
     case "repo remove":
       return runRepoRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
-        Effect.mapError((error) =>
-          cliError("REPO_REMOVE_FAILED", error.message),
-        ),
+        Effect.mapError((error) => cliError("REPO_REMOVE_FAILED", error.message))
       );
     case "workspace show":
       return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
-        Effect.mapError((error) =>
-          cliError("WORKSPACE_SHOW_FAILED", error.message),
-        ),
+        Effect.mapError((error) => cliError("WORKSPACE_SHOW_FAILED", error.message))
       );
     case "workspace remove":
       return runWorkspaceRemove(positionalArgs[2], positionalArgs.slice(3), {
         interactive: options.interactive,
-      }).pipe(
-        Effect.mapError((error) =>
-          cliError("WORKSPACE_REMOVE_FAILED", error.message),
-        ),
-      );
+      }).pipe(Effect.mapError((error) => cliError("WORKSPACE_REMOVE_FAILED", error.message)));
     case "workspace list":
       if (positionalArgs.length > 2) {
-        return Effect.fail(
-          cliError(
-            "INVALID_ARGUMENT",
-            "Usage: outpost workspace list [--json]",
-          ),
-        );
+        return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost workspace list [--json]"));
       }
       return runWorkspaceList().pipe(
-        Effect.mapError((error) =>
-          cliError("WORKSPACE_LIST_FAILED", error.message),
-        ),
+        Effect.mapError((error) => cliError("WORKSPACE_LIST_FAILED", error.message))
       );
   }
 
-  return Effect.fail(
-    cliError("UNKNOWN_COMMAND", `Unknown command: ${positionalArgs.join(" ")}`),
-  );
+  return Effect.fail(cliError("UNKNOWN_COMMAND", `Unknown command: ${positionalArgs.join(" ")}`));
 }
 
 export function run(
   argv: readonly string[],
-  version: string,
+  version: string
 ): Effect.Effect<
   number,
   never,
@@ -918,25 +758,20 @@ export function run(
     const input = yield* Schema.decodeUnknown(cliVersionSchema)({
       argv: [...argv],
       version,
-    }).pipe(
-      Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)),
-    );
+    }).pipe(Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)));
 
     yield* validateGlobalOptions(input.argv);
 
     const wantsHelp = input.argv.includes("--help");
     const asJson = input.argv.includes("--json");
-    const interactive =
-      !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
+    const interactive = !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
     const positionalArgs = input.argv.filter(
-      (arg) => arg !== "--json" && arg !== "--version" && arg !== "--help",
+      (arg) => arg !== "--json" && arg !== "--version" && arg !== "--help"
     );
 
     if (wantsHelp) {
-      const helpTarget =
-        positionalArgs[0] === "help" ? positionalArgs.slice(1) : positionalArgs;
-      const helpText =
-        helpTarget.length > 0 ? commandHelp(helpTarget) : undefined;
+      const helpTarget = positionalArgs[0] === "help" ? positionalArgs.slice(1) : positionalArgs;
+      const helpText = helpTarget.length > 0 ? commandHelp(helpTarget) : undefined;
 
       yield* Console.log(helpText ?? printHelp(input.version));
       return 0;
@@ -969,7 +804,7 @@ export function run(
             code: "INVALID_ARGUMENT",
             message: `Unknown command: ${helpTarget.join(" ")}`,
           },
-          asJson,
+          asJson
         );
       }
 
@@ -988,10 +823,8 @@ export function run(
       Effect.matchEffect({
         onFailure: (error) => printError(command, error, asJson),
         onSuccess: (commandOutput) =>
-          printCommandOutput(commandOutput, asJson).pipe(
-            Effect.as(commandOutput.exitCode ?? 0),
-          ),
-      }),
+          printCommandOutput(commandOutput, asJson).pipe(Effect.as(commandOutput.exitCode ?? 0)),
+      })
     );
 
     return output;
@@ -1001,6 +834,6 @@ export function run(
     Effect.catchTag("CliError", (error) => {
       const asJson = argv.includes("--json");
       return printError(resolveCommandIdentity(argv), error, asJson);
-    }),
+    })
   );
 }

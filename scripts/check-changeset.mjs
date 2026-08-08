@@ -16,11 +16,7 @@
 import { execFileSync } from "node:child_process";
 import process from "node:process";
 
-import {
-  classifyChangesetPolicy,
-  isChangesetMarkdown,
-  toPosixPath,
-} from "./changeset-policy.mjs";
+import { classifyChangesetPolicy, isChangesetMarkdown, toPosixPath } from "./changeset-policy.mjs";
 
 const RELEASE_PACKAGE = "@abijith-suresh/outpost";
 
@@ -196,9 +192,7 @@ function collectChangesetFiles(diffEntries, head) {
  */
 function formatFailure(result) {
   const lines = [];
-  lines.push(
-    "Changeset policy: releasable CLI paths changed without a valid patch changeset.",
-  );
+  lines.push("Changeset policy: releasable CLI paths changed without a valid patch changeset.");
   lines.push("");
   lines.push("Releasable paths changed:");
   for (const path of result.releasablePaths) {
@@ -213,9 +207,7 @@ function formatFailure(result) {
   lines.push("");
   lines.push("  npm run changeset");
   lines.push("");
-  lines.push(
-    "While Outpost is pre-v1, all changesets use the patch bump level.",
-  );
+  lines.push("While Outpost is pre-v1, all changesets use the patch bump level.");
   return lines.join("\n");
 }
 
@@ -243,17 +235,11 @@ function main() {
 
   if (result.ok) {
     if (result.releasePrExemption) {
-      process.stdout.write(
-        "Changeset policy: generated release PR exemption applied.\n",
-      );
+      process.stdout.write("Changeset policy: generated release PR exemption applied.\n");
     } else if (result.changesetRequired) {
-      process.stdout.write(
-        "Changeset policy: a valid patch changeset is present.\n",
-      );
+      process.stdout.write("Changeset policy: a valid patch changeset is present.\n");
     } else {
-      process.stdout.write(
-        "Changeset policy: no releasable CLI paths changed.\n",
-      );
+      process.stdout.write("Changeset policy: no releasable CLI paths changed.\n");
     }
     process.exit(0);
   }

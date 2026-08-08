@@ -123,8 +123,7 @@ function isRenameOrCopy(entry) {
  * @returns {string[]}
  */
 export function entryRelevantPaths(entry) {
-  if (isRenameOrCopy(entry))
-    return [toPosixPath(entry.from), toPosixPath(entry.to)];
+  if (isRenameOrCopy(entry)) return [toPosixPath(entry.from), toPosixPath(entry.to)];
   return [toPosixPath(entry.to)];
 }
 
@@ -193,12 +192,7 @@ function isGeneratedReleaseEntry(entry) {
  * @param {string} [baseRepository]
  * @returns {boolean}
  */
-export function isExemptReleasePr(
-  entries,
-  headRef,
-  headRepository,
-  baseRepository,
-) {
+export function isExemptReleasePr(entries, headRef, headRepository, baseRepository) {
   if (headRef !== "changeset-release/main") return false;
   const headRepo = headRepository ?? "";
   const baseRepo = baseRepository ?? "";
@@ -269,7 +263,7 @@ export function changesetSatisfies(changesetFiles) {
       .map((release) => `${release.name}: ${release.type}`)
       .join(", ");
     failureReasons.push(
-      `${file.path}: expected ${RELEASE_PACKAGE}: ${REQUIRED_RELEASE_TYPE} as the only release, found ${releaseSummary || "no releases"}`,
+      `${file.path}: expected ${RELEASE_PACKAGE}: ${REQUIRED_RELEASE_TYPE} as the only release, found ${releaseSummary || "no releases"}`
     );
   }
 

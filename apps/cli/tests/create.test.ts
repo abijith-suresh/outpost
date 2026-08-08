@@ -2,17 +2,18 @@ import * as FileSystem from "@effect/platform/FileSystem";
 import { NodeContext } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
 import { describe, expect, it, vi } from "vitest";
-
-import * as CreatePrompt from "../src/commands/create-prompt.ts";
 import { runCreate } from "../src/commands/create.ts";
+import * as CreatePrompt from "../src/commands/create-prompt.ts";
 import * as WorkspaceManifest from "../src/workspace-manifest.ts";
 
 import {
   commitFile,
   createManagedRepoFixture,
+  createTempDir,
   currentBranch,
   currentCommit,
   existsSync,
+  localRepoId,
   mkdirSync,
   path,
   pushBranch,
@@ -20,9 +21,7 @@ import {
   readRegistry,
   restoreTtyProperty,
   runCli,
-  localRepoId,
   setupAfterEach,
-  createTempDir,
   writeFileSync,
 } from "./helpers.ts";
 
@@ -41,9 +40,7 @@ describe("run", () => {
     await runCli(["repo", "add", alpha.tempRepo]);
     await runCli(["repo", "add", beta.tempRepo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -56,18 +53,8 @@ describe("run", () => {
       "--repo",
       localRepoId(beta.tempRemote),
     ]);
-    const alphaPath = path.join(
-      tempHome,
-      "worktrees",
-      "TICKET-123",
-      path.basename(alpha.tempRepo),
-    );
-    const betaPath = path.join(
-      tempHome,
-      "worktrees",
-      "TICKET-123",
-      path.basename(beta.tempRepo),
-    );
+    const alphaPath = path.join(tempHome, "worktrees", "TICKET-123", path.basename(alpha.tempRepo));
+    const betaPath = path.join(tempHome, "worktrees", "TICKET-123", path.basename(beta.tempRepo));
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost create");
@@ -75,7 +62,7 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(3, "branch: feat/TICKET-123");
     expect(infoSpy).toHaveBeenNthCalledWith(
       4,
-      `workspace directory: ${path.join(tempHome, "worktrees", "TICKET-123")}`,
+      `workspace directory: ${path.join(tempHome, "worktrees", "TICKET-123")}`
     );
     expect(infoSpy).toHaveBeenNthCalledWith(5, "worktrees: 2");
     expect(existsSync(alphaPath)).toBe(true);
@@ -120,31 +107,21 @@ describe("run", () => {
       "--repo",
       localRepoId(beta.tempRemote),
     ]);
-    const alphaPath = path.join(
-      tempHome,
-      "worktrees",
-      "TICKET-456",
-      path.basename(alpha.tempRepo),
-    );
-    const betaPath = path.join(
-      tempHome,
-      "worktrees",
-      "TICKET-456",
-      path.basename(beta.tempRepo),
-    );
+    const alphaPath = path.join(tempHome, "worktrees", "TICKET-456", path.basename(alpha.tempRepo));
+    const betaPath = path.join(tempHome, "worktrees", "TICKET-456", path.basename(beta.tempRepo));
 
     expect(exitCode).toBe(0);
     expect(await currentCommit(alphaPath)).toBe(
       execFileSync("git", ["rev-parse", "origin/release"], {
         cwd: alpha.tempRepo,
         encoding: "utf8",
-      }).trim(),
+      }).trim()
     );
     expect(await currentCommit(betaPath)).toBe(
       execFileSync("git", ["rev-parse", "origin/release"], {
         cwd: beta.tempRepo,
         encoding: "utf8",
-      }).trim(),
+      }).trim()
     );
   });
 
@@ -157,9 +134,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -175,29 +150,23 @@ describe("run", () => {
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown repo id: missing");
-    expect(existsSync(path.join(tempHome, "worktrees", "TICKET-789"))).toBe(
-      false,
-    );
+    expect(existsSync(path.join(tempHome, "worktrees", "TICKET-789"))).toBe(false);
   });
 
   it("fails non-interactively when required create flags are missing", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["create", "--ticket", "TICKET-100"]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Usage: outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]\n--type is required.\nAt least one --repo is required.",
+      "Usage: outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]\n--type is required.\nAt least one --repo is required."
     );
   });
 
   it("rejects create ticket values with path separators", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -210,38 +179,20 @@ describe("run", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "--ticket may not contain path separators.",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "--ticket may not contain path separators.");
   });
 
   it("preserves git validation for traversal-only ticket values", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const exitCode = await runCli([
-      "create",
-      "--ticket",
-      ".",
-      "--type",
-      "feat",
-      "--repo",
-      "alpha",
-    ]);
+    const exitCode = await runCli(["create", "--ticket", ".", "--type", "feat", "--repo", "alpha"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Invalid create branch name: feat/.",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Invalid create branch name: feat/.");
   });
 
   it("rejects create branch names that are not valid git branches", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -254,10 +205,7 @@ describe("run", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Invalid create branch name: feat test/VALID-123",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Invalid create branch name: feat test/VALID-123");
   });
 
   it("prompts for all missing create inputs on an interactive tty", async () => {
@@ -269,14 +217,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -287,13 +229,11 @@ describe("run", () => {
       value: true,
     });
 
-    const promptSpy = vi
-      .spyOn(CreatePrompt, "promptForMissingCreateArgs")
-      .mockResolvedValue({
-        ticket: "PROMPT-123",
-        type: "feat",
-        repoIds: [localRepoId(alpha.tempRemote)],
-      });
+    const promptSpy = vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "PROMPT-123",
+      type: "feat",
+      repoIds: [localRepoId(alpha.tempRemote)],
+    });
 
     try {
       const exitCode = await runCli(["create"]);
@@ -301,7 +241,7 @@ describe("run", () => {
         tempHome,
         "worktrees",
         "PROMPT-123",
-        path.basename(alpha.tempRepo),
+        path.basename(alpha.tempRepo)
       );
 
       expect(exitCode).toBe(0);
@@ -332,14 +272,8 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -350,9 +284,7 @@ describe("run", () => {
       value: true,
     });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       const exitCode = await runCli(["create"]);
@@ -360,7 +292,7 @@ describe("run", () => {
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenNthCalledWith(
         1,
-        "No repos are available. Run `outpost repo add <path>` first.",
+        "No repos are available. Run `outpost repo add <path>` first."
       );
     } finally {
       restoreTtyProperty(process.stdin, stdinDescriptor);
@@ -377,14 +309,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -395,13 +321,11 @@ describe("run", () => {
       value: true,
     });
 
-    const promptSpy = vi
-      .spyOn(CreatePrompt, "promptForMissingCreateArgs")
-      .mockResolvedValue({
-        ticket: "PARTIAL-456",
-        type: "fix",
-        repoIds: [localRepoId(alpha.tempRemote)],
-      });
+    const promptSpy = vi.spyOn(CreatePrompt, "promptForMissingCreateArgs").mockResolvedValue({
+      ticket: "PARTIAL-456",
+      type: "fix",
+      repoIds: [localRepoId(alpha.tempRemote)],
+    });
 
     try {
       const exitCode = await runCli(["create", "--ticket", "PARTIAL-456"]);
@@ -409,7 +333,7 @@ describe("run", () => {
         tempHome,
         "worktrees",
         "PARTIAL-456",
-        path.basename(alpha.tempRepo),
+        path.basename(alpha.tempRepo)
       );
 
       expect(exitCode).toBe(0);
@@ -443,14 +367,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -467,18 +385,13 @@ describe("run", () => {
       repoIds: [localRepoId(alpha.tempRemote)],
     });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       const exitCode = await runCli(["create"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "--ticket may not contain path separators.",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "--ticket may not contain path separators.");
     } finally {
       restoreTtyProperty(process.stdin, stdinDescriptor);
       restoreTtyProperty(process.stdout, stdoutDescriptor);
@@ -494,14 +407,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -518,18 +425,13 @@ describe("run", () => {
       repoIds: [localRepoId(alpha.tempRemote)],
     });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       const exitCode = await runCli(["create"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "--type may not contain path separators.",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "--type may not contain path separators.");
     } finally {
       restoreTtyProperty(process.stdin, stdinDescriptor);
       restoreTtyProperty(process.stdout, stdoutDescriptor);
@@ -545,14 +447,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -569,9 +465,7 @@ describe("run", () => {
       repoIds: [localRepoId(alpha.tempRemote)],
     });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       const exitCode = await runCli(["create"]);
@@ -579,7 +473,7 @@ describe("run", () => {
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenNthCalledWith(
         1,
-        "Invalid create branch name: feat test/VALID-123",
+        "Invalid create branch name: feat test/VALID-123"
       );
     } finally {
       restoreTtyProperty(process.stdin, stdinDescriptor);
@@ -596,14 +490,8 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const stdinDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdin,
-      "isTTY",
-    );
-    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
-      process.stdout,
-      "isTTY",
-    );
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 
     Object.defineProperty(process.stdin, "isTTY", {
       configurable: true,
@@ -626,7 +514,7 @@ describe("run", () => {
         tempHome,
         "worktrees",
         "VALID-123",
-        path.basename(alpha.tempRepo),
+        path.basename(alpha.tempRepo)
       );
 
       expect(exitCode).toBe(0);
@@ -655,7 +543,7 @@ describe("run", () => {
         base: undefined,
         availableRepos: [{ id: "alpha", name: "alpha" }],
       },
-      { ask },
+      { ask }
     );
 
     expect(result).toEqual({
@@ -683,9 +571,7 @@ describe("run", () => {
     const sentinelPath = path.join(ticketDirectory, "keep.txt");
     writeFileSync(sentinelPath, "keep\n");
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -700,7 +586,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `A workspace already exists for ticket TICKET-321: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`,
+      `A workspace already exists for ticket TICKET-321: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`
     );
     expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
   });
@@ -723,12 +609,7 @@ describe("run", () => {
       "--repo",
       localRepoId(alpha.tempRemote),
     ]);
-    const expectedPath = path.join(
-      tempHome,
-      "worktrees",
-      "ABC-999",
-      path.basename(alpha.tempRepo),
-    );
+    const expectedPath = path.join(tempHome, "worktrees", "ABC-999", path.basename(alpha.tempRepo));
 
     expect(exitCode).toBe(0);
     expect(existsSync(expectedPath)).toBe(true);
@@ -744,9 +625,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -765,12 +644,10 @@ describe("run", () => {
     expect(output).toContain('"command": "create"');
     expect(output).toContain('"ticket": "JSON-42"');
     expect(output).toContain('"branch": "feat/JSON-42"');
-    expect(output).toContain(
-      `"ticketDirectory": "${path.join(tempHome, "worktrees", "JSON-42")}"`,
-    );
+    expect(output).toContain(`"ticketDirectory": "${path.join(tempHome, "worktrees", "JSON-42")}"`);
     expect(output).toContain(`"repoId": "${localRepoId(alpha.tempRemote)}"`);
     expect(output).toContain(
-      `"path": "${path.join(tempHome, "worktrees", "JSON-42", path.basename(alpha.tempRepo))}"`,
+      `"path": "${path.join(tempHome, "worktrees", "JSON-42", path.basename(alpha.tempRepo))}"`
     );
     expect(output).toContain('"base": "main"');
     expect(output).toContain('"dryRun": false');
@@ -785,9 +662,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -800,10 +675,7 @@ describe("run", () => {
       "--dry-run",
     ]);
     const ticketDirectory = path.join(tempHome, "worktrees", "DRY-101");
-    const worktreePath = path.join(
-      ticketDirectory,
-      path.basename(alpha.tempRepo),
-    );
+    const worktreePath = path.join(ticketDirectory, path.basename(alpha.tempRepo));
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenNthCalledWith(4, "dry run: true");
@@ -820,9 +692,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -962,7 +832,7 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
 
@@ -1005,25 +875,19 @@ describe("run", () => {
       }
     };
 
-    const registry = JSON.parse(
-      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
-    );
+    const registry = JSON.parse(readFileSync(path.join(tempHome, "repos.json"), "utf8"));
     const alphaManaged = registry.repos.find(
-      (r: { id: string }) => r.id === localRepoId(alpha.tempRemote),
+      (r: { id: string }) => r.id === localRepoId(alpha.tempRemote)
     );
     const betaManaged = registry.repos.find(
-      (r: { id: string }) => r.id === localRepoId(beta.tempRemote),
+      (r: { id: string }) => r.id === localRepoId(beta.tempRemote)
     );
 
     if (alphaManaged) {
-      expect(
-        branchExists(alphaManaged.managedRepoPath, "feat/ROLLBACK-1"),
-      ).toBe(false);
+      expect(branchExists(alphaManaged.managedRepoPath, "feat/ROLLBACK-1")).toBe(false);
     }
     if (betaManaged) {
-      expect(branchExists(betaManaged.managedRepoPath, "feat/ROLLBACK-1")).toBe(
-        false,
-      );
+      expect(branchExists(betaManaged.managedRepoPath, "feat/ROLLBACK-1")).toBe(false);
     }
   });
 
@@ -1040,13 +904,11 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1074,11 +936,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const ticketDirectory = path.join(
-      tempHome,
-      "worktrees",
-      "ROLLBACK-RESIDUAL",
-    );
+    const ticketDirectory = path.join(tempHome, "worktrees", "ROLLBACK-RESIDUAL");
     const sentinelPath = path.join(ticketDirectory, "keep.txt");
 
     vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
@@ -1086,7 +944,7 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -1103,9 +961,7 @@ describe("run", () => {
 
     expect(exitCode).toBe(1);
     expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
-    expect(
-      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
-    ).toBe(false);
+    expect(existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo)))).toBe(false);
   });
 
   it("rejects concurrent create for the same ticket", async () => {
@@ -1137,10 +993,7 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const [exitCode1, exitCode2] = await Promise.all([
-      createPromise1,
-      createPromise2,
-    ]);
+    const [exitCode1, exitCode2] = await Promise.all([createPromise1, createPromise2]);
 
     const successCodes = [exitCode1, exitCode2].filter((c) => c === 0);
     const failCodes = [exitCode1, exitCode2].filter((c) => c === 1);
@@ -1154,7 +1007,7 @@ describe("run", () => {
       tempHome,
       "worktrees",
       "CONCURRENT",
-      path.basename(alpha.tempRepo),
+      path.basename(alpha.tempRepo)
     );
 
     expect(existsSync(worktreePath)).toBe(true);
@@ -1194,7 +1047,7 @@ describe("run", () => {
     expect([upperExitCode, lowerExitCode].sort()).toEqual([0, 1]);
 
     const manifests = ["PORTABLE-ALIAS", "portable-alias"].filter((ticket) =>
-      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
+      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`))
     );
     expect(manifests).toHaveLength(1);
 
@@ -1203,7 +1056,7 @@ describe("run", () => {
       tempHome,
       "worktrees",
       winningTicket,
-      path.basename(alpha.tempRepo),
+      path.basename(alpha.tempRepo)
     );
     expect(existsSync(worktreePath)).toBe(true);
   });
@@ -1222,9 +1075,7 @@ describe("run", () => {
     const lockPath = path.join(workspacesDir, ".stale-lock.lock");
     writeFileSync(lockPath, "", { flag: "wx" });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1237,9 +1088,7 @@ describe("run", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy.mock.calls[0]?.[0]).toContain(
-      "is locked by another operation",
-    );
+    expect(errorSpy.mock.calls[0]?.[0]).toContain("is locked by another operation");
   });
 
   it("rejects create when a manifest already exists for the ticket", async () => {
@@ -1261,9 +1110,7 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1276,9 +1123,7 @@ describe("run", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy.mock.calls[0]?.[0]).toContain(
-      "workspace manifest already exists",
-    );
+    expect(errorSpy.mock.calls[0]?.[0]).toContain("workspace manifest already exists");
   });
 
   it("rejects create when a portable ticket collision exists in manifests", async () => {
@@ -1300,9 +1145,7 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1328,11 +1171,9 @@ describe("run", () => {
     await runCli(["repo", "add", alpha.tempRepo]);
 
     const { execFileSync } = await import("node:child_process");
-    const registry = JSON.parse(
-      readFileSync(path.join(tempHome, "repos.json"), "utf8"),
-    );
+    const registry = JSON.parse(readFileSync(path.join(tempHome, "repos.json"), "utf8"));
     const managedRepo = registry.repos.find(
-      (r: { id: string }) => r.id === localRepoId(alpha.tempRemote),
+      (r: { id: string }) => r.id === localRepoId(alpha.tempRemote)
     );
 
     execFileSync("git", [
@@ -1343,9 +1184,7 @@ describe("run", () => {
       "HEAD",
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1378,9 +1217,7 @@ describe("run", () => {
     await runCli(["repo", "add", alpha.tempRepo]);
     await runCli(["repo", "add", beta.tempRepo]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli([
       "create",
@@ -1395,12 +1232,8 @@ describe("run", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy.mock.calls[0]?.[0]).toContain(
-      "same portable worktree path",
-    );
-    expect(
-      existsSync(path.join(tempHome, "worktrees", "WORKTREE-CASE-COLLISION")),
-    ).toBe(false);
+    expect(errorSpy.mock.calls[0]?.[0]).toContain("same portable worktree path");
+    expect(existsSync(path.join(tempHome, "worktrees", "WORKTREE-CASE-COLLISION"))).toBe(false);
   });
 
   it("writes AGENTS.md to workspace directory on create", async () => {
@@ -1429,9 +1262,7 @@ describe("run", () => {
     expect(existsSync(agentsPath)).toBe(true);
 
     const content = readFileSync(agentsPath, "utf8");
-    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(
-      true,
-    );
+    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(true);
   });
 
   it("AGENTS.md is written before the manifest", async () => {
@@ -1461,15 +1292,9 @@ describe("run", () => {
 
     expect(content).toContain("AGENTS-BEFORE");
     expect(content).toContain(path.basename(alpha.tempRepo));
-    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(
-      true,
-    );
+    expect(content.startsWith("<!-- outpost:workspace-agents sha256=")).toBe(true);
 
-    const manifestPath = path.join(
-      tempHome,
-      "workspaces",
-      "AGENTS-BEFORE.json",
-    );
+    const manifestPath = path.join(tempHome, "workspaces", "AGENTS-BEFORE.json");
     expect(existsSync(manifestPath)).toBe(true);
   });
 
@@ -1513,7 +1338,7 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
 
@@ -1535,9 +1360,7 @@ describe("run", () => {
     const agentsPath = path.join(ticketDirectory, "AGENTS.md");
     expect(existsSync(agentsPath)).toBe(false);
     expect(existsSync(ticketDirectory)).toBe(false);
-    expect(
-      existsSync(path.join(tempHome, "workspaces", "ROLLBACK-AGENTS.json")),
-    ).toBe(false);
+    expect(existsSync(path.join(tempHome, "workspaces", "ROLLBACK-AGENTS.json"))).toBe(false);
   });
 
   it("rollback preserves residual files and removes AGENTS.md", async () => {
@@ -1549,11 +1372,7 @@ describe("run", () => {
     const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
     await runCli(["repo", "add", alpha.tempRepo]);
 
-    const ticketDirectory = path.join(
-      tempHome,
-      "worktrees",
-      "ROLLBACK-RESIDUAL-AGENTS",
-    );
+    const ticketDirectory = path.join(tempHome, "worktrees", "ROLLBACK-RESIDUAL-AGENTS");
     const sentinelPath = path.join(ticketDirectory, "keep.txt");
 
     vi.spyOn(WorkspaceManifest, "writeManifest").mockImplementation(() => {
@@ -1561,7 +1380,7 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -1582,9 +1401,7 @@ describe("run", () => {
     const agentsPath = path.join(ticketDirectory, "AGENTS.md");
     expect(existsSync(agentsPath)).toBe(false);
 
-    expect(
-      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
-    ).toBe(false);
+    expect(existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo)))).toBe(false);
   });
 
   it("preserves and diagnoses AGENTS.md edited during rollback", async () => {
@@ -1605,12 +1422,10 @@ describe("run", () => {
       return Effect.fail(
         new WorkspaceManifest.ManifestError({
           message: "Simulated manifest write failure",
-        }),
+        })
       );
     });
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     expect(
       await runCli([
@@ -1621,19 +1436,15 @@ describe("run", () => {
         "feat",
         "--repo",
         localRepoId(alpha.tempRemote),
-      ]),
+      ])
     ).toBe(1);
 
     expect(readFileSync(agentsPath, "utf8")).toBe(editedContent);
     expect(existsSync(ticketDirectory)).toBe(true);
-    expect(
-      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
-    ).toBe(false);
-    expect(
-      existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo))),
-    ).toBe(false);
+    expect(existsSync(path.join(tempHome, "workspaces", `${ticket}.json`))).toBe(false);
+    expect(existsSync(path.join(ticketDirectory, path.basename(alpha.tempRepo)))).toBe(false);
     expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-      `Preserved AGENTS.md at ${agentsPath} because it changed during rollback`,
+      `Preserved AGENTS.md at ${agentsPath} because it changed during rollback`
     );
 
     const { execFileSync } = await import("node:child_process");
@@ -1646,7 +1457,7 @@ describe("run", () => {
         "--verify",
         "--quiet",
         `refs/heads/feat/${ticket}`,
-      ]),
+      ])
     ).toThrow();
   });
 
@@ -1665,42 +1476,25 @@ describe("run", () => {
         const fs = yield* FileSystem.FileSystem;
         const failingFs = {
           ...fs,
-          writeFile: (
-            filePath: string,
-            data: Uint8Array,
-            options?: FileSystem.WriteFileOptions,
-          ) =>
+          writeFile: (filePath: string, data: Uint8Array, options?: FileSystem.WriteFileOptions) =>
             path.basename(filePath).startsWith(".AGENTS.md.")
-              ? fs.writeFile(
-                  path.join(tempHome, "missing-parent", "write-failure"),
-                  data,
-                  options,
-                )
+              ? fs.writeFile(path.join(tempHome, "missing-parent", "write-failure"), data, options)
               : fs.writeFile(filePath, data, options),
         };
 
         return yield* Effect.exit(
           runCreate(
-            [
-              "--ticket",
-              ticket,
-              "--type",
-              "feat",
-              "--repo",
-              localRepoId(alpha.tempRemote),
-            ],
-            { interactive: false },
-          ).pipe(Effect.provideService(FileSystem.FileSystem, failingFs)),
+            ["--ticket", ticket, "--type", "feat", "--repo", localRepoId(alpha.tempRemote)],
+            { interactive: false }
+          ).pipe(Effect.provideService(FileSystem.FileSystem, failingFs))
         );
-      }).pipe(Effect.provide(NodeContext.layer)),
+      }).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
     const ticketDirectory = path.join(tempHome, "worktrees", ticket);
     expect(existsSync(ticketDirectory)).toBe(false);
-    expect(
-      existsSync(path.join(tempHome, "workspaces", `${ticket}.json`)),
-    ).toBe(false);
+    expect(existsSync(path.join(tempHome, "workspaces", `${ticket}.json`))).toBe(false);
 
     const { execFileSync } = await import("node:child_process");
     const managedRepoPath = readRegistry(tempHome).repos[0].managedRepoPath;
@@ -1712,12 +1506,12 @@ describe("run", () => {
         "--verify",
         "--quiet",
         `refs/heads/feat/${ticket}`,
-      ]),
+      ])
     ).toThrow();
     const registrations = execFileSync(
       "git",
       ["--git-dir", managedRepoPath, "worktree", "list", "--porcelain"],
-      { encoding: "utf8" },
+      { encoding: "utf8" }
     );
     expect(registrations).not.toContain(ticketDirectory);
   });

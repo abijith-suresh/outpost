@@ -16,8 +16,8 @@ const program = run(process.argv.slice(2), version).pipe(
   Effect.tap((exitCode) =>
     Effect.sync(() => {
       process.exitCode = exitCode;
-    }),
-  ),
+    })
+  )
 );
 
 NodeRuntime.runMain(program);

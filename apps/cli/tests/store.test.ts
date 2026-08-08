@@ -6,13 +6,7 @@ import { Effect, Exit } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { writeJsonFileAtomic, writeTextFileAtomic } from "../src/store.ts";
-import {
-  createTempDir,
-  path,
-  readFileSync,
-  setupAfterEach,
-  writeFileSync,
-} from "./helpers.ts";
+import { createTempDir, path, readFileSync, setupAfterEach, writeFileSync } from "./helpers.ts";
 
 setupAfterEach();
 
@@ -22,9 +16,7 @@ describe("atomic store writes", () => {
     const filePath = path.join(tempDirectory, "state.json");
 
     await Effect.runPromise(
-      writeJsonFileAtomic(filePath, { version: 1 }).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      writeJsonFileAtomic(filePath, { version: 1 }).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(readFileSync(filePath, "utf8")).toBe('{\n  "version": 1\n}\n');
@@ -43,7 +35,7 @@ describe("atomic store writes", () => {
           void newPath;
           return fs.rename(
             path.join(tempDirectory, "missing"),
-            path.join(tempDirectory, "also-missing"),
+            path.join(tempDirectory, "also-missing")
           );
         });
         const failingFileSystem: FileSystem.FileSystem = {
@@ -53,12 +45,12 @@ describe("atomic store writes", () => {
 
         const result = yield* Effect.exit(
           writeTextFileAtomic(filePath, "updated\n").pipe(
-            Effect.provideService(FileSystem.FileSystem, failingFileSystem),
-          ),
+            Effect.provideService(FileSystem.FileSystem, failingFileSystem)
+          )
         );
 
         return { result, rename };
-      }).pipe(Effect.provide(NodeContext.layer)),
+      }).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(Exit.isFailure(exit.result)).toBe(true);

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -62,7 +62,7 @@ function assertSuccess(result, label) {
   assert.equal(
     result.status,
     0,
-    `${label} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    `${label} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
   );
 }
 
@@ -94,13 +94,7 @@ try {
   assertSuccess(buildResult, "npm run build");
 
   console.log(`Packing to ${packDir}...`);
-  const packResult = runNpm([
-    "pack",
-    "--json",
-    "--ignore-scripts",
-    "--pack-destination",
-    packDir,
-  ]);
+  const packResult = runNpm(["pack", "--json", "--ignore-scripts", "--pack-destination", packDir]);
   assertSuccess(packResult, "npm pack");
 
   const packOutput = JSON.parse(packResult.stdout);
@@ -120,7 +114,7 @@ try {
     ],
     {
       env: npmPrefixEnv,
-    },
+    }
   );
   assertSuccess(installResult, "global packed-package install");
 
@@ -128,11 +122,7 @@ try {
     env: npmPrefixEnv,
   });
   assertSuccess(globalRootResult, "resolve global package root");
-  const installedPackage = join(
-    globalRootResult.stdout.trim(),
-    "@abijith-suresh",
-    "outpost",
-  );
+  const installedPackage = join(globalRootResult.stdout.trim(), "@abijith-suresh", "outpost");
 
   console.log("Test: importing packed package is side-effect-free");
   const importResult = run(process.execPath, [
@@ -166,7 +156,7 @@ try {
   assert.equal(unknownResult.stdout, "");
   assert.equal(
     unknownResult.stderr,
-    "Unknown command: wat\nRun `outpost --help` to see available commands.\n",
+    "Unknown command: wat\nRun `outpost --help` to see available commands.\n"
   );
 
   console.log("Test: outpost wat --json (unknown command)");
@@ -192,8 +182,7 @@ try {
     command: "doctor",
     error: {
       code: "INVALID_ARGUMENT",
-      message:
-        "Usage: outpost <command> [options]\n--json may only be provided once.",
+      message: "Usage: outpost <command> [options]\n--json may only be provided once.",
     },
     exitCode: 1,
   });
@@ -210,9 +199,7 @@ try {
   assert.ok(createError.error.message.includes("Usage: outpost create"));
   assert.ok(createError.error.message.includes("--ticket is required."));
   assert.ok(createError.error.message.includes("--type is required."));
-  assert.ok(
-    createError.error.message.includes("At least one --repo is required."),
-  );
+  assert.ok(createError.error.message.includes("At least one --repo is required."));
 
   console.log("Test: structured partial result exits 1");
   const commandEnv = { OUTPOST_HOME: outpostHome };
@@ -239,14 +226,11 @@ try {
         ],
       },
       null,
-      2,
-    )}\n`,
+      2
+    )}\n`
   );
 
-  const partialResult = runInstalled(
-    ["repo", "fetch", "--all", "--json"],
-    commandEnv,
-  );
+  const partialResult = runInstalled(["repo", "fetch", "--all", "--json"], commandEnv);
   assert.equal(partialResult.status, 1);
   assert.equal(partialResult.stderr, "");
   const partialOutput = JSON.parse(partialResult.stdout);

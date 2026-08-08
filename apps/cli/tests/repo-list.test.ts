@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createTempDir,
   makeRepoRecord,
   mkdirSync,
   path,
   runCli,
   setupAfterEach,
-  createTempDir,
   writeRegistry,
 } from "./helpers.ts";
 
@@ -46,9 +46,7 @@ describe("run", () => {
       },
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list"]);
 
@@ -56,13 +54,10 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo list");
     expect(infoSpy).toHaveBeenNthCalledWith(2, "repos: 2");
     expect(infoSpy).toHaveBeenNthCalledWith(3, "missing repos: 1");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      4,
-      `- alpha (id: alpha) [ok]: ${managedRepoPathOne}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(4, `- alpha (id: alpha) [ok]: ${managedRepoPathOne}`);
     expect(infoSpy).toHaveBeenNthCalledWith(
       5,
-      `- beta (id: beta) [missing]: ${managedRepoPathTwo}`,
+      `- beta (id: beta) [missing]: ${managedRepoPathTwo}`
     );
   });
 
@@ -82,9 +77,7 @@ describe("run", () => {
 
     writeRegistry(tempHome, [repoRecord]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha"]);
 
@@ -93,30 +86,12 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenNthCalledWith(2, "id: alpha");
     expect(infoSpy).toHaveBeenNthCalledWith(3, "name: alpha");
     expect(infoSpy).toHaveBeenNthCalledWith(4, "status: ok");
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      5,
-      `managed repo path: ${repoRecord.managedRepoPath}`,
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      6,
-      `source repo path: ${repoRecord.sourceRepoPath}`,
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      7,
-      `remote name: ${repoRecord.remoteName}`,
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      8,
-      `remote url: ${repoRecord.remoteUrl}`,
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      9,
-      `imported at: ${repoRecord.importedAt}`,
-    );
-    expect(infoSpy).toHaveBeenNthCalledWith(
-      10,
-      `last fetched at: ${repoRecord.lastFetchedAt}`,
-    );
+    expect(infoSpy).toHaveBeenNthCalledWith(5, `managed repo path: ${repoRecord.managedRepoPath}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(6, `source repo path: ${repoRecord.sourceRepoPath}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(7, `remote name: ${repoRecord.remoteName}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(8, `remote url: ${repoRecord.remoteUrl}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(9, `imported at: ${repoRecord.importedAt}`);
+    expect(infoSpy).toHaveBeenNthCalledWith(10, `last fetched at: ${repoRecord.lastFetchedAt}`);
   });
 
   it("prints repo show output as json", async () => {
@@ -133,9 +108,7 @@ describe("run", () => {
 
     writeRegistry(tempHome, [repoRecord]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha", "--json"]);
 
@@ -147,7 +120,7 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"id": "alpha"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "ok"');
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      `"managedRepoPath": "${repoRecord.managedRepoPath}"`,
+      `"managedRepoPath": "${repoRecord.managedRepoPath}"`
     );
   });
 
@@ -164,9 +137,7 @@ describe("run", () => {
 
     writeRegistry(tempHome, [repoRecord]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha"]);
 
@@ -180,9 +151,7 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "missing"]);
 
@@ -192,32 +161,22 @@ describe("run", () => {
   });
 
   it("returns an error when repo show is missing the id", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Usage: outpost repo show <id> [--json]",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo show <id> [--json]");
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when repo show includes an extra positional argument", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha", "beta"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Usage: outpost repo show <id> [--json]",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo show <id> [--json]");
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -243,17 +202,12 @@ describe("run", () => {
       }),
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Repo registry contains duplicate id: alpha",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Repo registry contains duplicate id: alpha");
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -275,16 +229,14 @@ describe("run", () => {
       }),
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list"]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `Repo registry contains duplicate managed path: ${managedRepoPath}`,
+      `Repo registry contains duplicate managed path: ${managedRepoPath}`
     );
   });
 
@@ -294,18 +246,8 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const upperManagedRepoPath = path.join(
-      tempHome,
-      "repos",
-      "Group",
-      "Repo.git",
-    );
-    const lowerManagedRepoPath = path.join(
-      tempHome,
-      "repos",
-      "group",
-      "repo.git",
-    );
+    const upperManagedRepoPath = path.join(tempHome, "repos", "Group", "Repo.git");
+    const lowerManagedRepoPath = path.join(tempHome, "repos", "group", "repo.git");
     writeRegistry(tempHome, [
       makeRepoRecord({
         id: "example.com/Group/Repo",
@@ -317,16 +259,14 @@ describe("run", () => {
       }),
     ]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list"]);
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `Repo registry contains duplicate managed path: ${lowerManagedRepoPath}`,
+      `Repo registry contains duplicate managed path: ${lowerManagedRepoPath}`
     );
   });
 
@@ -350,9 +290,7 @@ describe("run", () => {
 
     writeRegistry(tempHome, [repoRecord]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list", "--json"]);
 
@@ -365,7 +303,7 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"repos": [');
     expect(infoSpy.mock.calls[0]?.[0]).toContain(`"id": "${repoRecord.id}"`);
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      `"managedRepoPath": "${repoRecord.managedRepoPath}"`,
+      `"managedRepoPath": "${repoRecord.managedRepoPath}"`
     );
     expect(infoSpy.mock.calls[0]?.[0]).toContain('"status": "ok"');
   });

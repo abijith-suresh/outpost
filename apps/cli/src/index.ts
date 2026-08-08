@@ -9,7 +9,5 @@ const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 
 export function runCli(argv: readonly string[]): Promise<number> {
-  return Effect.runPromise(
-    run(argv, version).pipe(Effect.provide(NodeContext.layer)),
-  );
+  return Effect.runPromise(run(argv, version).pipe(Effect.provide(NodeContext.layer)));
 }

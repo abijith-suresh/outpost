@@ -1,22 +1,12 @@
 import { Effect, Schema } from "effect";
-
+import { ALL_COMMANDS, type CommandSpec, findCommand } from "../command-spec.js";
 import type { CommandOutput } from "../types.js";
-import {
-  ALL_COMMANDS,
-  findCommand,
-  type CommandSpec,
-} from "../command-spec.js";
 
-export class DescribeError extends Schema.TaggedError<DescribeError>()(
-  "DescribeError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class DescribeError extends Schema.TaggedError<DescribeError>()("DescribeError", {
+  message: Schema.String,
+}) {}
 
-export function runDescribe(
-  args: readonly string[],
-): Effect.Effect<CommandOutput, DescribeError> {
+export function runDescribe(args: readonly string[]): Effect.Effect<CommandOutput, DescribeError> {
   return Effect.gen(function* () {
     if (args.length === 0) {
       return {
@@ -42,7 +32,7 @@ export function runDescribe(
       return yield* Effect.fail(
         new DescribeError({
           message: `Unknown command: ${path.join(" ")}`,
-        }),
+        })
       );
     }
 

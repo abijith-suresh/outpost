@@ -11,16 +11,14 @@
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const ADAPTER = fileURLToPath(
-  new URL("./check-changeset.mjs", import.meta.url),
-);
+const ADAPTER = fileURLToPath(new URL("./check-changeset.mjs", import.meta.url));
 const REPO = "abijith-suresh/outpost";
 
 /** @param {string} repo */
@@ -31,9 +29,7 @@ function git(repo) {
       encoding: "utf8",
     });
     if (result.status !== 0) {
-      throw new Error(
-        `git ${args.join(" ")} failed in ${repo}: ${result.stderr || result.stdout}`,
-      );
+      throw new Error(`git ${args.join(" ")} failed in ${repo}: ${result.stderr || result.stdout}`);
     }
     return result.stdout.trim();
   };
@@ -108,14 +104,7 @@ test("source change without a changeset fails with actionable guidance", () => {
     run(["add", "-A"]);
     run(["commit", "-qm", "change src"]);
 
-    const result = runAdapter(root, [
-      "--base",
-      "HEAD~1",
-      "--head",
-      "HEAD",
-      "--head-ref",
-      "feat/x",
-    ]);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", "HEAD", "--head-ref", "feat/x"]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Releasable paths changed:/);
     assert.match(result.stderr, /apps\/cli\/src\/program\.ts/);
@@ -125,38 +114,27 @@ test("source change without a changeset fails with actionable guidance", () => {
   }
 });
 
-test(
-  "source change with a valid patch changeset passes",
-  { timeout: 5000 },
-  async () => {
-    const { root, run, cleanup } = useRepo();
-    try {
-      writeFile(root, "README.md", "init\n");
-      run(["add", "-A"]);
-      run(["commit", "-qm", "init"]);
-      writeFile(root, "apps/cli/src/program.ts", "b\n");
-      writeFileSync(
-        join(root, ".changeset/fix.md"),
-        `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
-      );
-      run(["add", "-A"]);
-      run(["commit", "-qm", "src + changeset"]);
+test("source change with a valid patch changeset passes", { timeout: 5000 }, async () => {
+  const { root, run, cleanup } = useRepo();
+  try {
+    writeFile(root, "README.md", "init\n");
+    run(["add", "-A"]);
+    run(["commit", "-qm", "init"]);
+    writeFile(root, "apps/cli/src/program.ts", "b\n");
+    writeFileSync(
+      join(root, ".changeset/fix.md"),
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`
+    );
+    run(["add", "-A"]);
+    run(["commit", "-qm", "src + changeset"]);
 
-      const result = runAdapter(root, [
-        "--base",
-        "HEAD~1",
-        "--head",
-        "HEAD",
-        "--head-ref",
-        "feat/x",
-      ]);
-      assert.equal(result.status, 0);
-      assert.match(result.stdout, /a valid patch changeset is present/);
-    } finally {
-      cleanup();
-    }
-  },
-);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", "HEAD", "--head-ref", "feat/x"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /a valid patch changeset is present/);
+  } finally {
+    cleanup();
+  }
+});
 
 test("changeset content is read from the head revision, not the working tree", () => {
   const { root, run, cleanup } = useRepo();
@@ -167,7 +145,7 @@ test("changeset content is read from the head revision, not the working tree", (
     writeFile(root, "apps/cli/src/program.ts", "b\n");
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "src + changeset"]);
@@ -176,17 +154,10 @@ test("changeset content is read from the head revision, not the working tree", (
     // Mutate the working tree after commit so a path-based read would diverge.
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": minor\n---\nspoofed\n`,
+      `---\n"@abijith-suresh/outpost": minor\n---\nspoofed\n`
     );
 
-    const result = runAdapter(root, [
-      "--base",
-      "HEAD~1",
-      "--head",
-      head,
-      "--head-ref",
-      "feat/x",
-    ]);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", head, "--head-ref", "feat/x"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /a valid patch changeset is present/);
   } finally {
@@ -218,14 +189,7 @@ test("merge-base selection excludes base-only releasable paths", () => {
 
     // A naive base..head diff reports base-only.ts as deleted and fails policy.
     // merge-base..head sees only the exempt head change and passes.
-    const result = runAdapter(root, [
-      "--base",
-      baseSha,
-      "--head",
-      "HEAD",
-      "--head-ref",
-      "feat/x",
-    ]);
+    const result = runAdapter(root, ["--base", baseSha, "--head", "HEAD", "--head-ref", "feat/x"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /no releasable CLI paths changed/);
   } finally {
@@ -239,7 +203,7 @@ test("valid pending changeset modified relative to base satisfies policy", () =>
     writeFile(root, "apps/cli/src/program.ts", "a\n");
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\ninitial summary\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\ninitial summary\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "init"]);
@@ -247,19 +211,12 @@ test("valid pending changeset modified relative to base satisfies policy", () =>
     writeFile(root, "apps/cli/src/program.ts", "b\n");
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nupdated summary\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nupdated summary\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "src + modified changeset"]);
 
-    const result = runAdapter(root, [
-      "--base",
-      "HEAD~1",
-      "--head",
-      "HEAD",
-      "--head-ref",
-      "fix/x",
-    ]);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", "HEAD", "--head-ref", "fix/x"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /a valid patch changeset is present/);
   } finally {
@@ -273,7 +230,7 @@ test("unchanged valid pending changeset does not satisfy policy", () => {
     writeFile(root, "apps/cli/src/program.ts", "a\n");
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "init"]);
@@ -282,19 +239,9 @@ test("unchanged valid pending changeset does not satisfy policy", () => {
     run(["add", "-A"]);
     run(["commit", "-qm", "src change"]);
 
-    const result = runAdapter(root, [
-      "--base",
-      "HEAD~1",
-      "--head",
-      "HEAD",
-      "--head-ref",
-      "fix/x",
-    ]);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", "HEAD", "--head-ref", "fix/x"]);
     assert.equal(result.status, 1);
-    assert.match(
-      result.stderr,
-      /no changeset was added or modified by this PR/,
-    );
+    assert.match(result.stderr, /no changeset was added or modified by this PR/);
   } finally {
     cleanup();
   }
@@ -306,7 +253,7 @@ test("deleted valid pending changeset does not satisfy policy", () => {
     writeFile(root, "apps/cli/src/program.ts", "a\n");
     writeFileSync(
       join(root, ".changeset/fix.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nfix bug\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "init"]);
@@ -316,19 +263,9 @@ test("deleted valid pending changeset does not satisfy policy", () => {
     run(["add", "-A"]);
     run(["commit", "-qm", "src + deleted changeset"]);
 
-    const result = runAdapter(root, [
-      "--base",
-      "HEAD~1",
-      "--head",
-      "HEAD",
-      "--head-ref",
-      "fix/x",
-    ]);
+    const result = runAdapter(root, ["--base", "HEAD~1", "--head", "HEAD", "--head-ref", "fix/x"]);
     assert.equal(result.status, 1);
-    assert.match(
-      result.stderr,
-      /no changeset was added or modified by this PR/,
-    );
+    assert.match(result.stderr, /no changeset was added or modified by this PR/);
   } finally {
     cleanup();
   }
@@ -424,7 +361,7 @@ test("generated release PR from the same repository is exempt", () => {
     writeFile(root, "package-lock.json", "{}\n");
     writeFileSync(
       join(root, ".changeset/old.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nold\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nold\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "init"]);
@@ -466,7 +403,7 @@ test("generated release PR from a fork repository is not exempt", () => {
     writeFile(root, "package-lock.json", "{}\n");
     writeFileSync(
       join(root, ".changeset/old.md"),
-      `---\n"@abijith-suresh/outpost": patch\n---\nold\n`,
+      `---\n"@abijith-suresh/outpost": patch\n---\nold\n`
     );
     run(["add", "-A"]);
     run(["commit", "-qm", "init"]);

@@ -1,8 +1,9 @@
-import * as FileSystem from "@effect/platform/FileSystem";
+import type * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
-import { Either, Effect, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import type { CommandOutput } from "../types.js";
 import {
   deriveWorkspaceStatus,
   listManifestTickets,
@@ -11,7 +12,6 @@ import {
   scanWorktreesRoot,
   type WorkspaceStatus,
 } from "../workspace-manifest.js";
-import type { CommandOutput } from "../types.js";
 
 export type WorkspaceSummary = {
   ticket: string;
@@ -28,7 +28,7 @@ export class WorkspaceListError extends Schema.TaggedError<WorkspaceListError>()
   "WorkspaceListError",
   {
     message: Schema.String,
-  },
+  }
 ) {}
 
 export function runWorkspaceList(): Effect.Effect<
@@ -40,22 +40,16 @@ export function runWorkspaceList(): Effect.Effect<
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceListError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
     );
 
     const managedTickets = yield* listManifestTickets(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceListError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
     );
 
     const managedResults: Array<WorkspaceSummary> = [];
     for (const ticket of managedTickets) {
-      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(
-        Effect.either,
-      );
+      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.either);
 
       if (Either.isLeft(manifestResult)) {
         managedResults.push({
@@ -72,18 +66,14 @@ export function runWorkspaceList(): Effect.Effect<
       }
 
       const manifest = manifestResult.right;
-      const status = yield* deriveWorkspaceStatus(
-        outpostHome,
-        config,
-        ticket,
-      ).pipe(
-        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus)),
+      const status = yield* deriveWorkspaceStatus(outpostHome, config, ticket).pipe(
+        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus))
       );
 
       let ticketDirectory: string | undefined;
       const workspacePathResult = yield* resolveWorkspacePath(
         config.worktreesRoot,
-        manifest.workspacePath,
+        manifest.workspacePath
       ).pipe(Effect.either);
       if (Either.isRight(workspacePathResult)) {
         ticketDirectory = workspacePathResult.right;
@@ -102,13 +92,8 @@ export function runWorkspaceList(): Effect.Effect<
     }
 
     const managedTicketSet = new Set(managedTickets);
-    const unmanagedDirs = yield* scanWorktreesRoot(
-      config.worktreesRoot,
-      outpostHome,
-    ).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceListError({ message: error.message }),
-      ),
+    const unmanagedDirs = yield* scanWorktreesRoot(config.worktreesRoot, outpostHome).pipe(
+      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
     );
 
     const unmanagedResults: Array<WorkspaceSummary> = [];
@@ -129,8 +114,8 @@ export function runWorkspaceList(): Effect.Effect<
       });
     }
 
-    const allWorkspaces = [...managedResults, ...unmanagedResults].sort(
-      (left, right) => left.ticket.localeCompare(right.ticket),
+    const allWorkspaces = [...managedResults, ...unmanagedResults].sort((left, right) =>
+      left.ticket.localeCompare(right.ticket)
     );
 
     return {
