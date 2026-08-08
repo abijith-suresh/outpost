@@ -1,5 +1,15 @@
 # @abijith-suresh/outpost
 
+## 0.0.26
+
+### Patch Changes
+
+- db478e7: Migrate linting and formatting from ESLint and Prettier to Biome. No behavioral or API changes.
+- 647557e: Bump grouped minor and patch dependencies
+- 0c1d2a1: Declare the published CLI's supported runtime as Node.js 24 only, starting at the verified LTS baseline `24.19.0`.
+- 4299d8c: Reject empty semantic identifiers and ASCII control characters before state, filesystem, or Git operations.
+- 77ff5e7: Update the development TypeScript toolchain to 7.0.2. The website workspace stays on 6.0.3 because `@astrojs/check` does not support TypeScript 7 yet. No runtime or API changes.
+
 ## 0.0.25
 
 ### Patch Changes
