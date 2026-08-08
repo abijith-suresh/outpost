@@ -18,30 +18,22 @@ setupAfterEach();
 
 describe("run", () => {
   it("prints help with no arguments", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli([]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "repo add <path> [--remote <name>] [--json]",
-    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo add <path> [--remote <name>] [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo fetch --all [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo remove <id> [--json]");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "workspace remove <ticket> [--json]",
-    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("workspace remove <ticket> [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain("[--json] [--json]");
   });
 
   it("prints help for the help command", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["help"]);
 
@@ -51,9 +43,7 @@ describe("run", () => {
   });
 
   it("prints the current version", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["--version"]);
 
@@ -62,9 +52,7 @@ describe("run", () => {
   });
 
   it("prints the current version when --version follows repo list", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list", "--version"]);
 
@@ -74,9 +62,7 @@ describe("run", () => {
   });
 
   it("prints the current version when --version precedes repo list", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["--version", "repo", "list"]);
 
@@ -89,9 +75,7 @@ describe("run", () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json", "--version"]);
 
@@ -101,9 +85,7 @@ describe("run", () => {
   });
 
   it("prints help for a top-level --help flag", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["--help"]);
 
@@ -114,9 +96,7 @@ describe("run", () => {
   });
 
   it("prints command-level help when repo add includes --help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "add", "--help"]);
 
@@ -124,22 +104,18 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "outpost repo add <path> [--remote <name>] [--json]",
+      "outpost repo add <path> [--remote <name>] [--json]"
     );
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Arguments:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "<path>  Local repository path (required)",
-    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("<path>  Local repository path (required)");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Options:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "--remote <name>  Remote name (defaults to origin)",
+      "--remote <name>  Remote name (defaults to origin)"
     );
   });
 
   it("prints command-level help when repo list includes --help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list", "--help"]);
 
@@ -150,24 +126,18 @@ describe("run", () => {
   });
 
   it("prints command-level help when repo fetch includes --help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--help"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "outpost repo fetch --all [--json]",
-    );
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost repo fetch --all [--json]");
   });
 
   it("prints command-level help when doctor includes --help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--help"]);
 
@@ -178,9 +148,7 @@ describe("run", () => {
   });
 
   it("prints help instead of json when repo add includes --json and --help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "add", "--json", "--help"]);
 
@@ -188,36 +156,28 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "outpost repo add <path> [--remote <name>] [--json]",
+      "outpost repo add <path> [--remote <name>] [--json]"
     );
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain('"command":');
   });
 
   it("prints command-level help through the help command", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["help", "workspace", "remove"]);
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost workspace remove <ticket> [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "outpost workspace remove <ticket> [--json]",
-    );
-    expect(infoSpy.mock.calls[0]?.[0]).toContain(
-      "<ticket>  Ticket workspace identifier (required)",
+      "<ticket>  Ticket workspace identifier (required)"
     );
     expect(infoSpy.mock.calls[0]?.[0]).toContain("interactive: yes");
   });
 
   it("returns a JSON error for an unknown help target", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["help", "wat", "--json"]);
 
@@ -236,9 +196,7 @@ describe("run", () => {
   });
 
   it("lists each registered command exactly once in top-level help", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["--help"]);
 
@@ -247,24 +205,15 @@ describe("run", () => {
 
     for (const command of ALL_COMMANDS) {
       const commandPath = command.path.join(" ");
-      const escapedCommandPath = commandPath.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&",
-      );
-      const matches = helpText.match(
-        new RegExp(`^  ${escapedCommandPath}(?: |$)`, "gm"),
-      );
+      const escapedCommandPath = commandPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matches = helpText.match(new RegExp(`^  ${escapedCommandPath}(?: |$)`, "gm"));
       expect(matches, commandPath).toHaveLength(1);
     }
   });
 
   it("describes the command surface as JSON in registry order", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["describe", "--json"]);
 
@@ -292,12 +241,8 @@ describe("run", () => {
   });
 
   it("describes one command as JSON with arguments and options", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["describe", "repo", "add", "--json"]);
 
@@ -336,12 +281,8 @@ describe("run", () => {
   });
 
   it("returns a JSON error for an unknown describe target", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["describe", "wat", "--json"]);
 
@@ -362,30 +303,22 @@ describe("run", () => {
   it.each(["--help", "--version"])(
     "rejects duplicate global option %s before short-circuiting",
     async (option) => {
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli([option, option]);
 
       expect(exitCode).toBe(1);
       expect(infoSpy).not.toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(
-        `Usage: outpost <command> [options]\n${option} may only be provided once.`,
+        `Usage: outpost <command> [options]\n${option} may only be provided once.`
       );
-    },
+    }
   );
 
   it("returns an exact JSON error for duplicate --json", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json", "--json"]);
 
@@ -397,8 +330,7 @@ describe("run", () => {
       command: "doctor",
       error: {
         code: "INVALID_ARGUMENT",
-        message:
-          "Usage: outpost <command> [options]\n--json may only be provided once.",
+        message: "Usage: outpost <command> [options]\n--json may only be provided once.",
       },
       exitCode: 1,
     });
@@ -415,20 +347,10 @@ describe("run", () => {
 
     const registry = readRegistry(tempHome);
     const repo = registry.repos[0];
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const exitCode = await runCli([
-      "repo",
-      "remove",
-      repo.id,
-      "--json",
-      "--json",
-    ]);
+    const exitCode = await runCli(["repo", "remove", repo.id, "--json", "--json"]);
 
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
@@ -438,8 +360,7 @@ describe("run", () => {
       command: "repo remove",
       error: {
         code: "INVALID_ARGUMENT",
-        message:
-          "Usage: outpost <command> [options]\n--json may only be provided once.",
+        message: "Usage: outpost <command> [options]\n--json may only be provided once.",
       },
       exitCode: 1,
     });
@@ -448,12 +369,8 @@ describe("run", () => {
   });
 
   it("rejects unknown targets for the help command", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["help", "unexpected"]);
 
@@ -463,12 +380,8 @@ describe("run", () => {
   });
 
   it("returns an exact JSON error for an unknown help target", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["help", "unexpected", "--json"]);
 
@@ -487,12 +400,8 @@ describe("run", () => {
   });
 
   it("returns an exact JSON error for an unknown command", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["wat", "--json"]);
 
@@ -511,12 +420,8 @@ describe("run", () => {
   });
 
   it("returns an exact JSON error for known-command usage failures", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "unexpected", "--json"]);
 
@@ -537,12 +442,8 @@ describe("run", () => {
   it("returns an exact JSON error for known-command state failures", async () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "show", "alpha", "--json"]);
 
@@ -563,12 +464,8 @@ describe("run", () => {
   it("returns an exact JSON success envelope on stdout only", async () => {
     const tempHome = createTempDir("outpost-test-");
     process.env.OUTPOST_HOME = tempHome;
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "--json"]);
 
@@ -604,12 +501,8 @@ describe("run", () => {
     });
     writeRegistry(tempHome, [repo]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "fetch", "--all", "--json"]);
 
@@ -642,9 +535,7 @@ describe("run", () => {
   });
 
   it("rejects unexpected positional argument for doctor", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["doctor", "unexpected"]);
 
@@ -653,9 +544,7 @@ describe("run", () => {
   });
 
   it("rejects unexpected positional argument for init", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["init", "unexpected"]);
 
@@ -664,9 +553,7 @@ describe("run", () => {
   });
 
   it("rejects unexpected positional argument for repo list", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["repo", "list", "unexpected"]);
 
@@ -675,22 +562,16 @@ describe("run", () => {
   });
 
   it("rejects unexpected positional argument for workspace list", async () => {
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "list", "unexpected"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Usage: outpost workspace list [--json]",
-    );
+    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost workspace list [--json]");
   });
 
   it("prints help when both --help and --version are present", async () => {
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["--help", "--version"]);
 

@@ -3,7 +3,7 @@ import { rmdir } from "node:fs/promises";
 import * as Command from "@effect/platform/Command";
 import type * as CommandExecutor from "@effect/platform/CommandExecutor";
 import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
+import type * as Path from "@effect/platform/Path";
 import { Effect, Either, Schema, Stream } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
@@ -12,10 +12,8 @@ import {
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../path-safety.js";
-import {
-  classifyAgentsOwnership,
-  deleteAgentsIfSnapshotMatches,
-} from "../workspace-agents.js";
+import type { CommandOutput } from "../types.js";
+import { classifyAgentsOwnership, deleteAgentsIfSnapshotMatches } from "../workspace-agents.js";
 import {
   acquireTicketLock,
   deleteManifest,
@@ -27,17 +25,13 @@ import {
   resolveWorktreePath,
   verifyWorktreeOwnership,
 } from "../workspace-manifest.js";
-import type { CommandOutput } from "../types.js";
-import {
-  promptAgentsRemovalConsent,
-  type AgentsRemovalPrompt,
-} from "./workspace-remove-prompt.js";
+import { type AgentsRemovalPrompt, promptAgentsRemovalConsent } from "./workspace-remove-prompt.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
   "WorkspaceRemoveError",
   {
     message: Schema.String,
-  },
+  }
 ) {}
 
 function gitCommand(...args: ReadonlyArray<string>) {
@@ -45,7 +39,7 @@ function gitCommand(...args: ReadonlyArray<string>) {
     Command.env({
       GCM_INTERACTIVE: "never",
       GIT_TERMINAL_PROMPT: "0",
-    }),
+    })
   );
 }
 
@@ -61,7 +55,7 @@ function partialRemovalOutput(
   worktreeNames: ReadonlyArray<string>,
   completed: ReadonlyArray<string>,
   remaining: ReadonlyArray<string>,
-  diagnostics: ReadonlyArray<string>,
+  diagnostics: ReadonlyArray<string>
 ): CommandOutput {
   return {
     command: "workspace remove",
@@ -85,7 +79,7 @@ export function runWorkspaceRemove(
   options: {
     interactive: boolean;
     promptAgentsRemovalConsent?: AgentsRemovalPrompt;
-  },
+  }
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
@@ -96,56 +90,43 @@ export function runWorkspaceRemove(
       return yield* Effect.fail(
         new WorkspaceRemoveError({
           message: "Usage: outpost workspace remove <ticket> [--json]",
-        }),
+        })
       );
     }
 
     yield* validateSemanticIdentifier("--ticket", ticket).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceRemoveError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
     yield* validatePathSegment("--ticket", ticket).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceRemoveError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceRemoveError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
 
     const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceRemoveError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
 
     if (!hasManifest) {
-      const ticketDirResult = yield* resolvePathWithinRoot(
-        config.worktreesRoot,
-        ticket,
-      ).pipe(Effect.either);
+      const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
+        Effect.either
+      );
 
       if (Either.isRight(ticketDirResult)) {
         const ticketDir = ticketDirResult.right;
         const dirExists = yield* fs
           .exists(ticketDir)
-          .pipe(
-            Effect.mapError(
-              (error) => new WorkspaceRemoveError({ message: error.message }),
-            ),
-          );
+          .pipe(Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message })));
 
         if (dirExists) {
           return yield* Effect.fail(
             new WorkspaceRemoveError({
               message: `No manifest found for ticket ${ticket}. The workspace directory exists at ${ticketDir} but is unmanaged. Managed removal requires a manifest.`,
-            }),
+            })
           );
         }
       }
@@ -153,50 +134,41 @@ export function runWorkspaceRemove(
       return yield* Effect.fail(
         new WorkspaceRemoveError({
           message: `Unknown workspace ticket: ${ticket}`,
-        }),
+        })
       );
     }
 
     const result = yield* Effect.scoped(
       Effect.acquireRelease(
-        acquireTicketLock(outpostHome, ticket).pipe(
-          Effect.mapError(toMapError),
-        ),
-        () =>
-          releaseTicketLock(outpostHome, ticket).pipe(
-            Effect.catchAll(() => Effect.void),
-          ),
+        acquireTicketLock(outpostHome, ticket).pipe(Effect.mapError(toMapError)),
+        () => releaseTicketLock(outpostHome, ticket).pipe(Effect.catchAll(() => Effect.void))
       ).pipe(
         Effect.flatMap(() =>
           Effect.gen(function* () {
             const manifest = yield* readManifest(outpostHome, ticket).pipe(
-              Effect.mapError(toMapError),
+              Effect.mapError(toMapError)
             );
 
             const workspaceDir = yield* resolveWorkspacePath(
               config.worktreesRoot,
-              manifest.workspacePath,
+              manifest.workspacePath
             ).pipe(Effect.mapError(toMapError));
 
             // --- AGENTS.md classification ---
-            const agentsFilePath = yield* resolvePathWithinRoot(
-              workspaceDir,
-              "AGENTS.md",
-            ).pipe(Effect.mapError(toMapError));
+            const agentsFilePath = yield* resolvePathWithinRoot(workspaceDir, "AGENTS.md").pipe(
+              Effect.mapError(toMapError)
+            );
 
-            const agentsClassification = yield* classifyAgentsOwnership(
-              agentsFilePath,
-            ).pipe(Effect.mapError(toMapError));
+            const agentsClassification = yield* classifyAgentsOwnership(agentsFilePath).pipe(
+              Effect.mapError(toMapError)
+            );
             const { ownership } = agentsClassification;
 
             if (ownership === "foreign" || ownership === "modified") {
               if (options.interactive) {
                 const consent = yield* Effect.tryPromise({
                   try: () =>
-                    (
-                      options.promptAgentsRemovalConsent ??
-                      promptAgentsRemovalConsent
-                    )({
+                    (options.promptAgentsRemovalConsent ?? promptAgentsRemovalConsent)({
                       ticket,
                       agentsFilePath,
                       ownership,
@@ -211,7 +183,7 @@ export function runWorkspaceRemove(
                   return yield* Effect.fail(
                     new WorkspaceRemoveError({
                       message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Delete AGENTS.md manually or approve its removal.`,
-                    }),
+                    })
                   );
                 }
                 // proceed
@@ -222,7 +194,7 @@ export function runWorkspaceRemove(
                       ownership === "modified"
                         ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Delete it manually and rerun, or retry in interactive mode.`
                         : `AGENTS.md at ${agentsFilePath} is not managed by outpost. Delete it manually and rerun, or retry in interactive mode.`,
-                  }),
+                  })
                 );
               }
             }
@@ -230,12 +202,12 @@ export function runWorkspaceRemove(
             for (const repo of manifest.repositories) {
               const resolvedManagedPath = yield* resolveManagedPath(
                 config.reposRoot,
-                repo.managedPath,
+                repo.managedPath
               ).pipe(Effect.mapError(toMapError));
 
               const resolvedWorktreePath = yield* resolveWorktreePath(
                 workspaceDir,
-                repo.worktreePath,
+                repo.worktreePath
               ).pipe(Effect.mapError(toMapError));
 
               const worktreeExists = yield* fs
@@ -254,46 +226,41 @@ export function runWorkspaceRemove(
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Cannot establish cleanliness for worktree ${resolvedWorktreePath}: managed repository ${resolvedManagedPath} is missing. Refusing removal.`,
-                  }),
+                  })
                 );
               }
 
               const ownershipValid = yield* verifyWorktreeOwnership(
                 resolvedWorktreePath,
-                resolvedManagedPath,
+                resolvedManagedPath
               ).pipe(Effect.mapError(toMapError));
 
               if (!ownershipValid) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Worktree ${resolvedWorktreePath} ownership mismatch: its .git does not point to the expected managed repository. Refusing removal to protect data.`,
-                  }),
+                  })
                 );
               }
 
-              const statusCommand = gitCommand(
-                "-C",
-                resolvedWorktreePath,
-                "status",
-                "--porcelain",
-              );
+              const statusCommand = gitCommand("-C", resolvedWorktreePath, "status", "--porcelain");
               const statusResult = yield* Effect.scoped(
                 Effect.gen(function* () {
                   const process = yield* Command.start(statusCommand);
                   const output = yield* process.stdout.pipe(
                     Stream.decodeText(),
-                    Stream.runFold("", (all, chunk) => all + chunk),
+                    Stream.runFold("", (all, chunk) => all + chunk)
                   );
                   const exitCode = yield* process.exitCode;
                   return { exitCode, output };
-                }),
+                })
               ).pipe(Effect.mapError(toMapError));
 
               if (statusResult.exitCode !== 0) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Failed to establish cleanliness for worktree ${resolvedWorktreePath}: git status exited with status ${statusResult.exitCode}. Refusing removal.`,
-                  }),
+                  })
                 );
               }
 
@@ -301,7 +268,7 @@ export function runWorkspaceRemove(
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Worktree ${resolvedWorktreePath} has uncommitted changes. Refusing removal. Commit or discard changes first.`,
-                  }),
+                  })
                 );
               }
             }
@@ -309,19 +276,17 @@ export function runWorkspaceRemove(
             const completed: Array<string> = [];
             const remaining: Array<string> = [];
             const diagnostics: Array<string> = [];
-            const worktreeNames = manifest.repositories.map(
-              (repo) => repo.worktreePath,
-            );
+            const worktreeNames = manifest.repositories.map((repo) => repo.worktreePath);
 
             for (const repo of manifest.repositories) {
               const resolvedManagedPath = yield* resolveManagedPath(
                 config.reposRoot,
-                repo.managedPath,
+                repo.managedPath
               ).pipe(Effect.mapError(toMapError));
 
               const resolvedWorktreePath = yield* resolveWorktreePath(
                 workspaceDir,
-                repo.worktreePath,
+                repo.worktreePath
               ).pipe(Effect.mapError(toMapError));
 
               const worktreeExists = yield* fs
@@ -339,8 +304,8 @@ export function runWorkspaceRemove(
                   resolvedManagedPath,
                   "worktree",
                   "remove",
-                  resolvedWorktreePath,
-                ),
+                  resolvedWorktreePath
+                )
               ).pipe(Effect.either);
 
               if (Either.isRight(removalResult) && removalResult.right === 0) {
@@ -352,7 +317,7 @@ export function runWorkspaceRemove(
               diagnostics.push(
                 Either.isLeft(removalResult)
                   ? `Failed to remove worktree ${resolvedWorktreePath}: ${removalResult.left.message}`
-                  : `Failed to remove worktree ${resolvedWorktreePath}: git exited with status ${removalResult.right}`,
+                  : `Failed to remove worktree ${resolvedWorktreePath}: git exited with status ${removalResult.right}`
               );
             }
 
@@ -363,13 +328,13 @@ export function runWorkspaceRemove(
                 worktreeNames,
                 completed,
                 remaining,
-                diagnostics,
+                diagnostics
               );
             }
 
             const agentsDeleteResult = yield* deleteAgentsIfSnapshotMatches(
               agentsFilePath,
-              agentsClassification.snapshot,
+              agentsClassification.snapshot
             ).pipe(Effect.mapError(toMapError));
 
             if (agentsDeleteResult === "mismatch") {
@@ -381,18 +346,14 @@ export function runWorkspaceRemove(
                 ["AGENTS.md"],
                 [
                   `AGENTS.md at ${agentsFilePath} changed after approval. Preserving file; manifest retained for retry.`,
-                ],
+                ]
               );
             }
 
-            const dirExists = yield* fs
-              .exists(workspaceDir)
-              .pipe(Effect.mapError(toMapError));
+            const dirExists = yield* fs.exists(workspaceDir).pipe(Effect.mapError(toMapError));
 
             if (dirExists) {
-              const directoryResult = yield* fs
-                .readDirectory(workspaceDir)
-                .pipe(Effect.either);
+              const directoryResult = yield* fs.readDirectory(workspaceDir).pipe(Effect.either);
 
               if (Either.isLeft(directoryResult)) {
                 return partialRemovalOutput(
@@ -403,7 +364,7 @@ export function runWorkspaceRemove(
                   [],
                   [
                     `Failed to inspect workspace directory ${workspaceDir}: ${directoryResult.left.message}`,
-                  ],
+                  ]
                 );
               }
 
@@ -417,7 +378,7 @@ export function runWorkspaceRemove(
                   remainingEntries,
                   [
                     `Workspace directory ${workspaceDir} contains unrecognized or residual entries: ${remainingEntries.join(", ")}`,
-                  ],
+                  ]
                 );
               }
 
@@ -425,8 +386,7 @@ export function runWorkspaceRemove(
                 try: () => rmdir(workspaceDir),
                 catch: (error) =>
                   new WorkspaceRemoveError({
-                    message:
-                      error instanceof Error ? error.message : String(error),
+                    message: error instanceof Error ? error.message : String(error),
                   }),
               }).pipe(Effect.either);
 
@@ -439,14 +399,12 @@ export function runWorkspaceRemove(
                   [],
                   [
                     `Failed to remove empty workspace directory ${workspaceDir}: ${removeDirectoryResult.left.message}`,
-                  ],
+                  ]
                 );
               }
             }
 
-            yield* deleteManifest(outpostHome, ticket).pipe(
-              Effect.mapError(toMapError),
-            );
+            yield* deleteManifest(outpostHome, ticket).pipe(Effect.mapError(toMapError));
 
             return {
               command: "workspace remove",
@@ -460,9 +418,9 @@ export function runWorkspaceRemove(
                 status: "success",
               },
             } satisfies CommandOutput;
-          }),
-        ),
-      ),
+          })
+        )
+      )
     );
 
     return result;

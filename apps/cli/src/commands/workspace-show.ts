@@ -1,6 +1,6 @@
 import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
-import { Either, Effect, Schema } from "effect";
+import type * as Path from "@effect/platform/Path";
+import { Effect, Either, Schema } from "effect";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import {
@@ -8,6 +8,7 @@ import {
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../path-safety.js";
+import type { CommandOutput } from "../types.js";
 import {
   deriveWorkspaceStatus,
   getManifestFilePath,
@@ -17,70 +18,53 @@ import {
   resolveWorktreePath,
   type WorkspaceStatus,
 } from "../workspace-manifest.js";
-import type { CommandOutput } from "../types.js";
 
 export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()(
   "WorkspaceShowError",
   {
     message: Schema.String,
-  },
+  }
 ) {}
 
 export function runWorkspaceShow(
   ticket: string | undefined,
-  extraArgs: ReadonlyArray<string>,
-): Effect.Effect<
-  CommandOutput,
-  WorkspaceShowError,
-  FileSystem.FileSystem | Path.Path
-> {
+  extraArgs: ReadonlyArray<string>
+): Effect.Effect<CommandOutput, WorkspaceShowError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     if (!ticket || extraArgs.length > 0) {
       return yield* Effect.fail(
         new WorkspaceShowError({
           message: "Usage: outpost workspace show <ticket> [--json]",
-        }),
+        })
       );
     }
 
     yield* validateSemanticIdentifier("--ticket", ticket).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceShowError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
     );
     yield* validatePathSegment("--ticket", ticket).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceShowError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
     );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new WorkspaceShowError({ message: error.message }),
-      ),
+      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
     );
 
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
-    const manifestResult = yield* readManifest(outpostHome, ticket).pipe(
-      Effect.either,
-    );
+    const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.either);
 
     if (Either.isRight(manifestResult)) {
       const manifest = manifestResult.right;
-      const status = yield* deriveWorkspaceStatus(
-        outpostHome,
-        config,
-        ticket,
-      ).pipe(
-        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus)),
+      const status = yield* deriveWorkspaceStatus(outpostHome, config, ticket).pipe(
+        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus))
       );
 
       let ticketDirectory: string | undefined;
       const workspacePathResult = yield* resolveWorkspacePath(
         config.worktreesRoot,
-        manifest.workspacePath,
+        manifest.workspacePath
       ).pipe(Effect.either);
       if (Either.isRight(workspacePathResult)) {
         ticketDirectory = workspacePathResult.right;
@@ -90,7 +74,7 @@ export function runWorkspaceShow(
       for (const repo of manifest.repositories) {
         const managedPathResult = yield* resolveManagedPath(
           config.reposRoot,
-          repo.managedPath,
+          repo.managedPath
         ).pipe(Effect.either);
         const resolvedManagedPath = Either.isRight(managedPathResult)
           ? managedPathResult.right
@@ -98,10 +82,9 @@ export function runWorkspaceShow(
 
         let resolvedWorktreePath: string | undefined;
         if (ticketDirectory) {
-          const wtResult = yield* resolveWorktreePath(
-            ticketDirectory,
-            repo.worktreePath,
-          ).pipe(Effect.either);
+          const wtResult = yield* resolveWorktreePath(ticketDirectory, repo.worktreePath).pipe(
+            Effect.either
+          );
           if (Either.isRight(wtResult)) {
             resolvedWorktreePath = wtResult.right;
           }
@@ -166,16 +149,13 @@ export function runWorkspaceShow(
       } satisfies CommandOutput;
     }
 
-    const ticketDirResult = yield* resolvePathWithinRoot(
-      config.worktreesRoot,
-      ticket,
-    ).pipe(Effect.either);
+    const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
+      Effect.either
+    );
 
     if (Either.isRight(ticketDirResult)) {
       const ticketDir = ticketDirResult.right;
-      const exists = yield* fs
-        .exists(ticketDir)
-        .pipe(Effect.catchAll(() => Effect.succeed(false)));
+      const exists = yield* fs.exists(ticketDir).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
       if (exists) {
         return {
@@ -196,7 +176,7 @@ export function runWorkspaceShow(
     return yield* Effect.fail(
       new WorkspaceShowError({
         message: `Unknown workspace ticket: ${ticket}`,
-      }),
+      })
     );
   });
 }

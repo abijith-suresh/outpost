@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createManagedRepoFixture,
+  createTempDir,
   existsSync,
   makeRepoRecord,
   mkdirSync,
@@ -10,7 +11,6 @@ import {
   readRegistry,
   runCli,
   setupAfterEach,
-  createTempDir,
   writeFileSync,
   writeRegistry,
 } from "./helpers.ts";
@@ -44,9 +44,7 @@ describe("run", () => {
       const remoteUrl = registry.repos[0].remoteUrl;
       const sourceRepoPath = registry.repos[0].sourceRepoPath;
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repoId]);
 
@@ -54,15 +52,9 @@ describe("run", () => {
       expect(infoSpy).toHaveBeenNthCalledWith(1, "outpost repo remove");
       expect(infoSpy).toHaveBeenNthCalledWith(2, `id: ${repoId}`);
       expect(infoSpy).toHaveBeenNthCalledWith(3, `name: ${name}`);
-      expect(infoSpy).toHaveBeenNthCalledWith(
-        4,
-        `managed repo path: ${managedRepoPath}`,
-      );
+      expect(infoSpy).toHaveBeenNthCalledWith(4, `managed repo path: ${managedRepoPath}`);
       expect(infoSpy).toHaveBeenNthCalledWith(5, `remote url: ${remoteUrl}`);
-      expect(infoSpy).toHaveBeenNthCalledWith(
-        6,
-        `source repo path: ${sourceRepoPath}`,
-      );
+      expect(infoSpy).toHaveBeenNthCalledWith(6, `source repo path: ${sourceRepoPath}`);
 
       const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
         repos: Array<unknown>;
@@ -95,9 +87,7 @@ describe("run", () => {
       const remoteUrl = registry.repos[0].remoteUrl;
       const sourceRepoPath = registry.repos[0].sourceRepoPath;
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repoId, "--json"]);
 
@@ -128,17 +118,12 @@ describe("run", () => {
         }),
       ]);
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", "unknown-id"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "Unknown repo id: unknown-id",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown repo id: unknown-id");
     });
 
     it("returns an error when repo remove is missing the id", async () => {
@@ -147,34 +132,24 @@ describe("run", () => {
 
       await runCli(["init"]);
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "Usage: outpost repo remove <id> [--json]",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo remove <id> [--json]");
     });
 
     it("returns an error when repo remove is run before init", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", "alpha"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        `Outpost is not initialized at ${tempHome}`,
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, `Outpost is not initialized at ${tempHome}`);
     });
 
     it("blocks removal when repo is referenced by a workspace manifest", async () => {
@@ -209,20 +184,16 @@ describe("run", () => {
       };
       writeFileSync(
         path.join(tempHome, "workspaces", "TICKET-1.json"),
-        JSON.stringify(manifest, null, 2),
+        JSON.stringify(manifest, null, 2)
       );
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          `Cannot remove repo ${repo.id}: referenced by workspace`,
-        ),
+        expect.stringContaining(`Cannot remove repo ${repo.id}: referenced by workspace`)
       );
     });
 
@@ -258,20 +229,16 @@ describe("run", () => {
       };
       writeFileSync(
         path.join(tempHome, "workspaces", "TICKET-2.json"),
-        JSON.stringify(manifest, null, 2),
+        JSON.stringify(manifest, null, 2)
       );
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          `Cannot remove repo ${repo.id}: referenced by workspace`,
-        ),
+        expect.stringContaining(`Cannot remove repo ${repo.id}: referenced by workspace`)
       );
     });
 
@@ -287,9 +254,7 @@ describe("run", () => {
       const registry = readRegistry(tempHome);
       const repo = registry.repos[0];
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 
@@ -312,20 +277,18 @@ describe("run", () => {
 
       writeFileSync(
         path.join(tempHome, "workspaces", "CORRUPT.json"),
-        "this is not valid json {{{",
+        "this is not valid json {{{"
       );
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Cannot remove repo ${repo.id}: workspace manifest(s) for "CORRUPT" could not be inspected`,
-        ),
+          `Cannot remove repo ${repo.id}: workspace manifest(s) for "CORRUPT" could not be inspected`
+        )
       );
     });
 
@@ -361,12 +324,10 @@ describe("run", () => {
       };
       writeFileSync(
         path.join(tempHome, "workspaces", "REF-123.json"),
-        JSON.stringify(manifest, null, 2),
+        JSON.stringify(manifest, null, 2)
       );
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 
@@ -388,16 +349,12 @@ describe("run", () => {
       const repo = registry.repos[0];
       const managedRepoPath = repo.managedRepoPath;
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id, "--dry-run"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenCalledWith(
-        "Usage: outpost repo remove <id> [--json]",
-      );
+      expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo remove <id> [--json]");
 
       const afterRegistry = readRegistry(tempHome);
       expect(afterRegistry.repos).toHaveLength(1);
@@ -417,16 +374,12 @@ describe("run", () => {
       const registry = readRegistry(tempHome);
       const repo = registry.repos[0];
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id, "unexpected"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenCalledWith(
-        "Usage: outpost repo remove <id> [--json]",
-      );
+      expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo remove <id> [--json]");
     });
 
     it("lists all referencing workspaces in the error message", async () => {
@@ -462,16 +415,14 @@ describe("run", () => {
 
       writeFileSync(
         path.join(tempHome, "workspaces", "WS-A.json"),
-        JSON.stringify(buildManifest("WS-A"), null, 2),
+        JSON.stringify(buildManifest("WS-A"), null, 2)
       );
       writeFileSync(
         path.join(tempHome, "workspaces", "WS-B.json"),
-        JSON.stringify(buildManifest("WS-B"), null, 2),
+        JSON.stringify(buildManifest("WS-B"), null, 2)
       );
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["repo", "remove", repo.id]);
 

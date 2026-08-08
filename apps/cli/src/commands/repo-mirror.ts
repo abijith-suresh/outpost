@@ -10,13 +10,10 @@ export const RepoMirrorDiagnosticSchema = Schema.Struct({
 
 export type RepoMirrorDiagnostic = typeof RepoMirrorDiagnosticSchema.Type;
 
-export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()(
-  "RepoMirrorError",
-  {
-    message: Schema.String,
-    diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
-  },
-) {}
+export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()("RepoMirrorError", {
+  message: Schema.String,
+  diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
+}) {}
 
 function gitCommand(...args: ReadonlyArray<string>) {
   return Command.make("git", ...args).pipe(
@@ -25,13 +22,13 @@ function gitCommand(...args: ReadonlyArray<string>) {
       GIT_TERMINAL_PROMPT: "0",
     }),
     Command.stdout("pipe"),
-    Command.stderr("pipe"),
+    Command.stderr("pipe")
   );
 }
 
 function captureDiagnosticLines(
   stream: Stream.Stream<Uint8Array, PlatformError>,
-  source: RepoMirrorDiagnostic["stream"],
+  source: RepoMirrorDiagnostic["stream"]
 ): Effect.Effect<ReadonlyArray<RepoMirrorDiagnostic>, PlatformError> {
   return stream.pipe(
     Stream.decodeText(),
@@ -41,27 +38,26 @@ function captureDiagnosticLines(
         .split(/\r?\n/u)
         .map((line) => line.trim())
         .filter((line) => line.length > 0)
-        .map((line) => ({ stream: source, line })),
-    ),
+        .map((line) => ({ stream: source, line }))
+    )
   );
 }
 
 function runGitCommand(
   command: Command.Command,
-  failureMessage: string,
+  failureMessage: string
 ): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
   return Effect.scoped(
     Effect.gen(function* () {
       const process = yield* Command.start(command);
-      const [stdoutDiagnostics, stderrDiagnostics, exitCode] =
-        yield* Effect.all(
-          [
-            captureDiagnosticLines(process.stdout, "stdout"),
-            captureDiagnosticLines(process.stderr, "stderr"),
-            process.exitCode,
-          ] as const,
-          { concurrency: "unbounded" },
-        );
+      const [stdoutDiagnostics, stderrDiagnostics, exitCode] = yield* Effect.all(
+        [
+          captureDiagnosticLines(process.stdout, "stdout"),
+          captureDiagnosticLines(process.stderr, "stderr"),
+          process.exitCode,
+        ] as const,
+        { concurrency: "unbounded" }
+      );
       const diagnostics = [...stdoutDiagnostics, ...stderrDiagnostics];
 
       if (exitCode !== 0) {
@@ -69,10 +65,10 @@ function runGitCommand(
           new RepoMirrorError({
             message: `${failureMessage} (exit status ${exitCode})`,
             diagnostics,
-          }),
+          })
         );
       }
-    }),
+    })
   ).pipe(
     Effect.mapError((error) =>
       error instanceof RepoMirrorError
@@ -80,40 +76,40 @@ function runGitCommand(
         : new RepoMirrorError({
             message: `${failureMessage}: ${error.message}`,
             diagnostics: [],
-          }),
-    ),
+          })
+    )
   );
 }
 
 export function cloneBareRepository(
   remoteUrl: string,
-  managedRepoPath: string,
+  managedRepoPath: string
 ): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
   return runGitCommand(
     gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
-    `git clone --mirror failed for ${remoteUrl}`,
+    `git clone --mirror failed for ${remoteUrl}`
   );
 }
 
 export function fetchBareRepository(
-  managedRepoPath: string,
+  managedRepoPath: string
 ): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
   return runGitCommand(
     gitCommand("fetch", "--all", "--prune", "--tags").pipe(
-      Command.workingDirectory(managedRepoPath),
+      Command.workingDirectory(managedRepoPath)
     ),
-    `git fetch failed for ${managedRepoPath}`,
+    `git fetch failed for ${managedRepoPath}`
   );
 }
 
 export function updateBareRepositoryRemote(
   managedRepoPath: string,
-  remoteUrl: string,
+  remoteUrl: string
 ): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
   return runGitCommand(
     gitCommand("remote", "set-url", "origin", remoteUrl).pipe(
-      Command.workingDirectory(managedRepoPath),
+      Command.workingDirectory(managedRepoPath)
     ),
-    `git remote set-url failed for ${managedRepoPath}`,
+    `git remote set-url failed for ${managedRepoPath}`
   );
 }

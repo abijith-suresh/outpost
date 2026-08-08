@@ -236,15 +236,11 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
 export function findCommand(path: readonly string[]): CommandSpec | undefined {
   if (path.length === 0) return undefined;
   return ALL_COMMANDS.find(
-    (spec) =>
-      spec.path.length === path.length &&
-      spec.path.every((seg, i) => seg === path[i]),
+    (spec) => spec.path.length === path.length && spec.path.every((seg, i) => seg === path[i])
   );
 }
 
-export function findCommandPrefix(
-  path: readonly string[],
-): CommandSpec | undefined {
+export function findCommandPrefix(path: readonly string[]): CommandSpec | undefined {
   let match: CommandSpec | undefined;
 
   for (const spec of ALL_COMMANDS) {
@@ -313,10 +309,7 @@ export function formatCommandSummary(spec: CommandSpec): string {
 }
 
 export function formatHelpText(version: string): string {
-  const commands = [
-    "Commands:",
-    ...ALL_COMMANDS.map(formatCommandSummary),
-  ].join("\n");
+  const commands = ["Commands:", ...ALL_COMMANDS.map(formatCommandSummary)].join("\n");
 
   return `outpost ${version}
 
@@ -346,7 +339,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
         "Arguments:",
         ...spec.arguments.map(
           (argument) =>
-            `  <${argument.name}>  ${argument.description}${argument.required ? " (required)" : ""}${argument.repeatable ? " (repeatable)" : ""}`,
+            `  <${argument.name}>  ${argument.description}${argument.required ? " (required)" : ""}${argument.repeatable ? " (repeatable)" : ""}`
         ),
       ]
     : [];
@@ -371,18 +364,10 @@ export function formatCommandDetail(spec: CommandSpec): string {
           "Options:",
           ...supportedOptions.map(
             (opt) =>
-              `  ${opt.name}${opt.valueName ? ` <${opt.valueName}>` : ""}  ${opt.description}${opt.required ? " (required)" : ""}${opt.repeatable ? " (repeatable)" : ""}`,
+              `  ${opt.name}${opt.valueName ? ` <${opt.valueName}>` : ""}  ${opt.description}${opt.required ? " (required)" : ""}${opt.repeatable ? " (repeatable)" : ""}`
           ),
         ]
       : [];
 
-  return [
-    usage,
-    "",
-    spec.description,
-    "",
-    ...attrs,
-    ...commandArguments,
-    ...options,
-  ].join("\n");
+  return [usage, "", spec.description, "", ...attrs, ...commandArguments, ...options].join("\n");
 }

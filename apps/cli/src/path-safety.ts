@@ -2,12 +2,9 @@ import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
-export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()(
-  "PathSafetyError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()("PathSafetyError", {
+  message: Schema.String,
+}) {}
 
 function containsAsciiControlCharacter(value: string): boolean {
   for (const character of value) {
@@ -21,10 +18,7 @@ function containsAsciiControlCharacter(value: string): boolean {
   return false;
 }
 
-export function getSemanticIdentifierError(
-  label: string,
-  value: string,
-): string | undefined {
+export function getSemanticIdentifierError(label: string, value: string): string | undefined {
   if (value.length === 0) {
     return `${label} may not be empty.`;
   }
@@ -37,14 +31,12 @@ export function getSemanticIdentifierError(
 }
 
 export function semanticIdentifierSchema(label: string) {
-  return Schema.String.pipe(
-    Schema.filter((value) => getSemanticIdentifierError(label, value)),
-  );
+  return Schema.String.pipe(Schema.filter((value) => getSemanticIdentifierError(label, value)));
 }
 
 export function validateSemanticIdentifier(
   label: string,
-  value: string,
+  value: string
 ): Effect.Effect<void, PathSafetyError> {
   const message = getSemanticIdentifierError(label, value);
 
@@ -54,13 +46,13 @@ export function validateSemanticIdentifier(
 export function validatePathSegment(
   label: string,
   value: string,
-  options: { allowTraversalSegments?: boolean } = {},
+  options: { allowTraversalSegments?: boolean } = {}
 ): Effect.Effect<void, PathSafetyError> {
   if (value.includes("/") || value.includes("\\")) {
     return Effect.fail(
       new PathSafetyError({
         message: `${label} may not contain path separators.`,
-      }),
+      })
     );
   }
 
@@ -68,7 +60,7 @@ export function validatePathSegment(
     return Effect.fail(
       new PathSafetyError({
         message: `${label} may not contain path traversal.`,
-      }),
+      })
     );
   }
 
@@ -93,7 +85,7 @@ export function resolvePathWithinRoot(
       return yield* Effect.fail(
         new PathSafetyError({
           message: `Path must remain within ${resolvedRoot}: ${resolvedPath}`,
-        }),
+        })
       );
     }
 
@@ -101,9 +93,7 @@ export function resolvePathWithinRoot(
   });
 }
 
-export function getPortablePathKey(
-  value: string,
-): Effect.Effect<string, never, Path.Path> {
+export function getPortablePathKey(value: string): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     return path
@@ -115,13 +105,11 @@ export function getPortablePathKey(
 }
 
 export function getCanonicalPortablePathKey(
-  value: string,
+  value: string
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const canonicalPath = yield* fs
-      .realPath(value)
-      .pipe(Effect.orElseSucceed(() => value));
+    const canonicalPath = yield* fs.realPath(value).pipe(Effect.orElseSucceed(() => value));
 
     return yield* getPortablePathKey(canonicalPath);
   });

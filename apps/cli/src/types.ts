@@ -49,7 +49,4 @@ export interface JsonErrorEnvelope {
   exitCode: 1;
 }
 
-export type JsonEnvelope =
-  | JsonSuccessEnvelope
-  | JsonPartialEnvelope
-  | JsonErrorEnvelope;
+export type JsonEnvelope = JsonSuccessEnvelope | JsonPartialEnvelope | JsonErrorEnvelope;

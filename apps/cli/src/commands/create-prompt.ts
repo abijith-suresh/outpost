@@ -34,15 +34,12 @@ function parsePromptedRepoIds(value: string): Array<string> {
       value
         .split(",")
         .map((item) => item.trim())
-        .filter(Boolean),
+        .filter(Boolean)
     ),
   ];
 }
 
-function validateNoPathSeparators(
-  label: string,
-  value: string,
-): string | undefined {
+function validateNoPathSeparators(label: string, value: string): string | undefined {
   if (value.includes("/") || value.includes("\\")) {
     return `${label} must not contain path separators (/ or \\)`;
   }
@@ -52,14 +49,11 @@ async function promptForRequiredValue(
   ask: (question: string) => Promise<string>,
   label: string,
   validate?: (value: string) => string | undefined,
-  log?: (message: string) => void,
+  log?: (message: string) => void
 ): Promise<string> {
   while (true) {
     const rawAnswer = await ask(label);
-    const semanticError = getSemanticIdentifierError(
-      label.trim().replace(/:$/, ""),
-      rawAnswer,
-    );
+    const semanticError = getSemanticIdentifierError(label.trim().replace(/:$/, ""), rawAnswer);
 
     if (semanticError) {
       log?.(semanticError);
@@ -85,7 +79,7 @@ async function promptForRequiredValue(
 async function promptForRepoIds(
   ask: (question: string) => Promise<string>,
   availableRepos: ReadonlyArray<CreatePromptRepoOption>,
-  log: (message: string) => void,
+  log: (message: string) => void
 ): Promise<ReadonlyArray<string>> {
   const availableRepoIds = new Set(availableRepos.map((repo) => repo.id));
 
@@ -112,9 +106,7 @@ async function promptForRepoIds(
       continue;
     }
 
-    const unknownRepoIds = repoIds.filter(
-      (repoId) => !availableRepoIds.has(repoId),
-    );
+    const unknownRepoIds = repoIds.filter((repoId) => !availableRepoIds.has(repoId));
 
     if (unknownRepoIds.length > 0) {
       const label = unknownRepoIds.length === 1 ? "id" : "ids";
@@ -128,7 +120,7 @@ async function promptForRepoIds(
 
 export async function promptForMissingCreateArgs(
   input: CreatePromptInput,
-  options?: CreatePromptOptions,
+  options?: CreatePromptOptions
 ): Promise<CreatePromptResult> {
   if (options?.ask) {
     const log = options.log ?? console.log;
@@ -138,7 +130,7 @@ export async function promptForMissingCreateArgs(
         options.ask,
         "Ticket id: ",
         validateNoPathSeparators.bind(null, "Ticket"),
-        log,
+        log
       ));
     const type =
       input.type ??
@@ -146,7 +138,7 @@ export async function promptForMissingCreateArgs(
         options.ask,
         "Branch type: ",
         validateNoPathSeparators.bind(null, "Branch type"),
-        log,
+        log
       ));
     const repoIds =
       input.repoIds.length > 0
@@ -187,7 +179,7 @@ export async function promptForMissingCreateArgs(
         ask,
         "Ticket id: ",
         validateNoPathSeparators.bind(null, "Ticket"),
-        log,
+        log
       ));
     const type =
       input.type ??
@@ -195,7 +187,7 @@ export async function promptForMissingCreateArgs(
         ask,
         "Branch type: ",
         validateNoPathSeparators.bind(null, "Branch type"),
-        log,
+        log
       ));
     const repoIds =
       input.repoIds.length > 0

@@ -9,9 +9,7 @@ export type AgentsRemovalPromptRequest = {
   readonly ownership: Extract<AgentsOwnership, "modified" | "foreign">;
 };
 
-export type AgentsRemovalPrompt = (
-  request: AgentsRemovalPromptRequest,
-) => Promise<boolean>;
+export type AgentsRemovalPrompt = (request: AgentsRemovalPromptRequest) => Promise<boolean>;
 
 export type PromptReadline = {
   question(question: string): Promise<string>;
@@ -30,7 +28,7 @@ function promptMessage(request: AgentsRemovalPromptRequest): string {
 }
 
 export function makeAgentsRemovalPrompt(
-  options: AgentsRemovalPromptOptions = {},
+  options: AgentsRemovalPromptOptions = {}
 ): AgentsRemovalPrompt {
   const createReadline =
     options.createReadline ??
@@ -85,7 +83,7 @@ export function makeAgentsRemovalPrompt(
             const normalized = answer.trim().toLowerCase();
             settle(normalized === "y" || normalized === "yes", true);
           },
-          () => settle(false, true),
+          () => settle(false, true)
         );
     });
   };

@@ -1,23 +1,17 @@
-import * as FileSystem from "@effect/platform/FileSystem";
 import type { PlatformError } from "@effect/platform/Error";
+import * as FileSystem from "@effect/platform/FileSystem";
 import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
 
-import {
-  getCanonicalPortablePathKey,
-  semanticIdentifierSchema,
-} from "./path-safety.js";
+import { getCanonicalPortablePathKey, semanticIdentifierSchema } from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
 export const CURRENT_CONFIG_VERSION = 1;
 
-export class ConfigError extends Schema.TaggedError<ConfigError>()(
-  "ConfigError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class ConfigError extends Schema.TaggedError<ConfigError>()("ConfigError", {
+  message: Schema.String,
+}) {}
 
 export const OutpostConfigSchema = Schema.Struct({
   version: Schema.Literal(1),
@@ -28,22 +22,19 @@ export const OutpostConfigSchema = Schema.Struct({
 
 export type OutpostConfig = Schema.Schema.Type<typeof OutpostConfigSchema>;
 
-export function migrateConfig(
-  raw: unknown,
-): Effect.Effect<unknown, ConfigError> {
+export function migrateConfig(raw: unknown): Effect.Effect<unknown, ConfigError> {
   return Effect.gen(function* () {
     if (typeof raw !== "object" || raw === null) {
       return raw;
     }
     const obj = raw as Record<string, unknown>;
-    const version =
-      typeof obj.version === "number" ? obj.version : CURRENT_CONFIG_VERSION;
+    const version = typeof obj.version === "number" ? obj.version : CURRENT_CONFIG_VERSION;
 
     if (version > CURRENT_CONFIG_VERSION) {
       return yield* Effect.fail(
         new ConfigError({
           message: `Config version ${version} is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`,
-        }),
+        })
       );
     }
 
@@ -76,9 +67,7 @@ export const RepoRegistrySchema = Schema.Struct({
 
 export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
 
-export function getRepoHealthDiagnostics(
-  repos: ReadonlyArray<RepoRecord>,
-): Effect.Effect<
+export function getRepoHealthDiagnostics(repos: ReadonlyArray<RepoRecord>): Effect.Effect<
   {
     missingRepoCount: number;
     missingRepos: Array<string>;
@@ -97,15 +86,15 @@ export function getRepoHealthDiagnostics(
             ({
               ...repo,
               status: exists ? "ok" : "missing",
-            }) satisfies RepoRecordWithStatus,
-        ),
-      ),
+            }) satisfies RepoRecordWithStatus
+        )
+      )
     );
     const missingRepos = [
       ...new Set(
         reposWithStatus
           .filter((repo) => repo.status === "missing")
-          .map((repo) => repo.managedRepoPath),
+          .map((repo) => repo.managedRepoPath)
       ),
     ].sort();
 
@@ -117,15 +106,10 @@ export function getRepoHealthDiagnostics(
   });
 }
 
-export function getDefaultOutpostHome(): Effect.Effect<
-  string,
-  never,
-  Path.Path
-> {
+export function getDefaultOutpostHome(): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
-    const homeDirectory =
-      process.env.HOME ?? process.env.USERPROFILE ?? process.cwd();
+    const homeDirectory = process.env.HOME ?? process.env.USERPROFILE ?? process.cwd();
 
     return path.resolve(homeDirectory, ".outpost");
   });
@@ -144,9 +128,7 @@ export function resolveOutpostHome(): Effect.Effect<string, never, Path.Path> {
   });
 }
 
-export function getConfigFilePath(
-  outpostHome: string,
-): Effect.Effect<string, never, Path.Path> {
+export function getConfigFilePath(outpostHome: string): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     return path.join(outpostHome, "config.json");
@@ -154,7 +136,7 @@ export function getConfigFilePath(
 }
 
 export function getRepoRegistryFilePath(
-  outpostHome: string,
+  outpostHome: string
 ): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
@@ -163,7 +145,7 @@ export function getRepoRegistryFilePath(
 }
 
 export function buildInitialConfig(
-  outpostHome: string,
+  outpostHome: string
 ): Effect.Effect<OutpostConfig, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
@@ -182,7 +164,7 @@ export const emptyRepoRegistry: RepoRegistry = {
 };
 
 function validateRepoRegistryUniqueness(
-  registry: RepoRegistry,
+  registry: RepoRegistry
 ): Effect.Effect<RepoRegistry, ConfigError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const ids = new Set<string>();
@@ -193,19 +175,17 @@ function validateRepoRegistryUniqueness(
         return yield* Effect.fail(
           new ConfigError({
             message: `Repo registry contains duplicate id: ${repo.id}`,
-          }),
+          })
         );
       }
       ids.add(repo.id);
 
-      const managedRepoPathKey = yield* getCanonicalPortablePathKey(
-        repo.managedRepoPath,
-      );
+      const managedRepoPathKey = yield* getCanonicalPortablePathKey(repo.managedRepoPath);
       if (managedRepoPaths.has(managedRepoPathKey)) {
         return yield* Effect.fail(
           new ConfigError({
             message: `Repo registry contains duplicate managed path: ${repo.managedRepoPath}`,
-          }),
+          })
         );
       }
       managedRepoPaths.add(managedRepoPathKey);
@@ -216,12 +196,8 @@ function validateRepoRegistryUniqueness(
 }
 
 export function loadRepoRegistry(
-  outpostHome: string,
-): Effect.Effect<
-  RepoRegistry,
-  ConfigError | PlatformError,
-  FileSystem.FileSystem | Path.Path
-> {
+  outpostHome: string
+): Effect.Effect<RepoRegistry, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
@@ -238,8 +214,8 @@ export function loadRepoRegistry(
         (error) =>
           new ConfigError({
             message: `Failed to read repo registry ${registryFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     const parsedJson = yield* Effect.try({
@@ -250,15 +226,13 @@ export function loadRepoRegistry(
         }),
     });
 
-    const registry = yield* Schema.decodeUnknown(RepoRegistrySchema)(
-      parsedJson,
-    ).pipe(
+    const registry = yield* Schema.decodeUnknown(RepoRegistrySchema)(parsedJson).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
             message: `Invalid repo registry ${registryFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     return yield* validateRepoRegistryUniqueness(registry);
@@ -267,22 +241,16 @@ export function loadRepoRegistry(
 
 export function writeRepoRegistry(
   outpostHome: string,
-  registry: RepoRegistry,
-): Effect.Effect<
-  void,
-  ConfigError | PlatformError,
-  FileSystem.FileSystem | Path.Path
-> {
+  registry: RepoRegistry
+): Effect.Effect<void, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
-    const validatedRegistry = yield* Schema.decodeUnknown(RepoRegistrySchema)(
-      registry,
-    ).pipe(
+    const validatedRegistry = yield* Schema.decodeUnknown(RepoRegistrySchema)(registry).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
             message: `Invalid repo registry: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
@@ -291,19 +259,15 @@ export function writeRepoRegistry(
         (error) =>
           new ConfigError({
             message: `Failed to write repo registry ${registryFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
   });
 }
 
 export function loadConfig(
-  outpostHome: string,
-): Effect.Effect<
-  OutpostConfig,
-  ConfigError | PlatformError,
-  FileSystem.FileSystem | Path.Path
-> {
+  outpostHome: string
+): Effect.Effect<OutpostConfig, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const configFilePath = yield* getConfigFilePath(outpostHome);
@@ -320,8 +284,8 @@ export function loadConfig(
         (error) =>
           new ConfigError({
             message: `Failed to read config file ${configFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     const parsedJson = yield* Effect.try({
@@ -337,8 +301,8 @@ export function loadConfig(
         (error) =>
           new ConfigError({
             message: `Invalid config file ${configFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
 
     return yield* Schema.decodeUnknown(OutpostConfigSchema)(migrated).pipe(
@@ -346,8 +310,8 @@ export function loadConfig(
         (error) =>
           new ConfigError({
             message: `Invalid config file ${configFilePath}: ${error.message}`,
-          }),
-      ),
+          })
+      )
     );
   });
 }

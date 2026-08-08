@@ -4,29 +4,25 @@ import * as FileSystem from "@effect/platform/FileSystem";
 import { NodeContext } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
 import { describe, expect, it, vi } from "vitest";
-
-import {
-  makeAgentsRemovalPrompt,
-  type AgentsRemovalPrompt,
-  type PromptReadline,
-} from "../src/commands/workspace-remove-prompt.ts";
 import { runWorkspaceRemove } from "../src/commands/workspace-remove.ts";
 import {
-  AGENTS_MARKER_PREFIX,
-  computeSha256,
-} from "../src/workspace-agents.ts";
+  type AgentsRemovalPrompt,
+  makeAgentsRemovalPrompt,
+  type PromptReadline,
+} from "../src/commands/workspace-remove-prompt.ts";
+import { AGENTS_MARKER_PREFIX, computeSha256 } from "../src/workspace-agents.ts";
 
 import {
   createManagedRepoFixture,
+  createTempDir,
   existsSync,
+  localRepoId,
   mkdirSync,
   path,
   readFileSync,
   readRegistry,
   runCli,
-  localRepoId,
   setupAfterEach,
-  createTempDir,
   writeFileSync,
 } from "./helpers.ts";
 
@@ -39,7 +35,7 @@ class RemovalPromptReadline implements PromptReadline {
 
   constructor(
     private readonly scenario: PromptScenario | "yes",
-    private readonly onQuestion?: () => void,
+    private readonly onQuestion?: () => void
   ) {}
 
   once(event: "SIGINT" | "close", listener: () => void): void {
@@ -52,9 +48,7 @@ class RemovalPromptReadline implements PromptReadline {
     this.onQuestion?.();
 
     if (this.scenario === "eof" || this.scenario === "sigint") {
-      queueMicrotask(() =>
-        this.emit(this.scenario === "eof" ? "close" : "SIGINT"),
-      );
+      queueMicrotask(() => this.emit(this.scenario === "eof" ? "close" : "SIGINT"));
       return new Promise(() => undefined);
     }
 
@@ -62,9 +56,7 @@ class RemovalPromptReadline implements PromptReadline {
       return Promise.reject(new Error("simulated question rejection"));
     }
 
-    return Promise.resolve(
-      this.scenario === "yes" ? "yes" : this.scenario === "empty" ? "" : "no",
-    );
+    return Promise.resolve(this.scenario === "yes" ? "yes" : this.scenario === "empty" ? "" : "no");
   }
 
   close(): void {
@@ -82,7 +74,7 @@ class RemovalPromptReadline implements PromptReadline {
 
 function removalPrompt(
   scenario: PromptScenario | "yes",
-  onQuestion?: () => void,
+  onQuestion?: () => void
 ): AgentsRemovalPrompt {
   return makeAgentsRemovalPrompt({
     createReadline: () => new RemovalPromptReadline(scenario, onQuestion),
@@ -109,7 +101,7 @@ async function createAgentsWorkspace(ticket: string) {
       "feat",
       "--repo",
       localRepoId(repo.tempRemote),
-    ]),
+    ])
   ).toBe(0);
 
   const registry = readRegistry(tempHome);
@@ -120,11 +112,7 @@ async function createAgentsWorkspace(ticket: string) {
   return {
     agentsPath: path.join(ticketDirectory, "AGENTS.md"),
     branch: `feat/${ticket}`,
-    lockPath: path.join(
-      tempHome,
-      "workspaces",
-      `.${ticket.toLowerCase()}.lock`,
-    ),
+    lockPath: path.join(tempHome, "workspaces", `.${ticket.toLowerCase()}.lock`),
     managedRepoPath,
     manifestPath: path.join(tempHome, "workspaces", `${ticket}.json`),
     tempHome,
@@ -134,23 +122,20 @@ async function createAgentsWorkspace(ticket: string) {
   };
 }
 
-async function runInteractiveWorkspaceRemove(
-  ticket: string,
-  prompt: AgentsRemovalPrompt,
-) {
+async function runInteractiveWorkspaceRemove(ticket: string, prompt: AgentsRemovalPrompt) {
   return Effect.runPromise(
     Effect.exit(
       runWorkspaceRemove(ticket, [], {
         interactive: true,
         promptAgentsRemovalConsent: prompt,
-      }).pipe(Effect.provide(NodeContext.layer)),
-    ),
+      }).pipe(Effect.provide(NodeContext.layer))
+    )
   );
 }
 
 async function expectWorkspaceIntact(
   fixture: Awaited<ReturnType<typeof createAgentsWorkspace>>,
-  agentsContent: string,
+  agentsContent: string
 ) {
   const { execFileSync } = await import("node:child_process");
 
@@ -167,20 +152,17 @@ async function expectWorkspaceIntact(
       "--verify",
       "--quiet",
       `refs/heads/${fixture.branch}`,
-    ]),
+    ])
   ).not.toThrow();
   const registrations = execFileSync(
     "git",
     ["--git-dir", fixture.managedRepoPath, "worktree", "list", "--porcelain"],
-    { encoding: "utf8" },
+    { encoding: "utf8" }
   );
   expect(registrations).toContain(`worktree ${fixture.worktreePath}`);
 }
 
-async function installFailingGitShim(
-  tempHome: string,
-  failure: "status" | "worktree-remove",
-) {
+async function installFailingGitShim(tempHome: string, failure: "status" | "worktree-remove") {
   const { execFileSync } = await import("node:child_process");
   const realGit = execFileSync("sh", ["-c", "command -v git"], {
     encoding: "utf8",
@@ -208,7 +190,7 @@ if [ "$OUTPOST_TEST_GIT_FAILURE" = "worktree-remove" ]; then
   done
 fi
 exec "${realGit}" "$@"
-`,
+`
   );
   chmodSync(shimPath, 0o755);
   process.env.PATH = `${binDirectory}:${process.env.PATH ?? ""}`;
@@ -226,7 +208,7 @@ function writeManifestFixture(
     name: string;
     base: string;
     bareRepoPath: string;
-  }>,
+  }>
 ) {
   const manifestsDir = path.join(outpostHome, "workspaces");
   mkdirSync(manifestsDir, { recursive: true });
@@ -267,14 +249,9 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const ticketDirectory = path.join(tempHome, "worktrees", "SHOW-123");
-    const worktreePath = path.join(
-      ticketDirectory,
-      path.basename(alpha.tempRepo),
-    );
+    const worktreePath = path.join(ticketDirectory, path.basename(alpha.tempRepo));
 
     const exitCode = await runCli(["workspace", "show", "SHOW-123"]);
 
@@ -291,7 +268,7 @@ describe("run", () => {
     // calls[8] is "manifest: ..."
     expect(calls[9]).toBe("worktrees: 1");
     expect(calls[10]).toBe(
-      `- ${path.basename(alpha.tempRepo)} (id: ${localRepoId(alpha.tempRemote)})`,
+      `- ${path.basename(alpha.tempRepo)} (id: ${localRepoId(alpha.tempRemote)})`
     );
     expect(calls[11]).toBe(`  path: ${worktreePath}`);
     expect(calls[12]).toBe("  base: main");
@@ -315,16 +292,9 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    const exitCode = await runCli([
-      "workspace",
-      "show",
-      "SHOW-JSON-456",
-      "--json",
-    ]);
+    const exitCode = await runCli(["workspace", "show", "SHOW-JSON-456", "--json"]);
     const output = infoSpy.mock.calls[0]?.[0] as string;
 
     expect(exitCode).toBe(0);
@@ -365,9 +335,7 @@ describe("run", () => {
       localRepoId(beta.tempRemote),
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "list"]);
 
@@ -376,9 +344,7 @@ describe("run", () => {
     expect(calls[0]).toBe("outpost workspace list");
     expect(calls[1]).toBe("workspaces: 2");
     expect(calls[2]).toContain("- LIST-123 [ready]");
-    expect(calls[3]).toBe(
-      `  workspace directory: ${path.join(tempHome, "worktrees", "LIST-123")}`,
-    );
+    expect(calls[3]).toBe(`  workspace directory: ${path.join(tempHome, "worktrees", "LIST-123")}`);
     expect(calls[4]).toBe("  type: feat");
     expect(calls[5]).toBe("  branch: feat/LIST-123");
     // calls[6] is "  created at: ..." (timestamp varies)
@@ -404,9 +370,7 @@ describe("run", () => {
       localRepoId(alpha.tempRemote),
     ]);
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "list", "--json"]);
     const output = infoSpy.mock.calls[0]?.[0] as string;
@@ -426,17 +390,12 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "show", "missing"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "Unknown workspace ticket: missing",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown workspace ticket: missing");
   });
 
   it("shows a corrupt manifest as invalid without inferring directory contents", async () => {
@@ -448,14 +407,9 @@ describe("run", () => {
     const ticketDirectory = path.join(tempHome, "worktrees", "CORRUPT-SHOW");
     mkdirSync(ticketDirectory, { recursive: true });
     writeFileSync(path.join(ticketDirectory, "not-a-worktree"), "keep\n");
-    writeFileSync(
-      path.join(tempHome, "workspaces", "CORRUPT-SHOW.json"),
-      "{invalid json",
-    );
+    writeFileSync(path.join(tempHome, "workspaces", "CORRUPT-SHOW.json"), "{invalid json");
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "show", "CORRUPT-SHOW"]);
     const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
@@ -472,27 +426,16 @@ describe("run", () => {
 
     await runCli(["init"]);
 
-    const outsideWorktreesDirectory = path.join(
-      tempHome,
-      "repos",
-      "outside-worktrees",
-    );
+    const outsideWorktreesDirectory = path.join(tempHome, "repos", "outside-worktrees");
     mkdirSync(outsideWorktreesDirectory, { recursive: true });
 
-    const infoSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const exitCode = await runCli(["workspace", "show", "../repos"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(
-      1,
-      "--ticket may not contain path separators.",
-    );
+    expect(errorSpy).toHaveBeenNthCalledWith(1, "--ticket may not contain path separators.");
     expect(infoSpy).not.toHaveBeenCalled();
     expect(existsSync(outsideWorktreesDirectory)).toBe(true);
   });
@@ -520,29 +463,20 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "REMOVE-123",
-        "feat",
-        "feat/REMOVE-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "REMOVE-123", "feat", "feat/REMOVE-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-123");
 
       expect(existsSync(ticketDirectory)).toBe(true);
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
 
@@ -580,38 +514,20 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "REMOVE-JSON-456",
-        "feat",
-        "feat/REMOVE-JSON-456",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
-
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
-
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "REMOVE-JSON-456",
-        "--json",
+      writeManifestFixture(tempHome, reposRoot, "REMOVE-JSON-456", "feat", "feat/REMOVE-JSON-456", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
       ]);
+
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+      const exitCode = await runCli(["workspace", "remove", "REMOVE-JSON-456", "--json"]);
       const output = infoSpy.mock.calls[0]?.[0] as string;
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "REMOVE-JSON-456",
-      );
+      const ticketDirectory = path.join(tempHome, "worktrees", "REMOVE-JSON-456");
 
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledTimes(1);
@@ -630,17 +546,12 @@ describe("run", () => {
 
       await runCli(["init"]);
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "missing"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "Unknown workspace ticket: missing",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "Unknown workspace ticket: missing");
     });
 
     it("rejects workspace remove tickets with path traversal before removing outside worktrees", async () => {
@@ -653,17 +564,12 @@ describe("run", () => {
       const outsideWorktreesFile = path.join(reposRoot, "keep.txt");
       writeFileSync(outsideWorktreesFile, "keep\n");
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "../repos"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(
-        1,
-        "--ticket may not contain path separators.",
-      );
+      expect(errorSpy).toHaveBeenNthCalledWith(1, "--ticket may not contain path separators.");
       expect(existsSync(reposRoot)).toBe(true);
       expect(existsSync(outsideWorktreesFile)).toBe(true);
     });
@@ -674,16 +580,14 @@ describe("run", () => {
 
       await runCli(["init"]);
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenNthCalledWith(
         1,
-        "Usage: outpost workspace remove <ticket> [--json]",
+        "Usage: outpost workspace remove <ticket> [--json]"
       );
     });
 
@@ -713,30 +617,21 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "REMOVE-123",
-        "feat",
-        "feat/REMOVE-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "REMOVE-123", "feat", "feat/REMOVE-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
       expect(exitCode).toBe(0);
 
-      const worktreeList = execFileSync(
-        "git",
-        ["--git-dir", managedRepoPath, "worktree", "list"],
-        { encoding: "utf8" },
-      );
+      const worktreeList = execFileSync("git", ["--git-dir", managedRepoPath, "worktree", "list"], {
+        encoding: "utf8",
+      });
       expect(worktreeList).not.toContain("REMOVE-123");
     });
 
@@ -769,7 +664,7 @@ describe("run", () => {
 
       const registry = readRegistry(tempHome);
       const secondRepo = registry.repos.find(
-        (repo) => repo.id === localRepoId(second.tempRemote),
+        (repo) => repo.id === localRepoId(second.tempRemote)
       ) as NonNullable<(typeof registry.repos)[number]>;
       const reposRoot = path.join(tempHome, "repos");
 
@@ -786,18 +681,14 @@ describe("run", () => {
             base: "main",
             bareRepoPath: secondRepo.managedRepoPath,
           },
-        ],
+        ]
       );
 
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "REMOVE-SHARED-123",
-      ]);
+      const exitCode = await runCli(["workspace", "remove", "REMOVE-SHARED-123"]);
       const secondWorktreeList = execFileSync(
         "git",
         ["--git-dir", secondRepo.managedRepoPath, "worktree", "list"],
-        { encoding: "utf8" },
+        { encoding: "utf8" }
       );
 
       expect(exitCode).toBe(0);
@@ -844,19 +735,13 @@ describe("run", () => {
             base: "main",
             bareRepoPath: managedRepoPath,
           },
-        ],
+        ]
       );
 
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "REMOVE-LINKED-123",
-      ]);
-      const worktreeList = execFileSync(
-        "git",
-        ["--git-dir", managedRepoPath, "worktree", "list"],
-        { encoding: "utf8" },
-      );
+      const exitCode = await runCli(["workspace", "remove", "REMOVE-LINKED-123"]);
+      const worktreeList = execFileSync("git", ["--git-dir", managedRepoPath, "worktree", "list"], {
+        encoding: "utf8",
+      });
 
       expect(exitCode).toBe(0);
       expect(worktreeList).not.toContain("REMOVE-LINKED-123");
@@ -887,32 +772,23 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "REMOVE-123",
-        "feat",
-        "feat/REMOVE-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "REMOVE-123", "feat", "feat/REMOVE-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       rmSync(managedRepoPath, { recursive: true, force: true });
 
       const manifestPath = path.join(tempHome, "workspaces", "REMOVE-123.json");
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "REMOVE-123"]);
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "Cannot establish cleanliness",
+        "Cannot establish cleanliness"
       );
       expect(existsSync(ticketDirectory)).toBe(true);
       expect(existsSync(manifestPath)).toBe(true);
@@ -936,37 +812,23 @@ describe("run", () => {
         localRepoId(alpha.tempRemote),
       ]);
 
-      const expectedDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "WRONG-WORKSPACE-PATH",
-      );
+      const expectedDirectory = path.join(tempHome, "worktrees", "WRONG-WORKSPACE-PATH");
       const otherDirectory = path.join(tempHome, "worktrees", "OTHER-TICKET");
       const sentinelPath = path.join(otherDirectory, "keep.txt");
       mkdirSync(otherDirectory, { recursive: true });
       writeFileSync(sentinelPath, "keep\n");
 
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "WRONG-WORKSPACE-PATH.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "WRONG-WORKSPACE-PATH.json");
       const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
       manifest.workspacePath = "OTHER-TICKET";
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "WRONG-WORKSPACE-PATH",
-      ]);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "WRONG-WORKSPACE-PATH"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "does not resolve to the expected ticket directory",
+        "does not resolve to the expected ticket directory"
       );
       expect(existsSync(expectedDirectory)).toBe(true);
       expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
@@ -994,38 +856,20 @@ describe("run", () => {
       const outsideDirectory = createTempDir("outpost-outside-workspace-");
       const sentinelPath = path.join(outsideDirectory, "keep.txt");
       writeFileSync(sentinelPath, "keep\n");
-      symlinkSync(
-        outsideDirectory,
-        path.join(tempHome, "worktrees", "escape-link"),
-        "dir",
-      );
+      symlinkSync(outsideDirectory, path.join(tempHome, "worktrees", "escape-link"), "dir");
 
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "WORKSPACE-SYMLINK.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "WORKSPACE-SYMLINK.json");
       const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
       manifest.workspacePath = "escape-link";
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
-      const expectedDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "WORKSPACE-SYMLINK",
-      );
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "WORKSPACE-SYMLINK",
-      ]);
+      const expectedDirectory = path.join(tempHome, "worktrees", "WORKSPACE-SYMLINK");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "WORKSPACE-SYMLINK"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "Path must remain within",
+        "Path must remain within"
       );
       expect(existsSync(expectedDirectory)).toBe(true);
       expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
@@ -1068,19 +912,15 @@ describe("run", () => {
       rmSync(sourceDirectory, { recursive: true, force: true });
       symlinkSync(targetDirectory, sourceDirectory, "dir");
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "SOURCE-TICKET"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "does not resolve to the expected ticket directory",
+        "does not resolve to the expected ticket directory"
       );
       expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
-      expect(
-        existsSync(path.join(tempHome, "workspaces", "SOURCE-TICKET.json")),
-      ).toBe(true);
+      expect(existsSync(path.join(tempHome, "workspaces", "SOURCE-TICKET.json"))).toBe(true);
     });
 
     it("rejects a managed repository symlink escape before cleanup", async () => {
@@ -1105,32 +945,22 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const outsideManagedPath = path.join(
         createTempDir("outpost-outside-managed-"),
-        "outside.git",
+        "outside.git"
       );
       mkdirSync(outsideManagedPath, { recursive: true });
       rmSync(managedRepoPath, { recursive: true, force: true });
       symlinkSync(outsideManagedPath, managedRepoPath, "dir");
 
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "SYMLINK-ESCAPE",
-      );
+      const ticketDirectory = path.join(tempHome, "worktrees", "SYMLINK-ESCAPE");
       const worktreePath = path.join(ticketDirectory, registry.repos[0].name);
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "SYMLINK-ESCAPE.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "SYMLINK-ESCAPE.json");
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "SYMLINK-ESCAPE"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "Path must remain within",
+        "Path must remain within"
       );
       expect(existsSync(worktreePath)).toBe(true);
       expect(existsSync(manifestPath)).toBe(true);
@@ -1161,38 +991,22 @@ describe("run", () => {
         tempHome,
         "worktrees",
         "WORKTREE-SYMLINK",
-        registry.repos[0].name,
+        registry.repos[0].name
       );
-      execFileSync("git", [
-        "--git-dir",
-        managedRepoPath,
-        "worktree",
-        "remove",
-        worktreePath,
-      ]);
+      execFileSync("git", ["--git-dir", managedRepoPath, "worktree", "remove", worktreePath]);
 
       const outsideDirectory = createTempDir("outpost-outside-worktree-");
       const sentinelPath = path.join(outsideDirectory, "keep.txt");
       writeFileSync(sentinelPath, "keep\n");
       symlinkSync(outsideDirectory, worktreePath, "dir");
 
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "WORKTREE-SYMLINK.json",
-      );
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "WORKTREE-SYMLINK",
-      ]);
+      const manifestPath = path.join(tempHome, "workspaces", "WORKTREE-SYMLINK.json");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const exitCode = await runCli(["workspace", "remove", "WORKTREE-SYMLINK"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "Path must remain within",
+        "Path must remain within"
       );
       expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
       expect(existsSync(manifestPath)).toBe(true);
@@ -1216,22 +1030,12 @@ describe("run", () => {
         localRepoId(alpha.tempRemote),
       ]);
 
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "RESIDUAL-REMOVE",
-      );
+      const ticketDirectory = path.join(tempHome, "worktrees", "RESIDUAL-REMOVE");
       const residualPath = path.join(ticketDirectory, "keep.txt");
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "RESIDUAL-REMOVE.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "RESIDUAL-REMOVE.json");
       writeFileSync(residualPath, "keep\n");
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "RESIDUAL-REMOVE"]);
       const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
 
@@ -1262,24 +1066,14 @@ describe("run", () => {
 
       await installFailingGitShim(tempHome, "status");
 
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "STATUS-FAILURE",
-      );
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "STATUS-FAILURE.json",
-      );
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const ticketDirectory = path.join(tempHome, "worktrees", "STATUS-FAILURE");
+      const manifestPath = path.join(tempHome, "workspaces", "STATUS-FAILURE.json");
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "STATUS-FAILURE"]);
 
       expect(exitCode).toBe(1);
       expect(errorSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "Failed to establish cleanliness",
+        "Failed to establish cleanliness"
       );
       expect(existsSync(ticketDirectory)).toBe(true);
       expect(existsSync(manifestPath)).toBe(true);
@@ -1305,19 +1099,9 @@ describe("run", () => {
 
       await installFailingGitShim(tempHome, "worktree-remove");
 
-      const ticketDirectory = path.join(
-        tempHome,
-        "worktrees",
-        "CLEANUP-FAILURE",
-      );
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "CLEANUP-FAILURE.json",
-      );
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const ticketDirectory = path.join(tempHome, "worktrees", "CLEANUP-FAILURE");
+      const manifestPath = path.join(tempHome, "workspaces", "CLEANUP-FAILURE.json");
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "remove", "CLEANUP-FAILURE"]);
       const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
 
@@ -1348,27 +1132,19 @@ describe("run", () => {
     it.each([
       ["modified", `${AGENTS_MARKER_PREFIX}${"0".repeat(64)} -->\n# changed\n`],
       ["foreign", "# foreign workspace instructions\n"],
-    ])(
-      "interactive Yes removes an unchanged %s file",
-      async (_kind, content) => {
-        const fixture = await createAgentsWorkspace(
-          `CONSENT-YES-${_kind.toUpperCase()}`,
-        );
-        writeFileSync(fixture.agentsPath, content);
+    ])("interactive Yes removes an unchanged %s file", async (_kind, content) => {
+      const fixture = await createAgentsWorkspace(`CONSENT-YES-${_kind.toUpperCase()}`);
+      writeFileSync(fixture.agentsPath, content);
 
-        const exit = await runInteractiveWorkspaceRemove(
-          fixture.ticket,
-          removalPrompt("yes"),
-        );
+      const exit = await runInteractiveWorkspaceRemove(fixture.ticket, removalPrompt("yes"));
 
-        expect(Exit.isSuccess(exit)).toBe(true);
-        if (Exit.isSuccess(exit)) {
-          expect(exit.value.exitCode ?? 0).toBe(0);
-        }
-        expect(existsSync(fixture.ticketDirectory)).toBe(false);
-        expect(existsSync(fixture.manifestPath)).toBe(false);
-      },
-    );
+      expect(Exit.isSuccess(exit)).toBe(true);
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.exitCode ?? 0).toBe(0);
+      }
+      expect(existsSync(fixture.ticketDirectory)).toBe(false);
+      expect(existsSync(fixture.manifestPath)).toBe(false);
+    });
 
     it.each([
       ["decline", "decline"],
@@ -1384,14 +1160,11 @@ describe("run", () => {
         const agentsContent = "# foreign workspace instructions\n";
         writeFileSync(fixture.agentsPath, agentsContent);
 
-        const exit = await runInteractiveWorkspaceRemove(
-          ticket,
-          removalPrompt(scenario),
-        );
+        const exit = await runInteractiveWorkspaceRemove(ticket, removalPrompt(scenario));
 
         expect(Exit.isFailure(exit)).toBe(true);
         await expectWorkspaceIntact(fixture, agentsContent);
-      },
+      }
     );
 
     it("non-interactive removal refuses modified AGENTS.md before teardown", async () => {
@@ -1408,9 +1181,7 @@ describe("run", () => {
       const agentsContent = "# foreign workspace instructions\n";
       writeFileSync(fixture.agentsPath, agentsContent);
 
-      expect(
-        await runCli(["workspace", "remove", fixture.ticket, "--json"]),
-      ).toBe(1);
+      expect(await runCli(["workspace", "remove", fixture.ticket, "--json"])).toBe(1);
       await expectWorkspaceIntact(fixture, agentsContent);
     });
 
@@ -1421,9 +1192,7 @@ describe("run", () => {
 
       const exit = await runInteractiveWorkspaceRemove(
         fixture.ticket,
-        removalPrompt("yes", () =>
-          writeFileSync(fixture.agentsPath, replacement),
-        ),
+        removalPrompt("yes", () => writeFileSync(fixture.agentsPath, replacement))
       );
 
       expect(Exit.isSuccess(exit)).toBe(true);
@@ -1431,7 +1200,7 @@ describe("run", () => {
         expect(exit.value.exitCode).toBe(1);
         expect(exit.value.data.status).toBe("partial");
         expect(exit.value.data.diagnostics).toContain(
-          `AGENTS.md at ${fixture.agentsPath} changed after approval. Preserving file; manifest retained for retry.`,
+          `AGENTS.md at ${fixture.agentsPath} changed after approval. Preserving file; manifest retained for retry.`
         );
       }
       expect(readFileSync(fixture.agentsPath, "utf8")).toBe(replacement);
@@ -1450,10 +1219,7 @@ describe("run", () => {
           const trackingFs = {
             ...fs,
             remove: (filePath: string, options?: FileSystem.RemoveOptions) => {
-              if (
-                filePath === fixture.agentsPath ||
-                filePath === fixture.manifestPath
-              ) {
+              if (filePath === fixture.agentsPath || filePath === fixture.manifestPath) {
                 removals.push(filePath);
               }
               return fs.remove(filePath, options);
@@ -1463,9 +1229,9 @@ describe("run", () => {
           return yield* Effect.exit(
             runWorkspaceRemove(fixture.ticket, [], {
               interactive: false,
-            }).pipe(Effect.provideService(FileSystem.FileSystem, trackingFs)),
+            }).pipe(Effect.provideService(FileSystem.FileSystem, trackingFs))
           );
-        }).pipe(Effect.provide(NodeContext.layer)),
+        }).pipe(Effect.provide(NodeContext.layer))
       );
 
       expect(Exit.isSuccess(exit)).toBe(true);
@@ -1489,14 +1255,10 @@ describe("run", () => {
       const fixture = await createAgentsWorkspace("RESIDUAL-AGENT-001");
       const residualPath = path.join(fixture.ticketDirectory, "keep.txt");
       writeFileSync(residualPath, "keep\n");
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       expect(await runCli(["workspace", "remove", fixture.ticket])).toBe(1);
-      expect(infoSpy.mock.calls.map((call) => call[0]).join("\n")).toContain(
-        "residual entries",
-      );
+      expect(infoSpy.mock.calls.map((call) => call[0]).join("\n")).toContain("residual entries");
       expect(readFileSync(residualPath, "utf8")).toBe("keep\n");
       expect(existsSync(fixture.agentsPath)).toBe(false);
       expect(existsSync(fixture.manifestPath)).toBe(true);
@@ -1526,25 +1288,16 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "READY-123",
-        "feat",
-        "feat/READY-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "READY-123", "feat", "feat/READY-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "list"]);
       expect(exitCode).toBe(0);
@@ -1575,13 +1328,11 @@ describe("run", () => {
             repositories: [],
           },
           null,
-          2,
-        ) + "\n",
+          2
+        ) + "\n"
       );
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "list"]);
       expect(exitCode).toBe(0);
@@ -1615,44 +1366,27 @@ describe("run", () => {
 
       const registry = readRegistry(tempHome);
       const alphaRepo = registry.repos.find(
-        (repo) => repo.id === localRepoId(alpha.tempRemote),
+        (repo) => repo.id === localRepoId(alpha.tempRemote)
       ) as NonNullable<(typeof registry.repos)[number]>;
-      const alphaWorktree = path.join(
-        tempHome,
-        "worktrees",
-        "STATUS-PRIORITY",
-        alphaRepo.name,
-      );
+      const alphaWorktree = path.join(tempHome, "worktrees", "STATUS-PRIORITY", alphaRepo.name);
       execFileSync(
         "git",
-        [
-          "--git-dir",
-          alphaRepo.managedRepoPath,
-          "worktree",
-          "remove",
-          alphaWorktree,
-        ],
-        { encoding: "utf8" },
+        ["--git-dir", alphaRepo.managedRepoPath, "worktree", "remove", alphaWorktree],
+        { encoding: "utf8" }
       );
 
       const fakeManagedPath = path.join(tempHome, "repos", "fake.git");
       execFileSync("git", ["init", "--bare", fakeManagedPath]);
 
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "STATUS-PRIORITY.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "STATUS-PRIORITY.json");
       const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
       manifest.repositories[1].managedPath = path.relative(
         path.join(tempHome, "repos"),
-        fakeManagedPath,
+        fakeManagedPath
       );
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
       const exitCode = await runCli(["workspace", "list"]);
       const output = infoSpy.mock.calls.map((call) => call[0]).join("\n");
 
@@ -1669,14 +1403,9 @@ describe("run", () => {
       const manifestsDir = path.join(tempHome, "workspaces");
       mkdirSync(manifestsDir, { recursive: true });
 
-      writeFileSync(
-        path.join(manifestsDir, "CORRUPT-123.json"),
-        "{not valid json",
-      );
+      writeFileSync(path.join(manifestsDir, "CORRUPT-123.json"), "{not valid json");
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "list"]);
       expect(exitCode).toBe(0);
@@ -1697,9 +1426,7 @@ describe("run", () => {
       mkdirSync(unmanagedDir, { recursive: true });
       writeFileSync(path.join(unmanagedDir, "not-a-worktree.txt"), "keep\n");
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "list"]);
       expect(exitCode).toBe(0);
@@ -1740,31 +1467,19 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "GOOD-123",
-        "feat",
-        "feat/GOOD-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "GOOD-123", "feat", "feat/GOOD-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const manifestsDir = path.join(tempHome, "workspaces");
-      writeFileSync(
-        path.join(manifestsDir, "BAD-123.json"),
-        "{not json at all",
-      );
+      writeFileSync(path.join(manifestsDir, "BAD-123.json"), "{not json at all");
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "list"]);
       expect(exitCode).toBe(0);
@@ -1809,12 +1524,10 @@ describe("run", () => {
             base: "main",
             bareRepoPath: managedRepoPath,
           },
-        ],
+        ]
       );
 
-      const infoSpy = vi
-        .spyOn(console, "log")
-        .mockImplementation(() => undefined);
+      const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "show", "SHOW-MANIFEST-123"]);
       expect(exitCode).toBe(0);
@@ -1848,35 +1561,24 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "DIRTY-123",
-        "feat",
-        "feat/DIRTY-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "DIRTY-123", "feat", "feat/DIRTY-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const ticketDirectory = path.join(tempHome, "worktrees", "DIRTY-123");
       const worktreePath = path.join(ticketDirectory, registry.repos[0].name);
       writeFileSync(path.join(worktreePath, "uncommitted.txt"), "dirty\n");
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "DIRTY-123"]);
       expect(exitCode).toBe(1);
-      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain(
-        "uncommitted changes",
-      );
+      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain("uncommitted changes");
       expect(existsSync(worktreePath)).toBe(true);
     });
 
@@ -1902,38 +1604,27 @@ describe("run", () => {
 
       const registry = readRegistry(tempHome);
       const alphaRepo = registry.repos.find(
-        (r) => r.id === localRepoId(alpha.tempRemote),
+        (r) => r.id === localRepoId(alpha.tempRemote)
       ) as NonNullable<(typeof registry.repos)[number]>;
       const betaRepo = registry.repos.find(
-        (r) => r.id === localRepoId(beta.tempRemote),
+        (r) => r.id === localRepoId(beta.tempRemote)
       ) as NonNullable<(typeof registry.repos)[number]>;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "MISMATCH-123",
-        "feat",
-        "feat/MISMATCH-123",
-        [
-          {
-            id: alphaRepo.id,
-            name: alphaRepo.name,
-            base: "main",
-            bareRepoPath: betaRepo.managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "MISMATCH-123", "feat", "feat/MISMATCH-123", [
+        {
+          id: alphaRepo.id,
+          name: alphaRepo.name,
+          base: "main",
+          bareRepoPath: betaRepo.managedRepoPath,
+        },
+      ]);
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "MISMATCH-123"]);
       expect(exitCode).toBe(1);
-      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain(
-        "ownership mismatch",
-      );
+      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain("ownership mismatch");
     });
 
     it("normal removal preserves branches in the bare repo", async () => {
@@ -1959,30 +1650,21 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "BRANCH-123",
-        "feat",
-        "feat/BRANCH-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "BRANCH-123", "feat", "feat/BRANCH-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const exitCode = await runCli(["workspace", "remove", "BRANCH-123"]);
       expect(exitCode).toBe(0);
 
-      const branches = execFileSync(
-        "git",
-        ["--git-dir", managedRepoPath, "branch"],
-        { encoding: "utf8" },
-      );
+      const branches = execFileSync("git", ["--git-dir", managedRepoPath, "branch"], {
+        encoding: "utf8",
+      });
       expect(branches).toContain("feat/BRANCH-123");
     });
 
@@ -2021,21 +1703,13 @@ describe("run", () => {
             base: "main",
             bareRepoPath: managedRepoPath,
           },
-        ],
+        ]
       );
 
-      const manifestPath = path.join(
-        tempHome,
-        "workspaces",
-        "DEL-MANIFEST-123.json",
-      );
+      const manifestPath = path.join(tempHome, "workspaces", "DEL-MANIFEST-123.json");
       expect(existsSync(manifestPath)).toBe(true);
 
-      const exitCode = await runCli([
-        "workspace",
-        "remove",
-        "DEL-MANIFEST-123",
-      ]);
+      const exitCode = await runCli(["workspace", "remove", "DEL-MANIFEST-123"]);
       expect(exitCode).toBe(0);
       expect(existsSync(manifestPath)).toBe(false);
     });
@@ -2062,21 +1736,14 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "LOCK-REL-123",
-        "feat",
-        "feat/LOCK-REL-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "LOCK-REL-123", "feat", "feat/LOCK-REL-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const exitCode = await runCli(["workspace", "remove", "LOCK-REL-123"]);
       expect(exitCode).toBe(0);
@@ -2108,21 +1775,14 @@ describe("run", () => {
       const reposRoot = path.join(tempHome, "repos");
       const ticketDirectory = path.join(tempHome, "worktrees", "LOCK-FAIL-123");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "LOCK-FAIL-123",
-        "feat",
-        "feat/LOCK-FAIL-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "LOCK-FAIL-123", "feat", "feat/LOCK-FAIL-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const worktreePath = path.join(ticketDirectory, registry.repos[0].name);
       writeFileSync(path.join(worktreePath, "dirty.txt"), "modified\n");
@@ -2156,34 +1816,23 @@ describe("run", () => {
       const managedRepoPath = registry.repos[0].managedRepoPath;
       const reposRoot = path.join(tempHome, "repos");
 
-      writeManifestFixture(
-        tempHome,
-        reposRoot,
-        "NO-MANIFEST-123",
-        "feat",
-        "feat/NO-MANIFEST-123",
-        [
-          {
-            id: registry.repos[0].id,
-            name: registry.repos[0].name,
-            base: "main",
-            bareRepoPath: managedRepoPath,
-          },
-        ],
-      );
+      writeManifestFixture(tempHome, reposRoot, "NO-MANIFEST-123", "feat", "feat/NO-MANIFEST-123", [
+        {
+          id: registry.repos[0].id,
+          name: registry.repos[0].name,
+          base: "main",
+          bareRepoPath: managedRepoPath,
+        },
+      ]);
 
       const { rmSync } = await import("node:fs");
       rmSync(path.join(tempHome, "workspaces", "NO-MANIFEST-123.json"));
 
-      const errorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => undefined);
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       const exitCode = await runCli(["workspace", "remove", "NO-MANIFEST-123"]);
       expect(exitCode).toBe(1);
-      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain(
-        "unmanaged",
-      );
+      expect(errorSpy.mock.calls.map((c) => c[0]).join(" ")).toContain("unmanaged");
     });
   });
 });

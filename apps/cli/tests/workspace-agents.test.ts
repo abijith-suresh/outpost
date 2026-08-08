@@ -63,10 +63,7 @@ function setupWorkspace(tempHome: string): {
   const config = makeConfig(tempHome);
   const workspaceDir = path.join(config.worktreesRoot, "TICKET-123");
   mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(
-    path.join(tempHome, "config.json"),
-    `${JSON.stringify(config, null, 2)}\n`,
-  );
+  writeFileSync(path.join(tempHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
   return { config, workspaceDir };
 }
 
@@ -111,9 +108,7 @@ This directory coordinates one ticket workspace. It is not a Git repository.
 `;
 
     const content = await Effect.runPromise(
-      renderAgentsMarkdown(makeManifest(), config).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      renderAgentsMarkdown(makeManifest(), config).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(content).toBe(managedContent(expectedBody));
@@ -137,8 +132,8 @@ This directory coordinates one ticket workspace. It is not a Git repository.
             },
           ],
         }),
-        config,
-      ).pipe(Effect.provide(NodeContext.layer)),
+        config
+      ).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(content).toContain('"# injected\\nheading"');
@@ -151,13 +146,10 @@ This directory coordinates one ticket workspace. It is not a Git repository.
 
 describe("classifyAgentsOwnership", () => {
   it("returns a missing snapshot", async () => {
-    const filePath = path.join(
-      createTempDir("outpost-agents-classify-"),
-      "AGENTS.md",
-    );
+    const filePath = path.join(createTempDir("outpost-agents-classify-"), "AGENTS.md");
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(result).toEqual({
@@ -173,7 +165,7 @@ describe("classifyAgentsOwnership", () => {
     writeFileSync(filePath, content);
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(result.ownership).toBe("generated");
@@ -187,12 +179,11 @@ describe("classifyAgentsOwnership", () => {
   it("recognizes content from an older renderer by its embedded body hash", async () => {
     const tempHome = createTempDir("outpost-agents-classify-");
     const filePath = path.join(tempHome, "AGENTS.md");
-    const olderBody =
-      "# Outpost Workspace\n\nLegacy renderer without current sections.\n";
+    const olderBody = "# Outpost Workspace\n\nLegacy renderer without current sections.\n";
     writeFileSync(filePath, managedContent(olderBody));
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer)),
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(result.ownership).toBe("generated");
@@ -202,44 +193,32 @@ describe("classifyAgentsOwnership", () => {
     const tempHome = createTempDir("outpost-agents-classify-");
     const filePath = path.join(tempHome, "AGENTS.md");
 
-    writeFileSync(
-      filePath,
-      `${AGENTS_MARKER_PREFIX}${"0".repeat(64)} -->\n# changed\n`,
-    );
+    writeFileSync(filePath, `${AGENTS_MARKER_PREFIX}${"0".repeat(64)} -->\n# changed\n`);
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(
-            Effect.provide(NodeContext.layer),
-          ),
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
         )
-      ).ownership,
+      ).ownership
     ).toBe("modified");
 
     writeFileSync(filePath, "# foreign\n");
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(
-            Effect.provide(NodeContext.layer),
-          ),
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
         )
-      ).ownership,
+      ).ownership
     ).toBe("foreign");
 
     const crlfBody = "# Outpost Workspace\r\n";
-    writeFileSync(
-      filePath,
-      `${AGENTS_MARKER_PREFIX}${computeSha256(crlfBody)} -->\r\n${crlfBody}`,
-    );
+    writeFileSync(filePath, `${AGENTS_MARKER_PREFIX}${computeSha256(crlfBody)} -->\r\n${crlfBody}`);
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(
-            Effect.provide(NodeContext.layer),
-          ),
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
         )
-      ).ownership,
+      ).ownership
     ).toBe("generated");
   });
 });
@@ -250,20 +229,16 @@ describe("exact snapshot deletion", () => {
     const filePath = path.join(tempHome, "AGENTS.md");
     writeFileSync(filePath, "# foreign\n");
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)),
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
     );
 
     const result = await Effect.runPromise(
-      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(result).toBe("deleted");
     expect(
-      await Effect.runPromise(
-        readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)),
-      ),
+      await Effect.runPromise(readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)))
     ).toEqual({ state: "missing" });
   });
 
@@ -274,14 +249,12 @@ describe("exact snapshot deletion", () => {
     const replacementContent = managedContent("# replacement\n");
     writeFileSync(filePath, approvedContent);
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)),
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
     );
     writeFileSync(filePath, replacementContent);
 
     const result = await Effect.runPromise(
-      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(result).toBe("mismatch");
@@ -292,20 +265,18 @@ describe("exact snapshot deletion", () => {
     const tempHome = createTempDir("outpost-agents-delete-");
     const filePath = path.join(tempHome, "AGENTS.md");
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)),
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
     );
     writeFileSync(filePath, "# appeared later\n");
 
     const current = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)),
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
     );
     expect(agentsSnapshotsEqual(approved, current)).toBe(false);
     expect(
       await Effect.runPromise(
-        deleteAgentsIfSnapshotMatches(filePath, approved).pipe(
-          Effect.provide(NodeContext.layer),
-        ),
-      ),
+        deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
+      )
     ).toBe("mismatch");
     expect(readFileSync(filePath, "utf8")).toBe("# appeared later\n");
   });
@@ -317,9 +288,7 @@ describe("exclusive generation", () => {
     const { workspaceDir } = setupWorkspace(tempHome);
 
     const generated = await Effect.runPromise(
-      generateAgentsMarkdown(tempHome, makeManifest()).pipe(
-        Effect.provide(NodeContext.layer),
-      ),
+      generateAgentsMarkdown(tempHome, makeManifest()).pipe(Effect.provide(NodeContext.layer))
     );
 
     const diskBytes = readFileSync(path.join(workspaceDir, "AGENTS.md"));
@@ -336,9 +305,9 @@ describe("exclusive generation", () => {
     const exit = await Effect.runPromise(
       Effect.exit(
         writeAgentsMarkdownExclusive(workspaceDir, "generated\n").pipe(
-          Effect.provide(NodeContext.layer),
-        ),
-      ),
+          Effect.provide(NodeContext.layer)
+        )
+      )
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
@@ -357,11 +326,7 @@ describe("exclusive generation", () => {
         let injected = false;
         const racingFs = {
           ...fs,
-          writeFile: (
-            filePath: string,
-            data: Uint8Array,
-            options?: FileSystem.WriteFileOptions,
-          ) =>
+          writeFile: (filePath: string, data: Uint8Array, options?: FileSystem.WriteFileOptions) =>
             fs.writeFile(filePath, data, options).pipe(
               Effect.tap(() => {
                 if (!injected && filePath.endsWith(".tmp")) {
@@ -371,16 +336,16 @@ describe("exclusive generation", () => {
                   });
                 }
                 return Effect.void;
-              }),
+              })
             ),
         };
 
         return yield* Effect.exit(
           generateAgentsMarkdown(tempHome, makeManifest()).pipe(
-            Effect.provideService(FileSystem.FileSystem, racingFs),
-          ),
+            Effect.provideService(FileSystem.FileSystem, racingFs)
+          )
         );
-      }).pipe(Effect.provide(NodeContext.layer)),
+      }).pipe(Effect.provide(NodeContext.layer))
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
@@ -394,7 +359,7 @@ class FakeReadline implements PromptReadline {
 
   constructor(
     readonly question: (question: string) => Promise<string>,
-    readonly emitCloseOnClose = true,
+    readonly emitCloseOnClose = true
   ) {}
 
   once(event: "SIGINT" | "close", listener: () => void): void {
@@ -477,9 +442,7 @@ describe("workspace removal prompt adapter", () => {
   });
 
   it("settles No when question rejects and closes once", async () => {
-    const readline = new FakeReadline(() =>
-      Promise.reject(new Error("question failed")),
-    );
+    const readline = new FakeReadline(() => Promise.reject(new Error("question failed")));
     const prompt = makeAgentsRemovalPrompt({
       createReadline: () => readline,
     });

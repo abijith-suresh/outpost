@@ -10,12 +10,9 @@ import {
 } from "../config.js";
 import type { CommandOutput } from "../types.js";
 
-export class RepoListError extends Schema.TaggedError<RepoListError>()(
-  "RepoListError",
-  {
-    message: Schema.String,
-  },
-) {}
+export class RepoListError extends Schema.TaggedError<RepoListError>()("RepoListError", {
+  message: Schema.String,
+}) {}
 
 export function runRepoList(): Effect.Effect<
   CommandOutput,
@@ -27,15 +24,15 @@ export function runRepoList(): Effect.Effect<
     const outpostHome = yield* resolveOutpostHome();
 
     yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new RepoListError({ message: error.message })),
+      Effect.mapError((error) => new RepoListError({ message: error.message }))
     );
 
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new RepoListError({ message: error.message })),
+      Effect.mapError((error) => new RepoListError({ message: error.message }))
     );
-    const { missingRepoCount, repos } = yield* getRepoHealthDiagnostics(
-      registry.repos,
-    ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
+    const { missingRepoCount, repos } = yield* getRepoHealthDiagnostics(registry.repos).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs)
+    );
 
     return {
       command: "repo list",
