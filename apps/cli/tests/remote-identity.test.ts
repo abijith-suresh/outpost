@@ -1,7 +1,7 @@
 import { symlinkSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -26,7 +26,7 @@ setupAfterEach();
 
 function resolveIdentity(remoteUrl: string, sourceRepoPath = "/tmp/source") {
   return Effect.runPromise(
-    resolveRemoteIdentity(remoteUrl, sourceRepoPath).pipe(Effect.provide(NodeContext.layer))
+    resolveRemoteIdentity(remoteUrl, sourceRepoPath).pipe(Effect.provide(NodeServices.layer))
   );
 }
 
@@ -77,7 +77,7 @@ describe("remote identity", () => {
     expect(custom.id).toBe("example.com:8443/Group/Repo");
 
     const managedPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", custom).pipe(Effect.provide(NodeContext.layer))
+      getManagedRepoPath("/tmp/repos", custom).pipe(Effect.provide(NodeServices.layer))
     );
     expect(managedPath).toBe(
       path.join("/tmp/repos", "example.com%3A8443", "%47roup", "%52epo.git")
@@ -93,7 +93,7 @@ describe("remote identity", () => {
     ]) {
       const exit = await Effect.runPromise(
         Effect.exit(resolveRemoteIdentity(remoteUrl, "/tmp/source")).pipe(
-          Effect.provide(NodeContext.layer)
+          Effect.provide(NodeServices.layer)
         )
       );
       expect(Exit.isFailure(exit)).toBe(true);
@@ -167,10 +167,10 @@ describe("remote identity", () => {
     const upper = await resolveIdentity("https://example.com/Group/Repo.git");
     const lower = await resolveIdentity("https://example.com/group/repo.git");
     const upperPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", upper).pipe(Effect.provide(NodeContext.layer))
+      getManagedRepoPath("/tmp/repos", upper).pipe(Effect.provide(NodeServices.layer))
     );
     const lowerPath = await Effect.runPromise(
-      getManagedRepoPath("/tmp/repos", lower).pipe(Effect.provide(NodeContext.layer))
+      getManagedRepoPath("/tmp/repos", lower).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(upperPath.toLowerCase()).not.toBe(lowerPath.toLowerCase());

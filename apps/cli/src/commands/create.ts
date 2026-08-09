@@ -1,11 +1,12 @@
 import { rmdir } from "node:fs/promises";
-
-import * as Command from "@effect/platform/Command";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type { PlatformError } from "@effect/platform/Error";
-import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
+import { systemError } from "effect/PlatformError";
+import * as Command from "effect/unstable/process/ChildProcess";
+import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import { runExitCode, runString } from "../command-utils.js";
 import type { RepoRecord } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
 import {
@@ -102,12 +103,13 @@ function ensureUniqueWorktreePaths(
 }
 
 function gitCommand(...args: ReadonlyArray<string>) {
-  return Command.make("git", ...args).pipe(
-    Command.env({
+  return Command.make("git", args, {
+    env: {
       GCM_INTERACTIVE: "never",
       GIT_TERMINAL_PROMPT: "0",
-    })
-  );
+    },
+    extendEnv: true,
+  });
 }
 
 function usageError(details?: string): CreateError {
@@ -238,8 +240,8 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
 
 function validateBranchName(
   branchName: string
-): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(gitCommand("check-ref-format", "--branch", branchName)).pipe(
+): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runExitCode(gitCommand("check-ref-format", "--branch", branchName)).pipe(
     Effect.mapError((error) => new CreateError({ message: error.message })),
     Effect.flatMap((exitCode) =>
       exitCode === 0
@@ -391,21 +393,22 @@ function getSelectedRepos(
 
 function resolveRemoteHeadBaseBranch(
   repo: RepoRecord
-): Effect.Effect<string, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.string(
+): Effect.Effect<string, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runString(
     gitCommand("--git-dir", repo.managedRepoPath, "symbolic-ref", "--short", "HEAD")
   ).pipe(
     Effect.map((output) => output.trim()),
     Effect.flatMap((headRef) => {
       return headRef.length > 0
         ? Effect.succeed(headRef)
-        : Effect.fail({
-            _tag: "SystemError",
-            reason: "Unknown",
-            module: "Command",
-            method: "symbolic-ref",
-            message: `Unexpected mirror HEAD ref ${headRef} for ${repo.id}`,
-          } as PlatformError);
+        : Effect.fail(
+            systemError({
+              _tag: "Unknown",
+              module: "Command",
+              method: "symbolic-ref",
+              description: `Unexpected mirror HEAD ref ${headRef} for ${repo.id}`,
+            })
+          );
     })
   );
 }
@@ -413,8 +416,8 @@ function resolveRemoteHeadBaseBranch(
 function remoteBranchExists(
   repo: RepoRecord,
   baseBranch: string
-): Effect.Effect<boolean, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<boolean, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runExitCode(
     gitCommand(
       "--git-dir",
       repo.managedRepoPath,
@@ -429,8 +432,8 @@ function remoteBranchExists(
 function localBranchExists(
   repo: RepoRecord,
   branchName: string
-): Effect.Effect<boolean, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<boolean, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runExitCode(
     gitCommand(
       "--git-dir",
       repo.managedRepoPath,
@@ -447,7 +450,7 @@ function buildCreatePlan(
   ticketDirectory: string,
   branchName: string,
   base: string | undefined
-): Effect.Effect<CreatePlan, CreateError, Path.Path | CommandExecutor.CommandExecutor> {
+): Effect.Effect<CreatePlan, CreateError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function* () {
     const baseBranch = yield* base
       ? Effect.succeed(base)
@@ -502,8 +505,8 @@ function buildCreatePlan(
 
 function createBranch(
   plan: CreatePlan
-): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runExitCode(
     gitCommand("--git-dir", plan.managedRepoPath, "branch", plan.branch, plan.startPoint)
   ).pipe(
     Effect.mapError((error) => new CreateError({ message: error.message })),
@@ -521,8 +524,8 @@ function createBranch(
 
 function createWorktree(
   plan: CreatePlan
-): Effect.Effect<void, CreateError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
+): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
+  return runExitCode(
     gitCommand("--git-dir", plan.managedRepoPath, "worktree", "add", plan.worktreePath, plan.branch)
   ).pipe(
     Effect.mapError((error) => new CreateError({ message: error.message })),
@@ -583,14 +586,14 @@ function rollbackCreatedArtifacts(
 ): Effect.Effect<
   never,
   CreateError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const cleanupErrors: Array<string> = [];
 
     for (const plan of [...created.worktrees].reverse()) {
-      yield* Command.exitCode(
+      yield* runExitCode(
         gitCommand(
           "--git-dir",
           plan.managedRepoPath,
@@ -606,7 +609,7 @@ function rollbackCreatedArtifacts(
             : Effect.fail(`git worktree remove exited with status ${exitCode}`)
         ),
         Effect.mapError((error) => (typeof error === "string" ? error : error.message)),
-        Effect.catchAll((message) => {
+        Effect.catch((message) => {
           cleanupErrors.push(`Failed to remove worktree ${plan.worktreePath}: ${message}`);
           return Effect.void;
         })
@@ -614,14 +617,14 @@ function rollbackCreatedArtifacts(
     }
 
     for (const plan of [...created.branches].reverse()) {
-      yield* Command.exitCode(
+      yield* runExitCode(
         gitCommand("--git-dir", plan.managedRepoPath, "branch", "-D", plan.branch)
       ).pipe(
         Effect.flatMap((exitCode) =>
           exitCode === 0 ? Effect.void : Effect.fail(`git branch -D exited with status ${exitCode}`)
         ),
         Effect.mapError((error) => (typeof error === "string" ? error : error.message)),
-        Effect.catchAll((message) => {
+        Effect.catch((message) => {
           cleanupErrors.push(
             `Failed to delete branch ${plan.branch} for ${plan.repoId}: ${message}`
           );
@@ -642,7 +645,7 @@ function rollbackCreatedArtifacts(
           }
           return Effect.void;
         }),
-        Effect.catchAll((message) => {
+        Effect.catch((message) => {
           cleanupErrors.push(`Failed to delete AGENTS.md: ${message}`);
           return Effect.void;
         })
@@ -652,7 +655,7 @@ function rollbackCreatedArtifacts(
     if (created.ticketDirectory) {
       const entries = yield* fs.readDirectory(ticketDirectory).pipe(
         Effect.mapError((error) => error.message),
-        Effect.catchAll((message) => {
+        Effect.catch((message) => {
           cleanupErrors.push(`Failed to inspect ticket directory ${ticketDirectory}: ${message}`);
           return Effect.succeed(undefined);
         })
@@ -663,7 +666,7 @@ function rollbackCreatedArtifacts(
           try: () => rmdir(ticketDirectory),
           catch: (error) => (error instanceof Error ? error.message : String(error)),
         }).pipe(
-          Effect.catchAll((message) => {
+          Effect.catch((message) => {
             cleanupErrors.push(`Failed to remove ticket directory ${ticketDirectory}: ${message}`);
             return Effect.void;
           })
@@ -690,7 +693,7 @@ function prepareCreate(
 ): Effect.Effect<
   ReadonlyArray<CreatePlan>,
   CreateError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -735,7 +738,7 @@ export function runCreate(
 ): Effect.Effect<
   CommandOutput,
   CreateError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -814,7 +817,11 @@ export function runCreate(
 
     yield* acquireTicketLock(outpostHome, parsedArgs.ticket).pipe(
       Effect.mapError((error) => {
-        if (error.message.includes("EEXIST") || error.message.includes("already exists")) {
+        if (
+          error.message.includes("EEXIST") ||
+          error.message.includes("already exists") ||
+          error.message.includes("AlreadyExists")
+        ) {
           return new CreateError({
             message: `Ticket ${parsedArgs.ticket} is locked by another operation. Wait for it to complete or remove the lock manually.`,
           });
@@ -902,12 +909,10 @@ export function runCreate(
             })),
           },
         } satisfies CommandOutput;
-      }).pipe(
-        Effect.catchAll((error) => rollbackCreatedArtifacts(created, ticketDirectory, error))
-      );
+      }).pipe(Effect.catch((error) => rollbackCreatedArtifacts(created, ticketDirectory, error)));
     }).pipe(
       Effect.ensuring(
-        releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.catchAll(() => Effect.void))
+        releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.catch(() => Effect.void))
       )
     );
 

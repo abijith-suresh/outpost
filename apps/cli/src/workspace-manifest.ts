@@ -1,7 +1,7 @@
-import type { PlatformError } from "@effect/platform/Error";
-import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import {
@@ -281,7 +281,7 @@ export function readManifest(
         }),
     });
 
-    const manifest = yield* Schema.decodeUnknown(ManifestSchema)(parsedJson).pipe(
+    const manifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(parsedJson).pipe(
       Effect.mapError(
         (error) =>
           new ManifestError({
@@ -433,7 +433,7 @@ export function writeManifest(
   manifest: Manifest
 ): Effect.Effect<void, ManifestError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
-    const validatedManifest = yield* Schema.decodeUnknown(ManifestSchema)(manifest).pipe(
+    const validatedManifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(manifest).pipe(
       Effect.mapError(
         (error) =>
           new ManifestError({
@@ -641,15 +641,15 @@ export function deriveWorkspaceStatus(
     const manifestFileExists = yield* fs.exists(manifestFilePath);
 
     if (!manifestFileExists) {
-      const workspaceDirResult = yield* Effect.either(
+      const workspaceDirResult = yield* Effect.result(
         resolvePathWithinRoot(config.worktreesRoot, ticket)
       );
 
-      if (Either.isLeft(workspaceDirResult)) {
+      if (Result.isFailure(workspaceDirResult)) {
         return "missing";
       }
 
-      const workspaceDir = workspaceDirResult.right;
+      const workspaceDir = workspaceDirResult.success;
       const workspaceDirExists = yield* fs.exists(workspaceDir);
 
       if (workspaceDirExists) {
@@ -665,7 +665,7 @@ export function deriveWorkspaceStatus(
 
     const manifestResult = yield* readManifest(outpostHome, ticket).pipe(
       Effect.map((manifest) => ({ _tag: "ok" as const, manifest })),
-      Effect.catchAll(() => Effect.succeed({ _tag: "invalid" as const }))
+      Effect.catch(() => Effect.succeed({ _tag: "invalid" as const }))
     );
 
     if (manifestResult._tag === "invalid") {
@@ -674,38 +674,38 @@ export function deriveWorkspaceStatus(
 
     const manifest = manifestResult.manifest;
 
-    const workspaceDirResult = yield* Effect.either(
+    const workspaceDirResult = yield* Effect.result(
       resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath)
     );
 
-    if (Either.isLeft(workspaceDirResult)) {
+    if (Result.isFailure(workspaceDirResult)) {
       return "invalid";
     }
 
-    const workspaceDir = workspaceDirResult.right;
+    const workspaceDir = workspaceDirResult.success;
     let hasMissingPath = !(yield* fs.exists(workspaceDir));
 
     for (const repo of manifest.repositories) {
-      const resolvedManagedPathResult = yield* Effect.either(
+      const resolvedManagedPathResult = yield* Effect.result(
         resolveManagedPath(config.reposRoot, repo.managedPath)
       );
 
-      if (Either.isLeft(resolvedManagedPathResult)) {
+      if (Result.isFailure(resolvedManagedPathResult)) {
         return "invalid";
       }
 
-      const resolvedManagedPath = resolvedManagedPathResult.right;
+      const resolvedManagedPath = resolvedManagedPathResult.success;
       const managedExists = yield* fs.exists(resolvedManagedPath);
 
-      const resolvedWorktreePathResult = yield* Effect.either(
+      const resolvedWorktreePathResult = yield* Effect.result(
         resolveWorktreePath(workspaceDir, repo.worktreePath)
       );
 
-      if (Either.isLeft(resolvedWorktreePathResult)) {
+      if (Result.isFailure(resolvedWorktreePathResult)) {
         return "invalid";
       }
 
-      const resolvedWorktree = resolvedWorktreePathResult.right;
+      const resolvedWorktree = resolvedWorktreePathResult.success;
       const worktreeExists = yield* fs.exists(resolvedWorktree);
 
       if (!managedExists || !worktreeExists) {
@@ -716,7 +716,7 @@ export function deriveWorkspaceStatus(
       const ownershipValid = yield* verifyWorktreeOwnership(
         resolvedWorktree,
         resolvedManagedPath
-      ).pipe(Effect.catchAll(() => Effect.succeed(false)));
+      ).pipe(Effect.catch(() => Effect.succeed(false)));
 
       if (!ownershipValid) {
         return "invalid";
@@ -745,7 +745,7 @@ export function scanWorktreesRoot(
 
     for (const entry of entries) {
       const entryPath = path.join(worktreesRoot, entry);
-      const stat = yield* fs.stat(entryPath).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+      const stat = yield* fs.stat(entryPath).pipe(Effect.catch(() => Effect.succeed(undefined)));
 
       if (!stat || stat.type !== "Directory") {
         continue;
@@ -754,7 +754,7 @@ export function scanWorktreesRoot(
       const manifestFilePath = path.join(outpostHome, "workspaces", `${entry}.json`);
       const manifestExists = yield* fs
         .exists(manifestFilePath)
-        .pipe(Effect.catchAll(() => Effect.succeed(false)));
+        .pipe(Effect.catch(() => Effect.succeed(false)));
 
       if (!manifestExists) {
         unmanagedTickets.push(entry);

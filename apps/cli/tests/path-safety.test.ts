@@ -1,4 +1,4 @@
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +16,7 @@ describe("path safety", () => {
 
     const resolved = await Effect.runPromise(
       resolvePathWithinRoot(root, "TICKET-123", "manifest.json").pipe(
-        Effect.provide(NodeContext.layer)
+        Effect.provide(NodeServices.layer)
       )
     );
 
@@ -28,7 +28,7 @@ describe("path safety", () => {
 
     const exit = await Effect.runPromise(
       Effect.exit(resolvePathWithinRoot(root, "..", "repos", "repos.json")).pipe(
-        Effect.provide(NodeContext.layer)
+        Effect.provide(NodeServices.layer)
       )
     );
 
@@ -69,10 +69,10 @@ describe("path safety", () => {
 
   it("normalizes case and trailing Windows-aliased characters", async () => {
     const upper = await Effect.runPromise(
-      getPortablePathKey("/tmp/repos/Group/Repo.git").pipe(Effect.provide(NodeContext.layer))
+      getPortablePathKey("/tmp/repos/Group/Repo.git").pipe(Effect.provide(NodeServices.layer))
     );
     const lowerAliased = await Effect.runPromise(
-      getPortablePathKey("/tmp/repos/group/repo.git. ").pipe(Effect.provide(NodeContext.layer))
+      getPortablePathKey("/tmp/repos/group/repo.git. ").pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(upper).toBe(lowerAliased);

@@ -1,6 +1,6 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
+import * as FileSystem from "effect/FileSystem";
 import { describe, expect, it, vi } from "vitest";
 import { runCreate } from "../src/commands/create.ts";
 import * as CreatePrompt from "../src/commands/create-prompt.ts";
@@ -1476,7 +1476,11 @@ describe("run", () => {
         const fs = yield* FileSystem.FileSystem;
         const failingFs = {
           ...fs,
-          writeFile: (filePath: string, data: Uint8Array, options?: FileSystem.WriteFileOptions) =>
+          writeFile: (
+            filePath: string,
+            data: Uint8Array,
+            options?: Parameters<FileSystem.FileSystem["writeFile"]>[2]
+          ) =>
             path.basename(filePath).startsWith(".AGENTS.md.")
               ? fs.writeFile(path.join(tempHome, "missing-parent", "write-failure"), data, options)
               : fs.writeFile(filePath, data, options),
@@ -1488,7 +1492,7 @@ describe("run", () => {
             { interactive: false }
           ).pipe(Effect.provideService(FileSystem.FileSystem, failingFs))
         );
-      }).pipe(Effect.provide(NodeContext.layer))
+      }).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(Exit.isFailure(exit)).toBe(true);

@@ -1,7 +1,7 @@
-import type { PlatformError } from "@effect/platform/Error";
-import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
 
 import { getCanonicalPortablePathKey, semanticIdentifierSchema } from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
@@ -14,7 +14,7 @@ export class ConfigError extends Schema.TaggedError<ConfigError>()("ConfigError"
 }) {}
 
 export const OutpostConfigSchema = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literals([1]),
   outpostHome: Schema.String,
   reposRoot: Schema.String,
   worktreesRoot: Schema.String,
@@ -226,7 +226,7 @@ export function loadRepoRegistry(
         }),
     });
 
-    const registry = yield* Schema.decodeUnknown(RepoRegistrySchema)(parsedJson).pipe(
+    const registry = yield* Schema.decodeUnknownEffect(RepoRegistrySchema)(parsedJson).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
@@ -244,7 +244,7 @@ export function writeRepoRegistry(
   registry: RepoRegistry
 ): Effect.Effect<void, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
-    const validatedRegistry = yield* Schema.decodeUnknown(RepoRegistrySchema)(registry).pipe(
+    const validatedRegistry = yield* Schema.decodeUnknownEffect(RepoRegistrySchema)(registry).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({
@@ -305,7 +305,7 @@ export function loadConfig(
       )
     );
 
-    return yield* Schema.decodeUnknown(OutpostConfigSchema)(migrated).pipe(
+    return yield* Schema.decodeUnknownEffect(OutpostConfigSchema)(migrated).pipe(
       Effect.mapError(
         (error) =>
           new ConfigError({

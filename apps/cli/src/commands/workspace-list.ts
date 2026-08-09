@@ -1,6 +1,6 @@
-import type * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
+import type * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import type { CommandOutput } from "../types.js";
@@ -49,9 +49,9 @@ export function runWorkspaceList(): Effect.Effect<
 
     const managedResults: Array<WorkspaceSummary> = [];
     for (const ticket of managedTickets) {
-      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.either);
+      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.result);
 
-      if (Either.isLeft(manifestResult)) {
+      if (Result.isFailure(manifestResult)) {
         managedResults.push({
           ticket,
           ticketDirectory: undefined,
@@ -60,23 +60,23 @@ export function runWorkspaceList(): Effect.Effect<
           createdAt: undefined,
           worktreeCount: 0,
           status: "invalid",
-          diagnostics: [manifestResult.left.message],
+          diagnostics: [manifestResult.failure.message],
         });
         continue;
       }
 
-      const manifest = manifestResult.right;
+      const manifest = manifestResult.success;
       const status = yield* deriveWorkspaceStatus(outpostHome, config, ticket).pipe(
-        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus))
+        Effect.catch(() => Effect.succeed("invalid" as WorkspaceStatus))
       );
 
       let ticketDirectory: string | undefined;
       const workspacePathResult = yield* resolveWorkspacePath(
         config.worktreesRoot,
         manifest.workspacePath
-      ).pipe(Effect.either);
-      if (Either.isRight(workspacePathResult)) {
-        ticketDirectory = workspacePathResult.right;
+      ).pipe(Effect.result);
+      if (Result.isSuccess(workspacePathResult)) {
+        ticketDirectory = workspacePathResult.success;
       }
 
       managedResults.push({

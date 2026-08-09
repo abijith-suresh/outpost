@@ -1,8 +1,7 @@
 import { chmodSync, rmSync, symlinkSync } from "node:fs";
-
-import * as FileSystem from "@effect/platform/FileSystem";
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
+import * as FileSystem from "effect/FileSystem";
 import { describe, expect, it, vi } from "vitest";
 import { runWorkspaceRemove } from "../src/commands/workspace-remove.ts";
 import {
@@ -128,7 +127,7 @@ async function runInteractiveWorkspaceRemove(ticket: string, prompt: AgentsRemov
       runWorkspaceRemove(ticket, [], {
         interactive: true,
         promptAgentsRemovalConsent: prompt,
-      }).pipe(Effect.provide(NodeContext.layer))
+      }).pipe(Effect.provide(NodeServices.layer))
     )
   );
 }
@@ -1218,7 +1217,10 @@ describe("run", () => {
           const fs = yield* FileSystem.FileSystem;
           const trackingFs = {
             ...fs,
-            remove: (filePath: string, options?: FileSystem.RemoveOptions) => {
+            remove: (
+              filePath: string,
+              options?: Parameters<FileSystem.FileSystem["remove"]>[1]
+            ) => {
               if (filePath === fixture.agentsPath || filePath === fixture.manifestPath) {
                 removals.push(filePath);
               }
@@ -1231,7 +1233,7 @@ describe("run", () => {
               interactive: false,
             }).pipe(Effect.provideService(FileSystem.FileSystem, trackingFs))
           );
-        }).pipe(Effect.provide(NodeContext.layer))
+        }).pipe(Effect.provide(NodeServices.layer))
       );
 
       expect(Exit.isSuccess(exit)).toBe(true);

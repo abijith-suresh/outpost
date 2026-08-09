@@ -1,8 +1,8 @@
 import process from "node:process";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
 import { Console, Effect, Schema } from "effect";
+import type * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import {
   findCommand,
   findCommandPrefix,
@@ -37,15 +37,8 @@ const cliVersionSchema = Schema.Struct({
 
 export class CliError extends Schema.TaggedError<CliError>()("CliError", {
   message: Schema.String,
-  code: Schema.Literal(...CLI_ERROR_CODES),
-  diagnostics: Schema.optional(
-    Schema.Array(
-      Schema.Record({
-        key: Schema.String,
-        value: Schema.Unknown,
-      })
-    )
-  ),
+  code: Schema.Literals(CLI_ERROR_CODES),
+  diagnostics: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
 }) {}
 
 function cliError(
@@ -674,7 +667,7 @@ function resolveCommand(
 ): Effect.Effect<
   CommandOutput,
   CliError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   switch (command) {
     case "help":
@@ -752,10 +745,10 @@ export function run(
 ): Effect.Effect<
   number,
   never,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   const program = Effect.gen(function* () {
-    const input = yield* Schema.decodeUnknown(cliVersionSchema)({
+    const input = yield* Schema.decodeUnknownEffect(cliVersionSchema)({
       argv: [...argv],
       version,
     }).pipe(Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message)));
