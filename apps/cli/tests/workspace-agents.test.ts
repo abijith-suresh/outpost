@@ -1,8 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-
-import * as FileSystem from "@effect/platform/FileSystem";
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
+import * as FileSystem from "effect/FileSystem";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -108,7 +107,7 @@ This directory coordinates one ticket workspace. It is not a Git repository.
 `;
 
     const content = await Effect.runPromise(
-      renderAgentsMarkdown(makeManifest(), config).pipe(Effect.provide(NodeContext.layer))
+      renderAgentsMarkdown(makeManifest(), config).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(content).toBe(managedContent(expectedBody));
@@ -133,7 +132,7 @@ This directory coordinates one ticket workspace. It is not a Git repository.
           ],
         }),
         config
-      ).pipe(Effect.provide(NodeContext.layer))
+      ).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(content).toContain('"# injected\\nheading"');
@@ -149,7 +148,7 @@ describe("classifyAgentsOwnership", () => {
     const filePath = path.join(createTempDir("outpost-agents-classify-"), "AGENTS.md");
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(result).toEqual({
@@ -165,7 +164,7 @@ describe("classifyAgentsOwnership", () => {
     writeFileSync(filePath, content);
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(result.ownership).toBe("generated");
@@ -183,7 +182,7 @@ describe("classifyAgentsOwnership", () => {
     writeFileSync(filePath, managedContent(olderBody));
 
     const result = await Effect.runPromise(
-      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+      classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(result.ownership).toBe("generated");
@@ -197,7 +196,7 @@ describe("classifyAgentsOwnership", () => {
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
         )
       ).ownership
     ).toBe("modified");
@@ -206,7 +205,7 @@ describe("classifyAgentsOwnership", () => {
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
         )
       ).ownership
     ).toBe("foreign");
@@ -216,7 +215,7 @@ describe("classifyAgentsOwnership", () => {
     expect(
       (
         await Effect.runPromise(
-          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeContext.layer))
+          classifyAgentsOwnership(filePath).pipe(Effect.provide(NodeServices.layer))
         )
       ).ownership
     ).toBe("generated");
@@ -229,16 +228,16 @@ describe("exact snapshot deletion", () => {
     const filePath = path.join(tempHome, "AGENTS.md");
     writeFileSync(filePath, "# foreign\n");
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeServices.layer))
     );
 
     const result = await Effect.runPromise(
-      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
+      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(result).toBe("deleted");
     expect(
-      await Effect.runPromise(readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer)))
+      await Effect.runPromise(readAgentsSnapshot(filePath).pipe(Effect.provide(NodeServices.layer)))
     ).toEqual({ state: "missing" });
   });
 
@@ -249,12 +248,12 @@ describe("exact snapshot deletion", () => {
     const replacementContent = managedContent("# replacement\n");
     writeFileSync(filePath, approvedContent);
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeServices.layer))
     );
     writeFileSync(filePath, replacementContent);
 
     const result = await Effect.runPromise(
-      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
+      deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(result).toBe("mismatch");
@@ -265,17 +264,17 @@ describe("exact snapshot deletion", () => {
     const tempHome = createTempDir("outpost-agents-delete-");
     const filePath = path.join(tempHome, "AGENTS.md");
     const approved = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeServices.layer))
     );
     writeFileSync(filePath, "# appeared later\n");
 
     const current = await Effect.runPromise(
-      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeContext.layer))
+      readAgentsSnapshot(filePath).pipe(Effect.provide(NodeServices.layer))
     );
     expect(agentsSnapshotsEqual(approved, current)).toBe(false);
     expect(
       await Effect.runPromise(
-        deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeContext.layer))
+        deleteAgentsIfSnapshotMatches(filePath, approved).pipe(Effect.provide(NodeServices.layer))
       )
     ).toBe("mismatch");
     expect(readFileSync(filePath, "utf8")).toBe("# appeared later\n");
@@ -288,7 +287,7 @@ describe("exclusive generation", () => {
     const { workspaceDir } = setupWorkspace(tempHome);
 
     const generated = await Effect.runPromise(
-      generateAgentsMarkdown(tempHome, makeManifest()).pipe(Effect.provide(NodeContext.layer))
+      generateAgentsMarkdown(tempHome, makeManifest()).pipe(Effect.provide(NodeServices.layer))
     );
 
     const diskBytes = readFileSync(path.join(workspaceDir, "AGENTS.md"));
@@ -305,7 +304,7 @@ describe("exclusive generation", () => {
     const exit = await Effect.runPromise(
       Effect.exit(
         writeAgentsMarkdownExclusive(workspaceDir, "generated\n").pipe(
-          Effect.provide(NodeContext.layer)
+          Effect.provide(NodeServices.layer)
         )
       )
     );
@@ -326,7 +325,11 @@ describe("exclusive generation", () => {
         let injected = false;
         const racingFs = {
           ...fs,
-          writeFile: (filePath: string, data: Uint8Array, options?: FileSystem.WriteFileOptions) =>
+          writeFile: (
+            filePath: string,
+            data: Uint8Array,
+            options?: Parameters<FileSystem.FileSystem["writeFile"]>[2]
+          ) =>
             fs.writeFile(filePath, data, options).pipe(
               Effect.tap(() => {
                 if (!injected && filePath.endsWith(".tmp")) {
@@ -345,7 +348,7 @@ describe("exclusive generation", () => {
             Effect.provideService(FileSystem.FileSystem, racingFs)
           )
         );
-      }).pipe(Effect.provide(NodeContext.layer))
+      }).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(Exit.isFailure(exit)).toBe(true);

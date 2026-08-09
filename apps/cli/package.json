@@ -53,9 +53,8 @@
     "verify": "npm run typecheck && npm run test"
   },
   "dependencies": {
-    "@effect/platform": "0.97.1",
-    "@effect/platform-node": "0.108.1",
-    "effect": "3.22.1"
+    "effect": "4.0.0-beta.106",
+    "@effect/platform-node": "4.0.0-beta.106"
   },
   "devDependencies": {
     "typescript": "7.0.2",

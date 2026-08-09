@@ -46,11 +46,11 @@ const validManifest = {
   ],
 };
 
-async function getSchemaFailure(
-  schema: Schema.Schema.AnyNoContext,
+async function getSchemaFailure<S extends Schema.Constraint & { readonly DecodingServices: never }>(
+  schema: S,
   value: unknown
 ): Promise<string> {
-  const exit = await Effect.runPromise(Effect.exit(Schema.decodeUnknown(schema)(value)));
+  const exit = await Effect.runPromise(Effect.exit(Schema.decodeUnknownEffect(schema)(value)));
   expect(Exit.isFailure(exit)).toBe(true);
 
   return Exit.isFailure(exit) ? exit.cause.toString() : "";
@@ -121,7 +121,7 @@ describe("semantic identifier schemas", () => {
   it("preserves Unicode identifiers and paths containing spaces", async () => {
     await expect(
       Effect.runPromise(
-        Schema.decodeUnknown(RepoRegistrySchema)({
+        Schema.decodeUnknownEffect(RepoRegistrySchema)({
           repos: [
             {
               ...validRepo,
@@ -134,7 +134,7 @@ describe("semantic identifier schemas", () => {
     ).resolves.toBeDefined();
 
     await expect(
-      Effect.runPromise(Schema.decodeUnknown(ManifestSchema)(validManifest))
+      Effect.runPromise(Schema.decodeUnknownEffect(ManifestSchema)(validManifest))
     ).resolves.toEqual(validManifest);
   });
 });

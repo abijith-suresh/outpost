@@ -1,7 +1,7 @@
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import type * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import type { CommandOutput } from "../types.js";
@@ -69,7 +69,7 @@ type RepoProcessResult = {
 
 function fetchOneRepo(
   repo: RepoRecord
-): Effect.Effect<RepoProcessResult, never, CommandExecutor.CommandExecutor> {
+): Effect.Effect<RepoProcessResult, never, ChildProcessSpawner.ChildProcessSpawner> {
   return fetchBareRepository(repo.managedRepoPath).pipe(
     Effect.map(() => {
       const lastFetchedAt = new Date().toISOString();
@@ -82,7 +82,7 @@ function fetchOneRepo(
         result: buildSuccessResult(repo, lastFetchedAt),
       } satisfies RepoProcessResult;
     }),
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.succeed({
         registryRepo: repo,
         result: buildFailureResult(repo, error.message, error.diagnostics),
@@ -106,7 +106,7 @@ export function runRepoFetch(
 ): Effect.Effect<
   CommandOutput,
   RepoFetchError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     if (args.length !== 1 || args[0] !== "--all") {

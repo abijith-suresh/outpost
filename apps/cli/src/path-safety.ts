@@ -1,6 +1,6 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()("PathSafetyError", {
   message: Schema.String,
@@ -31,7 +31,9 @@ export function getSemanticIdentifierError(label: string, value: string): string
 }
 
 export function semanticIdentifierSchema(label: string) {
-  return Schema.String.pipe(Schema.filter((value) => getSemanticIdentifierError(label, value)));
+  return Schema.String.check(
+    Schema.makeFilter((value: string) => getSemanticIdentifierError(label, value))
+  );
 }
 
 export function validateSemanticIdentifier(
