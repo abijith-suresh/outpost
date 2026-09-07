@@ -17,7 +17,7 @@ permissions:
 jobs:
   npm-quality:
     name: npm quality (Node 24)
-    uses: abijith-suresh/workflows/.github/workflows/npm-quality.yml@5ed781e53cbc2c985682393e7de9449f555888ae # central workflows v0.2.0; zero-input root-contract workflow
+    uses: abijith-suresh/workflows/.github/workflows/npm-quality.yml@0f257b2642d2a010fefe0ff9d03374799d73eb44 # central workflows v0.2.0; zero-input root-contract workflow
     permissions:
       contents: read
 
