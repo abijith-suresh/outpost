@@ -9,7 +9,7 @@ permissions:
 jobs:
   dependency-review:
     name: Dependency review
-    uses: abijith-suresh/workflows/.github/workflows/dependency-review.yml@b42be9571985efb1ce10970340250fcccc657050 # central workflows v0.1.0
+    uses: abijith-suresh/workflows/.github/workflows/dependency-review.yml@e2088a6610d40b7c978e6e8e7ca3272be8d06020 # central workflows v0.4.0
     with:
       fail-on-severity: high
     permissions:
