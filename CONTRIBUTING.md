@@ -98,10 +98,11 @@ npm run verify
 
 This runs, in order:
 
-1. `format:check` — repository-wide Prettier formatting check
-2. `lint` — repository-wide ESLint
-3. CLI verification — TypeScript strict mode and Vitest
-4. Website verification — Astro check and TypeScript
+1. `format:check` — repository-wide Biome formatting check
+2. `lint` — repository-wide Biome lint
+3. `test:policy` — changeset-policy classifier tests (`node:test`)
+4. CLI verification — TypeScript strict mode and Vitest
+5. Website verification — Astro check and TypeScript
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
@@ -120,7 +121,7 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 
 | Hook         | Action                                                                                        |
 | ------------ | --------------------------------------------------------------------------------------------- |
-| `pre-commit` | Runs lint-staged: ESLint fix + Prettier on staged code, styles, data, and documentation files |
+| `pre-commit` | Runs lint-staged: Biome check with fixes on staged code, styles, data, and documentation files |
 | `commit-msg` | Validates the commit message against `@commitlint/config-conventional`                        |
 | `pre-push`   | Runs repository-wide `npm run verify`                                                         |
 
@@ -129,8 +130,7 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 - **TypeScript strict mode** with ES modules (`"type": "module"` in package.json)
 - **Effect-TS conventions:** use `Effect.gen` for effectful logic, `Schema.TaggedError` for typed error variants, `pipe` for composition
 - **No CLI framework:** arguments are parsed manually from `process.argv` — follow the existing pattern in `apps/cli/src/program.ts` when adding flags
-- **Formatting:** Prettier (double quotes, semicolons, trailing commas)
-- **Linting:** ESLint with the TypeScript and Astro recommended rules; tests disable project-service parsing
+- **Formatting and linting:** Biome, configured in `biome.json` (double quotes, semicolons, 100-column width). `lint-staged` runs `biome check --write` on staged files.
 
 ## Testing
 
