@@ -1,6 +1,6 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
 
 import {
   getRepoHealthDiagnostics,

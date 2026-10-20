@@ -51,12 +51,12 @@ All public commands are registered in `ALL_COMMANDS` as a single metadata source
 
 The main command workflows use Effect services for:
 
-- **FileSystem** (`@effect/platform/FileSystem`) — file reads, writes, directory listing, path resolution
-- **Path** (`@effect/platform/Path`) — portable path manipulation
-- **CommandExecutor** (`@effect/platform-node/CommandExecutor`) — child process spawning (`git` commands)
+- **FileSystem** (`effect/FileSystem`) — file reads, writes, directory listing, path resolution
+- **Path** (`effect/Path`) — portable path manipulation
+- **ChildProcessSpawner** (`effect/process/ChildProcessSpawner`) — child process spawning (`git` commands)
 - **Console** (`effect/Console`) — stdout/stderr output
 
-The `NodeContext.layer` is provided at the entry points in `apps/cli/src/cli.ts` and `apps/cli/src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
+The `NodeServices.layer` is provided at the entry points in `apps/cli/src/cli.ts` and `apps/cli/src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
 
 ## Persisted State
 

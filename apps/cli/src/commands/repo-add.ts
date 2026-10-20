@@ -1,9 +1,10 @@
-import * as Command from "@effect/platform/Command";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type { PlatformError } from "@effect/platform/Error";
-import * as FileSystem from "@effect/platform/FileSystem";
-import * as Path from "@effect/platform/Path";
 import { Effect, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
+import * as ChildProcess from "effect/process/ChildProcess";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { commandExitCode, commandString, gitCommand } from "../child-process.js";
 
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
@@ -42,30 +43,16 @@ type RepoAddOptions = {
 
 function checkGitRepository(
   repoPath: string
-): Effect.Effect<boolean, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.exitCode(
-    Command.make("git", "rev-parse", "--is-inside-work-tree").pipe(
-      Command.env({
-        GCM_INTERACTIVE: "never",
-        GIT_TERMINAL_PROMPT: "0",
-      }),
-      Command.workingDirectory(repoPath)
-    )
+): Effect.Effect<boolean, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return commandExitCode(
+    gitCommand("rev-parse", "--is-inside-work-tree").pipe(ChildProcess.setCwd(repoPath))
   ).pipe(Effect.map((exitCode) => exitCode === 0));
 }
 
 function getRemoteNames(
   repoPath: string
-): Effect.Effect<ReadonlyArray<string>, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.string(
-    Command.make("git", "remote").pipe(
-      Command.env({
-        GCM_INTERACTIVE: "never",
-        GIT_TERMINAL_PROMPT: "0",
-      }),
-      Command.workingDirectory(repoPath)
-    )
-  ).pipe(
+): Effect.Effect<ReadonlyArray<string>, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return commandString(gitCommand("remote").pipe(ChildProcess.setCwd(repoPath))).pipe(
     Effect.map((output) =>
       output
         .split("\n")
@@ -78,15 +65,9 @@ function getRemoteNames(
 function getRemoteUrl(
   repoPath: string,
   remoteName: string
-): Effect.Effect<string, PlatformError, CommandExecutor.CommandExecutor> {
-  return Command.string(
-    Command.make("git", "remote", "get-url", remoteName).pipe(
-      Command.env({
-        GCM_INTERACTIVE: "never",
-        GIT_TERMINAL_PROMPT: "0",
-      }),
-      Command.workingDirectory(repoPath)
-    )
+): Effect.Effect<string, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
+  return commandString(
+    gitCommand("remote", "get-url", remoteName).pipe(ChildProcess.setCwd(repoPath))
   ).pipe(Effect.map((output) => output.trim()));
 }
 
@@ -123,7 +104,7 @@ export function runRepoAdd(
 ): Effect.Effect<
   CommandOutput,
   RepoAddError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     if (!inputPath) {

@@ -1,10 +1,10 @@
 import { rmdir } from "node:fs/promises";
-
-import * as Command from "@effect/platform/Command";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema, Stream } from "effect";
+import { Effect, Result, Schema, Stream } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
+import * as ChildProcess from "effect/process/ChildProcess";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { commandExitCode, gitCommand } from "../child-process.js";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import {
@@ -33,15 +33,6 @@ export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveErro
     message: Schema.String,
   }
 ) {}
-
-function gitCommand(...args: ReadonlyArray<string>) {
-  return Command.make("git", ...args).pipe(
-    Command.env({
-      GCM_INTERACTIVE: "never",
-      GIT_TERMINAL_PROMPT: "0",
-    })
-  );
-}
 
 function toMapError(error: unknown): WorkspaceRemoveError {
   return new WorkspaceRemoveError({
@@ -83,7 +74,7 @@ export function runWorkspaceRemove(
 ): Effect.Effect<
   CommandOutput,
   WorkspaceRemoveError,
-  FileSystem.FileSystem | Path.Path | CommandExecutor.CommandExecutor
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     if (!ticket || extraArgs.length > 0) {
@@ -113,11 +104,11 @@ export function runWorkspaceRemove(
 
     if (!hasManifest) {
       const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
-        Effect.either
+        Effect.result
       );
 
-      if (Either.isRight(ticketDirResult)) {
-        const ticketDir = ticketDirResult.right;
+      if (Result.isSuccess(ticketDirResult)) {
+        const ticketDir = ticketDirResult.success;
         const dirExists = yield* fs
           .exists(ticketDir)
           .pipe(Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message })));
@@ -141,7 +132,7 @@ export function runWorkspaceRemove(
     const result = yield* Effect.scoped(
       Effect.acquireRelease(
         acquireTicketLock(outpostHome, ticket).pipe(Effect.mapError(toMapError)),
-        () => releaseTicketLock(outpostHome, ticket).pipe(Effect.catchAll(() => Effect.void))
+        () => releaseTicketLock(outpostHome, ticket).pipe(Effect.catch(() => Effect.void))
       ).pipe(
         Effect.flatMap(() =>
           Effect.gen(function* () {
@@ -246,10 +237,13 @@ export function runWorkspaceRemove(
               const statusCommand = gitCommand("-C", resolvedWorktreePath, "status", "--porcelain");
               const statusResult = yield* Effect.scoped(
                 Effect.gen(function* () {
-                  const process = yield* Command.start(statusCommand);
+                  const process = yield* statusCommand;
                   const output = yield* process.stdout.pipe(
                     Stream.decodeText(),
-                    Stream.runFold("", (all, chunk) => all + chunk)
+                    Stream.runFold(
+                      () => "",
+                      (all, chunk) => all + chunk
+                    )
                   );
                   const exitCode = yield* process.exitCode;
                   return { exitCode, output };
@@ -298,7 +292,7 @@ export function runWorkspaceRemove(
                 continue;
               }
 
-              const removalResult = yield* Command.exitCode(
+              const removalResult = yield* commandExitCode(
                 gitCommand(
                   "--git-dir",
                   resolvedManagedPath,
@@ -306,18 +300,18 @@ export function runWorkspaceRemove(
                   "remove",
                   resolvedWorktreePath
                 )
-              ).pipe(Effect.either);
+              ).pipe(Effect.result);
 
-              if (Either.isRight(removalResult) && removalResult.right === 0) {
+              if (Result.isSuccess(removalResult) && removalResult.success === 0) {
                 completed.push(repo.worktreePath);
                 continue;
               }
 
               remaining.push(repo.worktreePath);
               diagnostics.push(
-                Either.isLeft(removalResult)
-                  ? `Failed to remove worktree ${resolvedWorktreePath}: ${removalResult.left.message}`
-                  : `Failed to remove worktree ${resolvedWorktreePath}: git exited with status ${removalResult.right}`
+                Result.isFailure(removalResult)
+                  ? `Failed to remove worktree ${resolvedWorktreePath}: ${removalResult.failure.message}`
+                  : `Failed to remove worktree ${resolvedWorktreePath}: git exited with status ${removalResult.success}`
               );
             }
 
@@ -353,9 +347,9 @@ export function runWorkspaceRemove(
             const dirExists = yield* fs.exists(workspaceDir).pipe(Effect.mapError(toMapError));
 
             if (dirExists) {
-              const directoryResult = yield* fs.readDirectory(workspaceDir).pipe(Effect.either);
+              const directoryResult = yield* fs.readDirectory(workspaceDir).pipe(Effect.result);
 
-              if (Either.isLeft(directoryResult)) {
+              if (Result.isFailure(directoryResult)) {
                 return partialRemovalOutput(
                   ticket,
                   workspaceDir,
@@ -363,12 +357,12 @@ export function runWorkspaceRemove(
                   completed,
                   [],
                   [
-                    `Failed to inspect workspace directory ${workspaceDir}: ${directoryResult.left.message}`,
+                    `Failed to inspect workspace directory ${workspaceDir}: ${directoryResult.failure.message}`,
                   ]
                 );
               }
 
-              const remainingEntries = directoryResult.right;
+              const remainingEntries = directoryResult.success;
               if (remainingEntries.length > 0) {
                 return partialRemovalOutput(
                   ticket,
@@ -388,9 +382,9 @@ export function runWorkspaceRemove(
                   new WorkspaceRemoveError({
                     message: error instanceof Error ? error.message : String(error),
                   }),
-              }).pipe(Effect.either);
+              }).pipe(Effect.result);
 
-              if (Either.isLeft(removeDirectoryResult)) {
+              if (Result.isFailure(removeDirectoryResult)) {
                 return partialRemovalOutput(
                   ticket,
                   workspaceDir,
@@ -398,7 +392,7 @@ export function runWorkspaceRemove(
                   completed,
                   [],
                   [
-                    `Failed to remove empty workspace directory ${workspaceDir}: ${removeDirectoryResult.left.message}`,
+                    `Failed to remove empty workspace directory ${workspaceDir}: ${removeDirectoryResult.failure.message}`,
                   ]
                 );
               }

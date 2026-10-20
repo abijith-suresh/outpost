@@ -1,8 +1,7 @@
 import { readdirSync } from "node:fs";
-
-import * as FileSystem from "@effect/platform/FileSystem";
-import { NodeContext } from "@effect/platform-node";
+import { NodeServices } from "@effect/platform-node";
 import { Effect, Exit } from "effect";
+import * as FileSystem from "effect/FileSystem";
 import { describe, expect, it, vi } from "vitest";
 
 import { writeJsonFileAtomic, writeTextFileAtomic } from "../src/store.ts";
@@ -16,7 +15,7 @@ describe("atomic store writes", () => {
     const filePath = path.join(tempDirectory, "state.json");
 
     await Effect.runPromise(
-      writeJsonFileAtomic(filePath, { version: 1 }).pipe(Effect.provide(NodeContext.layer))
+      writeJsonFileAtomic(filePath, { version: 1 }).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(readFileSync(filePath, "utf8")).toBe('{\n  "version": 1\n}\n');
@@ -50,7 +49,7 @@ describe("atomic store writes", () => {
         );
 
         return { result, rename };
-      }).pipe(Effect.provide(NodeContext.layer))
+      }).pipe(Effect.provide(NodeServices.layer))
     );
 
     expect(Exit.isFailure(exit.result)).toBe(true);

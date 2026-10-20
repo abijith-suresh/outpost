@@ -1,6 +1,6 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
-import { Effect, Either, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import {
@@ -53,21 +53,21 @@ export function runWorkspaceShow(
     );
 
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
-    const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.either);
+    const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.result);
 
-    if (Either.isRight(manifestResult)) {
-      const manifest = manifestResult.right;
+    if (Result.isSuccess(manifestResult)) {
+      const manifest = manifestResult.success;
       const status = yield* deriveWorkspaceStatus(outpostHome, config, ticket).pipe(
-        Effect.catchAll(() => Effect.succeed("invalid" as WorkspaceStatus))
+        Effect.catch(() => Effect.succeed("invalid" as WorkspaceStatus))
       );
 
       let ticketDirectory: string | undefined;
       const workspacePathResult = yield* resolveWorkspacePath(
         config.worktreesRoot,
         manifest.workspacePath
-      ).pipe(Effect.either);
-      if (Either.isRight(workspacePathResult)) {
-        ticketDirectory = workspacePathResult.right;
+      ).pipe(Effect.result);
+      if (Result.isSuccess(workspacePathResult)) {
+        ticketDirectory = workspacePathResult.success;
       }
 
       const worktrees: Array<Record<string, unknown>> = [];
@@ -75,18 +75,18 @@ export function runWorkspaceShow(
         const managedPathResult = yield* resolveManagedPath(
           config.reposRoot,
           repo.managedPath
-        ).pipe(Effect.either);
-        const resolvedManagedPath = Either.isRight(managedPathResult)
-          ? managedPathResult.right
+        ).pipe(Effect.result);
+        const resolvedManagedPath = Result.isSuccess(managedPathResult)
+          ? managedPathResult.success
           : undefined;
 
         let resolvedWorktreePath: string | undefined;
         if (ticketDirectory) {
           const wtResult = yield* resolveWorktreePath(ticketDirectory, repo.worktreePath).pipe(
-            Effect.either
+            Effect.result
           );
-          if (Either.isRight(wtResult)) {
-            resolvedWorktreePath = wtResult.right;
+          if (Result.isSuccess(wtResult)) {
+            resolvedWorktreePath = wtResult.success;
           }
         }
 
@@ -103,14 +103,14 @@ export function runWorkspaceShow(
         if (resolvedWorktreePath) {
           const worktreeExists = yield* fs
             .exists(resolvedWorktreePath)
-            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+            .pipe(Effect.catch(() => Effect.succeed(false)));
           worktreeEntry.worktreeExists = worktreeExists;
         }
 
         if (resolvedManagedPath) {
           const managedExists = yield* fs
             .exists(resolvedManagedPath)
-            .pipe(Effect.catchAll(() => Effect.succeed(false)));
+            .pipe(Effect.catch(() => Effect.succeed(false)));
           worktreeEntry.managedExists = managedExists;
         }
 
@@ -133,7 +133,7 @@ export function runWorkspaceShow(
       } satisfies CommandOutput;
     }
 
-    const manifestError = manifestResult.left;
+    const manifestError = manifestResult.failure;
     const isNotFound = manifestError._tag === "ManifestNotFoundError";
 
     if (!isNotFound) {
@@ -150,12 +150,12 @@ export function runWorkspaceShow(
     }
 
     const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
-      Effect.either
+      Effect.result
     );
 
-    if (Either.isRight(ticketDirResult)) {
-      const ticketDir = ticketDirResult.right;
-      const exists = yield* fs.exists(ticketDir).pipe(Effect.catchAll(() => Effect.succeed(false)));
+    if (Result.isSuccess(ticketDirResult)) {
+      const ticketDir = ticketDirResult.success;
+      const exists = yield* fs.exists(ticketDir).pipe(Effect.catch(() => Effect.succeed(false)));
 
       if (exists) {
         return {
