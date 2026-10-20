@@ -10,6 +10,6 @@ permissions:
 jobs:
   validate-title:
     name: Conventional Commit title
-    uses: abijith-suresh/workflows/.github/workflows/conventional-commit-title.yml@0f257b2642d2a010fefe0ff9d03374799d73eb44 # v0.3.0
+    uses: abijith-suresh/workflows/.github/workflows/conventional-commit-title.yml@9c9e55ab629eafe5b5edbae9857b1d66fb384f8c # v0.8.1
     permissions:
       pull-requests: read
