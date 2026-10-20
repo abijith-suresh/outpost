@@ -26,6 +26,19 @@ the CLI and website workspaces from `package-lock.json`.
 
 ## Development Workflow
 
+### Working Agreements
+
+- Safety over convenience is the product, not a phase: never weaken a validation, preflight, or ownership check to make a test, command, or flow pass.
+- Run `npm run verify` before handoff; add focused tests for the behavior you touched. CI owns the full suite.
+- Squash merge pull requests; never commit straight to `main`.
+- Update `apps/cli/README.md` when a command or safety behavior changes. Never restate dependency versions in prose — manifests own them.
+- Two things are named `AGENTS.md`: the agent briefs, and the file Outpost generates in each workspace. The generated one is hash-owned; never hand-edit it.
+
+### Codebase Pointers
+
+- `apps/cli/` — published CLI. Read `apps/cli/AGENTS.md` before changing workspace lifecycle, ownership, or output behavior.
+- `apps/website/` — private marketing site. Read `apps/website/AGENTS.md` before touching deploy or base-path behavior.
+
 ### Branch Naming
 
 Use descriptive branch names prefixed by category:
@@ -46,6 +59,8 @@ docs: update CLI examples in README
 ```
 
 Allowed types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`.
+
+Squash merge pull requests into `main`; never commit straight to `main`.
 
 ### Changesets
 
@@ -90,21 +105,7 @@ npm run test:policy
 
 ### Verification
 
-Before pushing, run the full verification suite:
-
-```bash
-npm run verify
-```
-
-This runs, in order:
-
-1. `format:check` — repository-wide Biome formatting check
-2. `lint` — repository-wide Biome lint
-3. `test:policy` — changeset-policy classifier tests (`node:test`)
-4. CLI verification — TypeScript strict mode and Vitest
-5. Website verification — Astro check and TypeScript
-
-If any step fails, the remaining steps do not run. Fix the issue and re-run.
+Run `npm run verify` before handoff. Add focused tests for the behavior you changed; CI owns the full suite. If a step fails, fix the cause and re-run.
 
 ### Build
 
@@ -131,6 +132,13 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 - **Effect-TS conventions:** use `Effect.gen` for effectful logic, `Schema.TaggedError` for typed error variants, `pipe` for composition
 - **No CLI framework:** arguments are parsed manually from `process.argv` — follow the existing pattern in `apps/cli/src/program.ts` when adding flags
 - **Formatting and linting:** Biome, configured in `biome.json` (double quotes, semicolons, 100-column width). `lint-staged` runs `biome check --write` on staged files.
+
+### CLI Gotchas
+
+- Error codes are assigned explicitly at parser, router, and handler boundaries; never infer a code from message text.
+- Non-TTY and `--json` runs must fail predictably instead of assuming; mutation commands report what they did or why they refused.
+- TTY detection, `process.env`, `Date`, and readline prompts are deliberately direct Node — don't migrate them into Effect services without a reason.
+- State writes stay atomic and reads stay validating; ticket locks stay create-if-absent.
 
 ## Testing
 
@@ -255,6 +263,12 @@ See `.github/workflows/release.yml` for details.
 
 The marketing landing page lives in `apps/website/` as a private npm workspace.
 It shares the root lockfile and is never published with the CLI.
+
+### Website Gotchas
+
+- Routes and asset URLs must stay base-path-aware; the site is not served from the domain root.
+- Pages serves static files only — no server runtime, so don't add features that assume one.
+- Pull requests validate only; merging to `main` is what deploys.
 
 ### Setup
 
