@@ -1,10 +1,11 @@
-import * as Command from "@effect/platform/Command";
-import type * as CommandExecutor from "@effect/platform/CommandExecutor";
-import type { PlatformError } from "@effect/platform/Error";
 import { Effect, Schema, Stream } from "effect";
+import type { PlatformError } from "effect/PlatformError";
+import * as ChildProcess from "effect/process/ChildProcess";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { gitCommand } from "../child-process.js";
 
 export const RepoMirrorDiagnosticSchema = Schema.Struct({
-  stream: Schema.Literal("stdout", "stderr"),
+  stream: Schema.Literals(["stdout", "stderr"]),
   line: Schema.String,
 });
 
@@ -15,24 +16,16 @@ export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()("Repo
   diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
 }) {}
 
-function gitCommand(...args: ReadonlyArray<string>) {
-  return Command.make("git", ...args).pipe(
-    Command.env({
-      GCM_INTERACTIVE: "never",
-      GIT_TERMINAL_PROMPT: "0",
-    }),
-    Command.stdout("pipe"),
-    Command.stderr("pipe")
-  );
-}
-
 function captureDiagnosticLines(
   stream: Stream.Stream<Uint8Array, PlatformError>,
   source: RepoMirrorDiagnostic["stream"]
 ): Effect.Effect<ReadonlyArray<RepoMirrorDiagnostic>, PlatformError> {
   return stream.pipe(
     Stream.decodeText(),
-    Stream.runFold("", (output, chunk) => output + chunk),
+    Stream.runFold(
+      () => "",
+      (output, chunk) => output + chunk
+    ),
     Effect.map((output) =>
       output
         .split(/\r?\n/u)
@@ -44,12 +37,12 @@ function captureDiagnosticLines(
 }
 
 function runGitCommand(
-  command: Command.Command,
+  command: ChildProcess.Command,
   failureMessage: string
-): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.scoped(
     Effect.gen(function* () {
-      const process = yield* Command.start(command);
+      const process = yield* command;
       const [stdoutDiagnostics, stderrDiagnostics, exitCode] = yield* Effect.all(
         [
           captureDiagnosticLines(process.stdout, "stdout"),
@@ -84,7 +77,7 @@ function runGitCommand(
 export function cloneBareRepository(
   remoteUrl: string,
   managedRepoPath: string
-): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
   return runGitCommand(
     gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
     `git clone --mirror failed for ${remoteUrl}`
@@ -93,11 +86,9 @@ export function cloneBareRepository(
 
 export function fetchBareRepository(
   managedRepoPath: string
-): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
   return runGitCommand(
-    gitCommand("fetch", "--all", "--prune", "--tags").pipe(
-      Command.workingDirectory(managedRepoPath)
-    ),
+    gitCommand("fetch", "--all", "--prune", "--tags").pipe(ChildProcess.setCwd(managedRepoPath)),
     `git fetch failed for ${managedRepoPath}`
   );
 }
@@ -105,11 +96,9 @@ export function fetchBareRepository(
 export function updateBareRepositoryRemote(
   managedRepoPath: string,
   remoteUrl: string
-): Effect.Effect<void, RepoMirrorError, CommandExecutor.CommandExecutor> {
+): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
   return runGitCommand(
-    gitCommand("remote", "set-url", "origin", remoteUrl).pipe(
-      Command.workingDirectory(managedRepoPath)
-    ),
+    gitCommand("remote", "set-url", "origin", remoteUrl).pipe(ChildProcess.setCwd(managedRepoPath)),
     `git remote set-url failed for ${managedRepoPath}`
   );
 }

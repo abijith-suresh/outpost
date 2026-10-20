@@ -1,6 +1,6 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import type * as Path from "@effect/platform/Path";
-import { Console, Effect, Either, Schema } from "effect";
+import { Console, Effect, Result, Schema } from "effect";
+import * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
 
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
@@ -58,14 +58,14 @@ export function runRepoRemove(
     const uninspectableManifests: Array<string> = [];
 
     for (const ticket of tickets) {
-      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.either);
+      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.result);
 
-      if (Either.isLeft(manifestResult)) {
+      if (Result.isFailure(manifestResult)) {
         uninspectableManifests.push(ticket);
         continue;
       }
 
-      const manifest = manifestResult.right;
+      const manifest = manifestResult.success;
       let isReferencing = false;
 
       for (const repo of manifest.repositories) {
@@ -74,13 +74,13 @@ export function runRepoRemove(
           break;
         }
 
-        const resolvedManagedPathResult = yield* Effect.either(
+        const resolvedManagedPathResult = yield* Effect.result(
           resolveManagedPath(config.reposRoot, repo.managedPath)
         );
 
-        if (Either.isRight(resolvedManagedPathResult)) {
+        if (Result.isSuccess(resolvedManagedPathResult)) {
           const manifestPathKey = yield* getCanonicalPortablePathKey(
-            resolvedManagedPathResult.right
+            resolvedManagedPathResult.success
           );
           const repoPathKey = yield* getCanonicalPortablePathKey(existingRepo.managedRepoPath);
 
