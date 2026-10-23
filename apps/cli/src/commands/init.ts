@@ -2,14 +2,15 @@ import { Effect, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
-
 import {
   buildInitialConfig,
   emptyRepoRegistry,
   getConfigFilePath,
   getRepoRegistryFilePath,
+  loadRepoRegistry,
   resolveOutpostHome,
 } from "../config.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { writeJsonFileAtomic } from "../store.js";
 import type { CommandOutput } from "../types.js";
 import { ensureWorkspaceStateRoot } from "../workspace-manifest.js";
@@ -27,17 +28,34 @@ export function runInit(): Effect.Effect<
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
+    yield* fs.makeDirectory(outpostHome, { recursive: true });
+    const mutation = yield* acquireHomeMutationLock(outpostHome, "init").pipe(
+      Effect.mapError((error) => new InitError({ message: error.message }))
+    );
     const configFilePath = yield* getConfigFilePath(outpostHome);
     const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
     const configExists = yield* fs.exists(configFilePath);
 
     if (configExists) {
+      const registryExists = yield* fs.exists(repoRegistryFilePath);
       return yield* new InitError({
-        message: `Outpost is already initialized at ${outpostHome}`,
+        message: registryExists
+          ? `Outpost is already initialized at ${outpostHome}`
+          : `Initialization is incomplete at ${outpostHome}: config exists but the repository registry is missing. Run outpost doctor and inspect existing repositories before restoring the registry. Init will not replace lost state.`,
       });
     }
 
     const config = yield* buildInitialConfig(outpostHome);
+
+    yield* mutation
+      .record({
+        action: "initialize-home",
+        configFilePath,
+        repoRegistryFilePath,
+        reposRoot: config.reposRoot,
+        worktreesRoot: config.worktreesRoot,
+      })
+      .pipe(Effect.mapError((error) => new InitError({ message: error.message })));
 
     yield* fs.makeDirectory(outpostHome, { recursive: true }).pipe(
       Effect.mapError(
@@ -75,20 +93,35 @@ export function runInit(): Effect.Effect<
       )
     );
 
+    // Config is the initialization marker. Install it only after the registry
+    // is written, and never overwrite a registry retained from a failed init.
+    if (yield* fs.exists(repoRegistryFilePath)) {
+      yield* loadRepoRegistry(outpostHome).pipe(
+        Effect.mapError(
+          (error) =>
+            new InitError({
+              message: `Cannot resume initialization: ${error.message}. Existing registry preserved.`,
+            })
+        )
+      );
+    } else {
+      yield* writeJsonFileAtomic(repoRegistryFilePath, emptyRepoRegistry).pipe(
+        Effect.mapError(
+          (error) =>
+            new InitError({
+              message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
+            })
+        )
+      );
+    }
+    yield* mutation
+      .record({ action: "write-initialization-marker", configFilePath })
+      .pipe(Effect.mapError((error) => new InitError({ message: error.message })));
     yield* writeJsonFileAtomic(configFilePath, config).pipe(
       Effect.mapError(
         (error) =>
           new InitError({
             message: `Failed to write config file ${configFilePath}: ${error.message}`,
-          })
-      )
-    );
-
-    yield* writeJsonFileAtomic(repoRegistryFilePath, emptyRepoRegistry).pipe(
-      Effect.mapError(
-        (error) =>
-          new InitError({
-            message: `Failed to write repo registry ${repoRegistryFilePath}: ${error.message}`,
           })
       )
     );
@@ -103,5 +136,5 @@ export function runInit(): Effect.Effect<
         initialized: true,
       },
     } satisfies CommandOutput;
-  });
+  }).pipe(Effect.scoped);
 }

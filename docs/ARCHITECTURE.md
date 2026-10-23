@@ -56,7 +56,7 @@ The main command workflows use Effect services for:
 - **ChildProcessSpawner** (`effect/process/ChildProcessSpawner`) — child process spawning (`git` commands)
 - **Console** (`effect/Console`) — stdout/stderr output
 
-The `NodeServices.layer` is provided at the entry points in `apps/cli/src/cli.ts` and `apps/cli/src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
+The `NodeServices.layer` is provided at the entry points in `apps/cli/src/cli.ts` and `apps/cli/src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, lock metadata reads the PID and OS hostname and generates UUIDs, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
 
 ## Persisted State
 
@@ -66,6 +66,9 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 ~/.outpost/
   config.json           # OutpostConfig { version, outpostHome, reposRoot, worktreesRoot }
   repos.json            # RepoRegistry { repos: Array<RepoRecord> }
+  .mutation.lock        # Exclusive home mutation owner metadata
+  operations/
+    <uuid>.json         # Intent and progress for an incomplete mutation
   repos/                # Managed bare mirrors (git clone --mirror)
     <encoded-segments>/
       <name>.git/
@@ -80,7 +83,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 ### Atomic Writes (`apps/cli/src/store.ts`)
 
-`config.json`, `repos.json`, and workspace manifests are written atomically: write to a temp file in the same directory, then `rename` (atomic on same filesystem). If the rename fails, the temp file is cleaned up.
+`config.json`, `repos.json`, operation records, and workspace manifests are written atomically: write to a temp file in the same directory, then `rename` (atomic on same filesystem). If the rename fails, the temp file is cleaned up. This does not provide an fsync-based power-loss guarantee. Init writes or validates the registry first, then installs config as the initialization marker. A retry preserves an existing valid registry. Config without a registry is reported as incomplete initialization and requires inspection before registry restoration; init never replaces lost state with an empty registry.
 
 ### Configuration (`apps/cli/src/config.ts`)
 
@@ -132,12 +135,14 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 3. Write `AGENTS.md` into the workspace directory.
 4. Write the manifest to `workspaces/<ticket>.json` as the successful creation commit marker.
 
-**Rollback** on any failure after step 1:
+**Rollback** on failure or interruption before the manifest commit marker:
 
-- Remove worktrees (`git worktree remove --force`)
-- Delete branches (`git branch -D`)
+- Verify worktree ownership and unchanged HEAD, then remove only clean worktrees with `git worktree remove` without force
+- Delete only unlinked branches whose commit still matches the immutable starting commit, using compare-and-delete `git update-ref -d <ref> <expected-oid>`
 - Delete AGENTS.md (only if content matches the snapshot — never delete user-modified files)
 - Remove workspace directory (only if empty via `rmdir`)
+
+The directory-creation ownership flag, generated guidance snapshot, and manifest commit marker are installed in short uninterruptible filesystem sections. A late cancellation after manifest commit preserves the completed workspace. Git commands remain interruptible and scoped; attempted branches and worktrees are tracked before execution so rollback can inspect partial results.
 
 **Dry-run:** validates all inputs and produces a plan, but does not acquire locks or mutate any state.
 
@@ -152,7 +157,7 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 
 **Removal safeguards:**
 
-1. Acquire the ticket lock and read and validate the manifest.
+1. Acquire the home mutation lock, then the ticket lock, and read and validate the manifest.
 2. Classify `AGENTS.md` ownership:
    - `"generated"` (unmodified by user): eligible for automatic deletion
    - `"modified"` or `"foreign"`: require approval in interactive mode and fail in non-interactive mode
@@ -164,7 +169,7 @@ Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified ma
 5. Delete `AGENTS.md` only if its bytes still match the snapshot that was classified and, when required, approved.
 6. Remove the workspace directory only if it is empty.
 7. Delete the manifest last, after complete cleanup.
-8. Release the ticket lock.
+8. Release the ticket lock, then the home mutation lock.
 
 **Partial cleanup:** worktree removal failures, concurrent changes to the approved `AGENTS.md` snapshot, residual directory entries, and workspace-directory inspection or removal failures produce a structured partial result and retain the manifest for retry. Other unexpected I/O failures can terminate with a plain command error. Preflight failures occur before worktree teardown begins.
 
@@ -206,9 +211,17 @@ Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
 
 All paths in the manifest are relative to their respective roots (`reposRoot` or `worktreesRoot`). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
 
-## Ticket Locks (`apps/cli/src/workspace-manifest.ts`)
+## Mutation and ticket locks
 
-Ticket operations that mutate workspace state (`create`, `workspace remove`) acquire an exclusive lock file using create-if-absent semantics. The lock identity normalizes ticket casing and strips trailing spaces and dots, matching Outpost's portable collision rules. If the lock already exists, acquisition fails. Normal handled outcomes release the lock through Effect finalization.
+`apps/cli/src/mutation-lock.ts` provides a conservative exclusive home mutation lock. Init, repo add/fetch/remove, create, and workspace remove acquire it with create-if-absent semantics before reading mutable snapshots. Contention fails immediately with a retry message. Create and workspace remove then acquire their existing ticket locks. The global order is home lock, then ticket lock, with release in reverse order through scoped Effect finalizers. Read-only commands and create dry-run do not acquire these locks. These locks coordinate Outpost processes; they do not block external Git or filesystem tools.
+
+Home lock metadata includes a UUID, operation name, PID, hostname, timestamp, and operation-record path. Ticket locks also include PID, hostname, ticket, and timestamp; their filenames normalize case and trailing spaces/dots. Home lock release compares the recorded owner bytes before unlinking, and runs even if writing final operation status fails. Lock files are never reaped based on age or process checks.
+
+Before artifact mutation, commands append intent/progress to an atomic `operations/<uuid>.json` record. Create records the full plan, including immutable starting commits, before making the workspace directory, and records branch, worktree, and manifest steps before execution. Removal records paths before deletion; import and fetch record their target repositories. Successful command effects remove their record. Failed/interrupted effects retain it, including successful rollback outcomes. Workspace remove partial results retain their manifest for retry.
+
+Doctor reads metadata and reports workspace health, including commit resolution of actual HEAD, without enforcing the creation-time branch. Invalid HEAD, missing paths, or ownership mismatch cannot be ready. Changed branches and detached valid commits are accepted. Doctor exposes operation records in JSON and human output and performs no recovery mutations. A record is evidence of attempted work, not authority to delete or adopt an artifact.
+
+SIGINT/SIGTERM trigger cleanup finalizers. A child that ignores SIGTERM can currently delay process finalization and lock release without an enforced upper bound. SIGKILL, machine crashes, and storage failures can leave locks, incomplete metadata, and partially installed Git artifacts. Manual recovery requires verifying the recorded process/host, actual Git worktree registrations, refs, cleanliness, guidance ownership, and residual files before releasing specific locks. Neither an old PID nor a journal proves an artifact safe to delete. There is no automatic force recovery or residual-directory adoption. Atomic writes are not a filesystem transaction across Git and Outpost state.
 
 ## Workspace AGENTS.md (`apps/cli/src/workspace-agents.ts`)
 
@@ -244,6 +257,7 @@ Path and semantic identifier validation are separate contracts:
 | `apps/cli/src/index.ts`                            | API entry point, programmatic `runCli()` export, import-safe                |
 | `apps/cli/src/program.ts`                          | CLI routing, arg parsing, output formatting, help text                      |
 | `apps/cli/src/config.ts`                           | Config schema, read/write, migration                                        |
+| `apps/cli/src/mutation-lock.ts`                    | Shared mutation lock, operation progress, and recovery inspection           |
 | `apps/cli/src/store.ts`                            | Atomic JSON/text file writes                                                |
 | `apps/cli/src/path-safety.ts`                      | Path segment validation, containment checks                                 |
 | `apps/cli/src/remote-identity.ts`                  | Remote URL parsing, identity derivation, managed path encoding              |

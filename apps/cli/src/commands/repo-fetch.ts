@@ -5,6 +5,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import { verifyManagedRepository } from "../managed-repo.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import type { CommandOutput } from "../types.js";
 import { fetchBareRepository, type RepoMirrorDiagnostic } from "./repo-mirror.js";
 
@@ -130,9 +131,21 @@ export function runRepoFetch(
       Effect.mapError((error) => new RepoFetchError({ message: error.message }))
     );
 
+    const mutation = yield* acquireHomeMutationLock(outpostHome, "repo fetch").pipe(
+      Effect.mapError((error) => new RepoFetchError({ message: error.message }))
+    );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.mapError((error) => new RepoFetchError({ message: error.message }))
     );
+    yield* mutation
+      .record({
+        action: "fetch-repositories",
+        repositories: registry.repos.map((repo) => ({
+          id: repo.id,
+          managedRepoPath: repo.managedRepoPath,
+        })),
+      })
+      .pipe(Effect.mapError((error) => new RepoFetchError({ message: error.message })));
     const processedRepos = yield* Effect.forEach(registry.repos, (repo) =>
       fetchOneRepo(repo, config.reposRoot)
     );
@@ -156,5 +169,5 @@ export function runRepoFetch(
       },
       exitCode: failedCount > 0 ? 1 : 0,
     } satisfies CommandOutput;
-  });
+  }).pipe(Effect.scoped);
 }

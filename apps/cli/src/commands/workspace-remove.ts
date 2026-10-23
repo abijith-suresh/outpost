@@ -4,8 +4,8 @@ import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandResult, gitCommand } from "../child-process.js";
-
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import {
   resolvePathWithinRoot,
   validatePathSegment,
@@ -97,6 +97,9 @@ export function runWorkspaceRemove(
       Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
 
+    const mutation = yield* acquireHomeMutationLock(outpostHome, "workspace remove").pipe(
+      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
+    );
     const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
       Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
     );
@@ -280,6 +283,14 @@ export function runWorkspaceRemove(
                 continue;
               }
 
+              yield* mutation
+                .record({
+                  action: "remove-worktree",
+                  ticket,
+                  managedRepoPath: resolvedManagedPath,
+                  worktreePath: resolvedWorktreePath,
+                })
+                .pipe(Effect.mapError(toMapError));
               const removalResult = yield* commandExitCode(
                 gitCommand(
                   "--git-dir",
@@ -314,6 +325,14 @@ export function runWorkspaceRemove(
               );
             }
 
+            yield* mutation
+              .record({
+                action: "remove-workspace-metadata",
+                ticket,
+                workspaceDir,
+                agentsFilePath,
+              })
+              .pipe(Effect.mapError(toMapError));
             const agentsDeleteResult = yield* deleteAgentsIfSnapshotMatches(
               agentsFilePath,
               agentsClassification.snapshot
@@ -406,5 +425,5 @@ export function runWorkspaceRemove(
     );
 
     return result;
-  });
+  }).pipe(Effect.scoped);
 }
