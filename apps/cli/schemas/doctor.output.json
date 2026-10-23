@@ -22,15 +22,9 @@
               "type": "boolean"
             },
             "missingRepoCount": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "string",
-                  "enum": ["Infinity", "-Infinity", "NaN"]
-                }
-              ]
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "missingRepos": {
               "type": "array",
@@ -99,15 +93,9 @@
             "repoCount": {
               "anyOf": [
                 {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["Infinity", "-Infinity", "NaN"]
-                    }
-                  ]
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 {
                   "type": "null"
@@ -117,15 +105,9 @@
             "unhealthyWorkspaceCount": {
               "anyOf": [
                 {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "enum": ["Infinity", "-Infinity", "NaN"]
-                    }
-                  ]
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 {
                   "type": "null"
@@ -321,40 +303,22 @@
                       "type": "boolean"
                     },
                     "omittedLineCount": {
-                      "anyOf": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["Infinity", "-Infinity", "NaN"]
-                        }
-                      ]
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     },
                     "capturedOutputTruncated": {
                       "type": "boolean"
                     },
                     "maxLines": {
-                      "anyOf": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["Infinity", "-Infinity", "NaN"]
-                        }
-                      ]
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     },
                     "maxCharacters": {
-                      "anyOf": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["Infinity", "-Infinity", "NaN"]
-                        }
-                      ]
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [

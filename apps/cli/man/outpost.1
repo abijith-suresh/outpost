@@ -286,7 +286,7 @@ Network: none. Retry: safe.
 .SH GLOBAL OPTIONS
 \-\-json opts into JSON. Help and version remain text. Duplicate global options fail before help/version short circuits.
 .SH SAFETY
-Removal refuses dirty worktrees and unproven ownership. Dry runs acquire no locks and perform no mutations; execution rechecks state. Local branches are preserved. Modified or foreign generated AGENTS.md requires explicit consent. Crash records require manual inspection, never automatic recovery.
+Removal refuses dirty worktrees and unproven ownership. Dry runs acquire no locks and perform no mutations; execution rechecks state. Workspace removal preserves local branches. Repository removal deletes the containing mirror and its local refs and commits. Save needed work outside that mirror before repository cleanup; network operations require explicit authorization. Modified or foreign generated AGENTS.md requires explicit consent. Crash records require manual inspection, never automatic recovery.
 .SH EXIT STATUS
 0 means success. 1 means an error on stderr, or a partial result on stdout. Inspect structured results before retrying.
 .SH ENVIRONMENT

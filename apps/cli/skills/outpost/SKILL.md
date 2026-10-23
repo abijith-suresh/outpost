@@ -26,12 +26,17 @@ Read [commands](references/commands.md) for syntax and
   same arguments without `--dry-run`. Non-interactive create requires all inputs.
 - Read the generated workspace `AGENTS.md` to find child worktrees. Run Git and
   application commands inside the relevant worktree and read its own guidance.
+  Navigate using `ticketDirectory`, the absolute workspace root, and returned
+  worktree paths. `workspacePath` is relative metadata, not a path from your cwd.
   Verify the current branch before committing. The workspace root is not a repo.
 - Preview cleanup with `outpost workspace remove <ticket> --dry-run --json`, then
   remove only when cleanup is intended. Dirty worktrees block removal. Local
   branches are preserved, including work committed after creation.
 - Remove a repository with `outpost repo remove <id> --dry-run --json`, followed
-  by removal only after workspaces and Git links no longer reference it.
+  by removal only after workspaces and Git links no longer reference it. Repository
+  removal deletes the mirror that stores its local branches and commits. Keep the
+  mirror or save needed work elsewhere first, for example with a local Git bundle.
+  Push only if the user explicitly authorizes that network action.
 
 ## Interpret the result before retrying
 

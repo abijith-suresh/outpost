@@ -77,7 +77,11 @@ Removes all worktrees for the given ticket. The command refuses to remove:
 - Worktrees it cannot prove it owns
 - Workspaces where `AGENTS.md` has been modified or replaced (interactive mode prompts for confirmation; non-interactive mode fails)
 
-Branches in the managed mirrors are preserved.
+Workspace removal preserves branches in the managed mirrors. Repository removal
+deletes that storage, including its local refs and any commits stored only there.
+Keep the mirror or save needed work elsewhere before `repo remove`, for example
+with a local Git bundle. Push only when the user explicitly authorizes network
+access. Existing-mirror previews and removal results always include this warning.
 
 ### Interactive vs non-interactive
 

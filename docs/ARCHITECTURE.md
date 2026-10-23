@@ -346,3 +346,11 @@ loader, validate installed guidance/partial/error envelopes, export the portable
 skill, reject a second export and verify the man link resolves into the package.
 The workspace AGENTS generator adds a short offline guidance pointer and states
 that Outpost owns the generated file and records its hash.
+
+Repository-removal previews and results always warn when an existing mirror will
+be deleted, including its local refs and commits stored only there. Workspace
+removal preserves those branches; repository removal does not. Shipped guidance
+requires retaining the mirror or saving needed work elsewhere first and grants no
+implicit permission to push. Result counts use nonnegative safe integer schemas,
+which exclude nonfinite values and generate stable optional-count JSON under both
+paired Effect patches used by the source and maintenance stacks.

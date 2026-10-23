@@ -1,12 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, symlinkSync } from "node:fs";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it, vi } from "vitest";
 import { ALL_COMMANDS } from "../src/command-spec.ts";
 import { GUIDANCE_PATHS } from "../src/commands/guidance.ts";
 import {
+  commitFile,
+  configureGitIdentity,
+  createManagedRepoFixture,
   createTempDir,
   existsSync,
   path,
+  readRegistry,
   runCli,
   setupAfterEach,
   writeFileSync,
@@ -71,6 +76,57 @@ describe("bundled offline guidance", () => {
     symlinkSync(external, path.join(root, "outpost"), "dir");
     await run(["skill", "export", root], 1);
     expect(readdirSync(external)).toEqual([]);
+  });
+
+  it("warns that repository cleanup deletes branch storage in preview and execution", async () => {
+    const home = createTempDir();
+    process.env.OUTPOST_HOME = home;
+    const run = capture();
+    await run(["init"]);
+    const source = await createManagedRepoFixture({ defaultBranch: "main" });
+    await run(["repo", "add", source.tempRepo]);
+    const repo = readRegistry(home).repos[0];
+    const created = await run(["create", "--ticket", "SAVE", "--type", "feat", "--repo", repo.id]);
+    const worktree = created.data.worktrees[0].path;
+    await configureGitIdentity(worktree);
+    await commitFile(worktree, "only-in-mirror.txt", "Agent work", "agent work");
+    const branch = "refs/heads/feat/SAVE";
+    const commit = execFileSync("git", ["--git-dir", repo.managedRepoPath, "rev-parse", branch], {
+      encoding: "utf8",
+    }).trim();
+    await run(["workspace", "remove", "SAVE"]);
+    expect(
+      execFileSync("git", ["--git-dir", repo.managedRepoPath, "rev-parse", branch], {
+        encoding: "utf8",
+      }).trim()
+    ).toBe(commit);
+    expect(() =>
+      execFileSync("git", ["-C", source.tempRepo, "rev-parse", "--verify", branch], {
+        stdio: "pipe",
+      })
+    ).toThrow();
+    const preview = await run(["repo", "remove", repo.id, "--dry-run"]);
+    expect(preview.data.warnings).toContainEqual(expect.stringContaining("local branches"));
+    expect(preview.data.warnings).toContainEqual(
+      expect.stringContaining("Save needed branches and commits outside")
+    );
+    expect(existsSync(repo.managedRepoPath)).toBe(true);
+    const removed = await run(["repo", "remove", repo.id]);
+    expect(removed.data.warnings).toEqual(preview.data.warnings);
+    expect(existsSync(repo.managedRepoPath)).toBe(false);
+  });
+
+  it("describes counts as finite nonnegative safe integers", async () => {
+    process.env.OUTPOST_HOME = path.join(createTempDir(), "not-initialized");
+    const result = await capture()(["doctor"]);
+    const schema = JSON.parse(
+      readFileSync(path.join(GUIDANCE_PATHS.schemasPath, "doctor.output.json"), "utf8")
+    );
+    const validate = new Ajv2020({ strict: true }).compile(schema);
+    for (const repoCount of [-1, 0.5, "Infinity", Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(validate({ ...result, data: { ...result.data, repoCount } })).toBe(false);
+    }
+    expect(validate({ ...result, data: { ...result.data, repoCount: 0 } })).toBe(true);
   });
 
   it("ships schemas with no unresolved local or network references for every JSON command", () => {

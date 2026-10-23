@@ -26,7 +26,11 @@ fetching may change remote tracking refs and tags, but preserves local branches.
 A partial `workspace remove --json` returns `completed`, `remaining`, `status` and
 diagnostics. Existing worktrees, the manifest or residual files may remain. Inspect
 `workspace show` and the filesystem before retrying. A nonempty workspace root is
-preserved. Removal does not delete local branches.
+preserved. Workspace removal does not delete local branches. Repository removal deletes
+the mirror containing those branches and any commits stored only there. Retain
+the mirror or save needed work outside it before repository cleanup. A local Git
+bundle can preserve work without network access; push only with explicit user
+authorization.
 
 Git diagnostic output is bounded to 80 lines and 16,384 text characters in total,
 40 lines and 8,192 characters per stream. `diagnosticTruncation.truncated` covers
