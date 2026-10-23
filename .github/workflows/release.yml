@@ -58,11 +58,11 @@ jobs:
 
       - name: Create release pull request or publish package
         id: changesets
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          commit: "chore: version packages"
-          publish: npm run publish:release
-          title: "chore: version packages"
-          version: npm run version:packages
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          commit-message: "chore: version packages"
+          publish-script: npm run publish:release
+          pr-title: "chore: version packages"
+          version-script: npm run version:packages
+          github-token: ${{ secrets.RELEASE_TOKEN }}
+          push-with-git-cli: true
