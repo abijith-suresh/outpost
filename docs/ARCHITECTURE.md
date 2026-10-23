@@ -95,6 +95,8 @@ Repositories are identified by a canonical identity derived from their remote UR
 
 The identity determines the managed mirror path under `repos/`. Path segments are percent-encoded to produce filesystem-safe names (`encodeManagedPathSegment`).
 
+**Checked process execution** (`apps/cli/src/child-process.ts`): all Git helpers drain stdout and stderr concurrently with exit-status waiting, retaining at most 256 KiB per stream. String results require exit status zero and complete stdout. Exit-code probes explicitly accept nonzero results. The default 120-second timeout is configurable with `OUTPOST_GIT_TIMEOUT_MS`; scoped cancellation terminates children.
+
 **Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create resolves bases from remote tracking refs first, then existing local branches. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
 
 **Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.

@@ -1,8 +1,7 @@
-import { Effect, Schema, Stream } from "effect";
-import type { PlatformError } from "effect/PlatformError";
+import { Effect, Schema } from "effect";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { gitCommand } from "../child-process.js";
+import { commandResult, gitCommand } from "../child-process.js";
 
 export const RepoMirrorDiagnosticSchema = Schema.Struct({
   stream: Schema.Literals(["stdout", "stderr"]),
@@ -16,53 +15,34 @@ export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()("Repo
   diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
 }) {}
 
-function captureDiagnosticLines(
-  stream: Stream.Stream<Uint8Array, PlatformError>,
-  source: RepoMirrorDiagnostic["stream"]
-): Effect.Effect<ReadonlyArray<RepoMirrorDiagnostic>, PlatformError> {
-  return stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (output, chunk) => output + chunk
-    ),
-    Effect.map((output) =>
-      output
-        .split(/\r?\n/u)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0)
-        .map((line) => ({ stream: source, line }))
-    )
-  );
-}
-
 function runGitCommand(
   command: ChildProcess.Command,
   failureMessage: string
 ): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const process = yield* command;
-      const [stdoutDiagnostics, stderrDiagnostics, exitCode] = yield* Effect.all(
-        [
-          captureDiagnosticLines(process.stdout, "stdout"),
-          captureDiagnosticLines(process.stderr, "stderr"),
-          process.exitCode,
-        ] as const,
-        { concurrency: "unbounded" }
-      );
-      const diagnostics = [...stdoutDiagnostics, ...stderrDiagnostics];
-
-      if (exitCode !== 0) {
-        return yield* Effect.fail(
-          new RepoMirrorError({
-            message: `${failureMessage} (exit status ${exitCode})`,
-            diagnostics,
-          })
+  return commandResult(command).pipe(
+    Effect.flatMap((result) => {
+      const diagnostics: Array<RepoMirrorDiagnostic> = [];
+      for (const source of ["stdout", "stderr"] as const) {
+        diagnostics.push(
+          ...result[source].text
+            .split(/\r?\n/u)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => ({ stream: source, line }))
         );
+        if (result[source].truncated) {
+          diagnostics.push({ stream: source, line: "[output truncated]" });
+        }
       }
-    })
-  ).pipe(
+      return result.exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new RepoMirrorError({
+              message: `${failureMessage} (exit status ${result.exitCode})`,
+              diagnostics,
+            })
+          );
+    }),
     Effect.mapError((error) =>
       error instanceof RepoMirrorError
         ? error
