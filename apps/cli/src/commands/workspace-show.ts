@@ -2,13 +2,14 @@ import { Effect, Result, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import {
   resolvePathWithinRoot,
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../path-safety.js";
+import type { ResultData } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
 import {
   deriveWorkspaceStatus,
@@ -23,6 +24,7 @@ import {
 export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()(
   "WorkspaceShowError",
   {
+    ...ErrorDetailFields,
     message: Schema.String,
   }
 ) {}
@@ -31,7 +33,7 @@ export function runWorkspaceShow(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>
 ): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"workspace show">,
   WorkspaceShowError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -39,22 +41,29 @@ export function runWorkspaceShow(
     if (!ticket || extraArgs.length > 0) {
       return yield* Effect.fail(
         new WorkspaceShowError({
+          ...reasonDetails("invalid-arguments"),
           message: "Usage: outpost workspace show <ticket> [--json]",
         })
       );
     }
 
     yield* validateSemanticIdentifier("--ticket", ticket).pipe(
-      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* validatePathSegment("--ticket", ticket).pipe(
-      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new WorkspaceShowError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceShowError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
@@ -75,7 +84,7 @@ export function runWorkspaceShow(
         ticketDirectory = workspacePathResult.success;
       }
 
-      const worktrees: Array<Record<string, unknown>> = [];
+      const worktrees: Array<ResultData["workspace show"]["worktrees"][number]> = [];
       for (const repo of manifest.repositories) {
         const managedPathResult = yield* resolveManagedPath(
           config.reposRoot,
@@ -95,7 +104,9 @@ export function runWorkspaceShow(
           }
         }
 
-        const worktreeEntry: Record<string, unknown> = {
+        const worktreeEntry: {
+          -readonly [K in keyof ResultData["workspace show"]["worktrees"][number]]: ResultData["workspace show"]["worktrees"][number][K];
+        } = {
           id: repo.id,
           name: repo.name,
           base: repo.base,
@@ -135,7 +146,7 @@ export function runWorkspaceShow(
           manifestPath: manifestFilePath,
           worktrees,
         },
-      } satisfies CommandOutput;
+      } satisfies CommandOutput<"workspace show">;
     }
 
     const manifestError = manifestResult.failure;
@@ -151,7 +162,7 @@ export function runWorkspaceShow(
           diagnostics: [manifestError.message],
           worktrees: [],
         },
-      } satisfies CommandOutput;
+      } satisfies CommandOutput<"workspace show">;
     }
 
     const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
@@ -174,12 +185,13 @@ export function runWorkspaceShow(
             ],
             worktrees: [],
           },
-        } satisfies CommandOutput;
+        } satisfies CommandOutput<"workspace show">;
       }
     }
 
     return yield* Effect.fail(
       new WorkspaceShowError({
+        ...reasonDetails("workspace-missing"),
         message: `Unknown workspace ticket: ${ticket}`,
       })
     );

@@ -6,7 +6,7 @@ Developers working on tickets that span multiple repositories (e.g., a backend c
 
 ## Target User
 
-The primary user is an individual developer coordinating one ticket across multiple local repositories. Outpost is particularly intended for restricted enterprise machines where installing arbitrary native tools may not be possible but npm packages are available.
+Coding agents are the primary operators of Outpost, coordinating one ticket across multiple local repositories on behalf of a developer. The developer remains responsible for intent, review and approval. Human command-line use remains supported. Outpost is particularly intended for restricted enterprise machines where installing arbitrary native tools may not be possible but npm packages are available.
 
 ## Goals
 
@@ -42,7 +42,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 
 ## Success Criteria
 
-1. A developer can initialize Outpost, import repos, create a ticket workspace, navigate it, and remove it — all from the command line.
+1. An agent can discover the installed command contract, initialize Outpost, explicitly import repos, preview a ticket workspace, create it and remove it with structured lifecycle results.
 2. A coding agent reading workspace `AGENTS.md` can understand which repos to work in, what branches to use, and what the workspace structure is.
 3. Outpost refuses to remove worktrees with uncommitted changes and does not delete modified or foreign workspace guidance without explicit interactive approval.
 4. Concurrent `outpost create` calls for the same ticket are serialized via ticket locks.

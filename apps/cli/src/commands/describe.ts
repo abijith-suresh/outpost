@@ -1,54 +1,24 @@
 import { Effect, Schema } from "effect";
-import { ALL_COMMANDS, type CommandSpec, findCommand } from "../command-spec.js";
+import { CONTRACT_VERSION, findCommand } from "../command-spec.js";
+
+import { describeAll, describeCommand } from "../machine-contract.js";
 import type { CommandOutput } from "../types.js";
 
 export class DescribeError extends Schema.TaggedError<DescribeError>()("DescribeError", {
   message: Schema.String,
 }) {}
 
-export function runDescribe(args: readonly string[]): Effect.Effect<CommandOutput, DescribeError> {
-  return Effect.gen(function* () {
-    if (args.length === 0) {
-      return {
+export function runDescribe(
+  args: readonly string[],
+  cliVersion: string
+): Effect.Effect<CommandOutput<"describe">, DescribeError> {
+  if (args.length === 0)
+    return Effect.succeed({ command: "describe", data: describeAll(cliVersion) });
+  const spec = findCommand(args);
+  return spec
+    ? Effect.succeed({
         command: "describe",
-        data: {
-          commands: ALL_COMMANDS.map((spec) => ({
-            path: spec.path,
-            usage: spec.path.join(" "),
-            description: spec.description,
-            mutation: spec.mutation,
-            interactive: spec.interactive,
-            json: spec.json,
-            dryRun: spec.dryRun,
-          })),
-        },
-      } satisfies CommandOutput;
-    }
-
-    const path = args;
-    const spec: CommandSpec | undefined = findCommand(path);
-
-    if (!spec) {
-      return yield* Effect.fail(
-        new DescribeError({
-          message: `Unknown command: ${path.join(" ")}`,
-        })
-      );
-    }
-
-    return {
-      command: "describe",
-      data: {
-        path: spec.path,
-        usage: spec.path.join(" "),
-        description: spec.description,
-        arguments: spec.arguments ?? [],
-        options: spec.options ?? [],
-        mutation: spec.mutation,
-        interactive: spec.interactive,
-        json: spec.json,
-        dryRun: spec.dryRun,
-      },
-    } satisfies CommandOutput;
-  });
+        data: { contractVersion: CONTRACT_VERSION, cliVersion, ...describeCommand(spec) },
+      })
+    : Effect.fail(new DescribeError({ message: `Unknown command: ${args.join(" ")}` }));
 }

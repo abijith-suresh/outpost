@@ -231,14 +231,14 @@ describe("run", () => {
     const result = output.data.results[0];
 
     expect(result?.error).toBe(`git fetch failed for ${managedRepoPath} (exit status 23)`);
-    expect(result?.diagnostics).toHaveLength(4096);
+    expect(result?.diagnostics).toHaveLength(80);
     expect(result?.diagnostics).toContainEqual({
       stream: "stdout",
       line: `${GIT_STDOUT_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
     });
     expect(result?.diagnostics).toContainEqual({
       stream: "stderr",
-      line: `${GIT_STDERR_SENTINEL}-2047-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+      line: `${GIT_STDERR_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
     });
 
     infoSpy.mockClear();

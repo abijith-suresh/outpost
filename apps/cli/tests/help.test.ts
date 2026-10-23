@@ -27,8 +27,8 @@ describe("run", () => {
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo add <path> [--remote <name>] [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).toContain("repo fetch --all [--json]");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo remove <id> [--json]");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("workspace remove <ticket> [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("repo remove <id> [--dry-run] [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain("workspace remove <ticket> [--dry-run] [--json]");
     expect(infoSpy.mock.calls[0]?.[0]).not.toContain("[--json] [--json]");
   });
 
@@ -168,7 +168,9 @@ describe("run", () => {
 
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost workspace remove <ticket> [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "outpost workspace remove <ticket> [--dry-run] [--json]"
+    );
     expect(infoSpy.mock.calls[0]?.[0]).toContain(
       "<ticket>  Ticket workspace identifier (required)"
     );
@@ -184,7 +186,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "help",
       error: {
@@ -222,7 +224,7 @@ describe("run", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
 
     const envelope = JSON.parse(String(infoSpy.mock.calls[0]?.[0]));
-    expect(envelope).toEqual({
+    expect(envelope).toMatchObject({
       ok: true,
       command: "describe",
       data: {
@@ -249,7 +251,7 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(errorSpy).not.toHaveBeenCalled();
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: true,
       command: "describe",
       data: {
@@ -289,7 +291,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "describe",
       error: {
@@ -325,7 +327,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "doctor",
       error: {
@@ -355,7 +357,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "repo remove",
       error: {
@@ -388,7 +390,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "help",
       error: {
@@ -408,7 +410,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: null,
       error: {
@@ -428,7 +430,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "doctor",
       error: {
@@ -450,7 +452,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(infoSpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "repo show",
       error: {
@@ -472,7 +474,7 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(errorSpy).not.toHaveBeenCalled();
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: true,
       command: "doctor",
       data: {
@@ -509,7 +511,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).not.toHaveBeenCalled();
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toEqual({
+    expect(JSON.parse(String(infoSpy.mock.calls[0]?.[0]))).toMatchObject({
       ok: false,
       command: "repo fetch",
       data: {

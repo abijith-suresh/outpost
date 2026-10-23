@@ -5,8 +5,10 @@ import * as Path from "effect/Path";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
+import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { verifyManagedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import {
@@ -14,6 +16,7 @@ import {
   resolvePathWithinRoot,
   validatePathSegment,
   validateSemanticIdentifier,
+  validateWorktreeGuidancePath,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import type { GeneratedAgentsFile } from "../workspace-agents.js";
@@ -30,6 +33,7 @@ import {
 import * as CreatePrompt from "./create-prompt.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()("CreateError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -80,16 +84,11 @@ function ensureUniqueWorktreePaths(
 
     for (const plan of plans) {
       const portableKey = yield* getCanonicalPortablePathKey(plan.worktreePath);
-      const agentsKey = yield* getCanonicalPortablePathKey(
-        path.join(path.dirname(plan.worktreePath), "AGENTS.md")
+      yield* validateWorktreeGuidancePath(path.dirname(plan.worktreePath), plan.worktreePath).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
-      if (portableKey === agentsKey) {
-        return yield* Effect.fail(
-          new CreateError({
-            message: `Repository ${plan.repoId} collides with reserved generated path AGENTS.md: ${plan.worktreePath}`,
-          })
-        );
-      }
       const existing = pathsByPortableKey.get(portableKey);
 
       if (existing) {
@@ -117,6 +116,7 @@ function ensureUniqueWorktreePaths(
 
 function usageError(details?: string): CreateError {
   return new CreateError({
+    ...reasonDetails("invalid-arguments"),
     message: details ? `${createUsage}\n${details}` : createUsage,
   });
 }
@@ -124,93 +124,29 @@ function usageError(details?: string): CreateError {
 function parseCreateArgsInput(
   args: ReadonlyArray<string>
 ): Effect.Effect<CreateArgsInput, CreateError> {
-  let ticket: string | undefined;
-  let type: string | undefined;
-  let base: string | undefined;
-  let dryRun = false;
-  const repoIds: Array<string> = [];
-
-  let index = 0;
-  while (index < args.length) {
-    const arg = args[index];
-    const value = args[index + 1];
-
-    if (arg === "--ticket") {
-      if (ticket) {
-        return Effect.fail(usageError("--ticket may only be provided once."));
-      }
-
-      if (!value || value.startsWith("--")) {
-        return Effect.fail(usageError("--ticket requires a value."));
-      }
-
-      ticket = value;
-      index += 2;
-      continue;
-    }
-
-    if (arg === "--type") {
-      if (type) {
-        return Effect.fail(usageError("--type may only be provided once."));
-      }
-
-      if (!value || value.startsWith("--")) {
-        return Effect.fail(usageError("--type requires a value."));
-      }
-
-      type = value;
-      index += 2;
-      continue;
-    }
-
-    if (arg === "--repo") {
-      if (!value || value.startsWith("--")) {
-        return Effect.fail(usageError("--repo requires a value."));
-      }
-
-      if (repoIds.includes(value)) {
-        return Effect.fail(usageError(`--repo may not be repeated with the same id: ${value}.`));
-      }
-
-      repoIds.push(value);
-      index += 2;
-      continue;
-    }
-
-    if (arg === "--base") {
-      if (base) {
-        return Effect.fail(usageError("--base may only be provided once."));
-      }
-
-      if (!value || value.startsWith("--")) {
-        return Effect.fail(usageError("--base requires a value."));
-      }
-
-      base = value;
-      index += 2;
-      continue;
-    }
-
-    if (arg === "--dry-run") {
-      if (dryRun) {
-        return Effect.fail(usageError("--dry-run may only be provided once."));
-      }
-
-      dryRun = true;
-      index += 1;
-      continue;
-    }
-
-    return Effect.fail(usageError(`Unknown option: ${arg}`));
-  }
-
-  return Effect.succeed({
-    ticket,
-    type,
-    repoIds,
-    base,
-    dryRun,
-  } satisfies CreateArgsInput);
+  return Effect.try({
+    try: () => {
+      const parsed = parseCommandInput(requireCommand(["create"]), args, true);
+      const value = (name: string): string | undefined => {
+        const option = parsed.options[name];
+        return Array.isArray(option) ? option[0] : undefined;
+      };
+      const repoOption = parsed.options["--repo"];
+      const repoIds: readonly string[] = Array.isArray(repoOption) ? repoOption : [];
+      if (new Set(repoIds).size !== repoIds.length)
+        throw new Error(
+          `--repo may not be repeated with the same id: ${repoIds.find((id, index) => repoIds.indexOf(id) !== index)}.`
+        );
+      return {
+        ticket: value("--ticket"),
+        type: value("--type"),
+        base: value("--base"),
+        repoIds,
+        dryRun: parsed.options["--dry-run"] === true,
+      };
+    },
+    catch: (error) => usageError(error instanceof Error ? error.message : String(error)),
+  });
 }
 
 function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArgs, CreateError> {
@@ -245,7 +181,9 @@ function validateBranchName(
   branchName: string
 ): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
   return commandExitCode(gitCommand("check-ref-format", "--branch", branchName)).pipe(
-    Effect.mapError((error) => new CreateError({ message: error.message })),
+    Effect.mapError(
+      (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+    ),
     Effect.flatMap((exitCode) =>
       exitCode === 0
         ? Effect.void
@@ -262,31 +200,47 @@ function validateCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<void, Cr
   return Effect.gen(function* () {
     if (parsedArgs.ticket !== undefined) {
       yield* validateSemanticIdentifier("--ticket", parsedArgs.ticket).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
       yield* validatePathSegment("--ticket", parsedArgs.ticket, {
         allowTraversalSegments: true,
-      }).pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+      }).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     }
 
     if (parsedArgs.type !== undefined) {
       yield* validateSemanticIdentifier("--type", parsedArgs.type).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
       yield* validatePathSegment("--type", parsedArgs.type, {
         allowTraversalSegments: true,
-      }).pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+      }).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     }
 
     for (const repoId of parsedArgs.repoIds) {
       yield* validateSemanticIdentifier("--repo", repoId).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
     }
 
     if (parsedArgs.base !== undefined) {
       yield* validateSemanticIdentifier("--base", parsedArgs.base).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
     }
   });
@@ -349,6 +303,7 @@ function getSelectedRepos(
   if (unknownRepoIds.length > 0) {
     return Effect.fail(
       new CreateError({
+        ...reasonDetails("repo-missing"),
         message:
           unknownRepoIds.length === 1
             ? `Unknown repo id: ${unknownRepoIds[0]}`
@@ -452,9 +407,15 @@ function buildCreatePlan(
     const remoteRef = `refs/remotes/origin/${baseBranch}`;
     const remoteExists = yield* commandExitCode(
       gitCommand("--git-dir", repo.managedRepoPath, "show-ref", "--verify", "--quiet", remoteRef)
-    ).pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+    ).pipe(
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const localExists = yield* localBranchExists(repo, baseBranch).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (remoteExists !== 0 && !localExists) {
@@ -466,7 +427,9 @@ function buildCreatePlan(
     }
 
     const branchExists = yield* localBranchExists(repo, branchName).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (branchExists) {
@@ -478,7 +441,9 @@ function buildCreatePlan(
     }
 
     const worktreePath = yield* resolvePathWithinRoot(ticketDirectory, repo.name).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     return {
@@ -497,7 +462,11 @@ function buildCreatePlan(
           "--verify",
           `${remoteExists === 0 ? remoteRef : `refs/heads/${baseBranch}`}^{commit}`
         )
-      ).pipe(Effect.mapError((error) => new CreateError({ message: error.message })))).trim(),
+      ).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      )).trim(),
     } satisfies CreatePlan;
   });
 }
@@ -508,7 +477,9 @@ function createBranch(
   return commandExitCode(
     gitCommand("--git-dir", plan.managedRepoPath, "branch", plan.branch, plan.startPoint)
   ).pipe(
-    Effect.mapError((error) => new CreateError({ message: error.message })),
+    Effect.mapError(
+      (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+    ),
     Effect.flatMap((exitCode) =>
       exitCode === 0
         ? Effect.void
@@ -527,7 +498,9 @@ function createWorktree(
   return commandExitCode(
     gitCommand("--git-dir", plan.managedRepoPath, "worktree", "add", plan.worktreePath, plan.branch)
   ).pipe(
-    Effect.mapError((error) => new CreateError({ message: error.message })),
+    Effect.mapError(
+      (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+    ),
     Effect.flatMap((exitCode) =>
       exitCode === 0
         ? Effect.void
@@ -550,7 +523,11 @@ function checkPortableTicketCollision(
     const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
     const stateRootExists = yield* fs
       .exists(stateRoot)
-      .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     if (!stateRootExists) {
       return;
@@ -558,7 +535,11 @@ function checkPortableTicketCollision(
 
     const entries = yield* fs
       .readDirectory(stateRoot)
-      .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     const manifestFiles = entries.filter((entry) => entry.endsWith(".json"));
     const targetFilePath = path.join(stateRoot, `${ticket}.json`);
     const targetKey = yield* getCanonicalPortablePathKey(targetFilePath);
@@ -739,7 +720,9 @@ function prepareCreate(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (hasManifest) {
@@ -754,7 +737,11 @@ function prepareCreate(
 
     const ticketDirectoryExists = yield* fs
       .exists(ticketDirectory)
-      .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     if (ticketDirectoryExists) {
       return yield* Effect.fail(
@@ -765,11 +752,15 @@ function prepareCreate(
     }
 
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* Effect.forEach(selectedRepos, (repo) =>
       verifyManagedRepository(config.reposRoot, repo).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       )
     );
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
@@ -785,7 +776,7 @@ export function runCreate(
   args: ReadonlyArray<string>,
   options: { interactive: boolean }
 ): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"create">,
   CreateError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -807,7 +798,9 @@ export function runCreate(
 
       yield* validateCreateArgs(parsedArgsInput);
       const earlyRegistry = yield* loadRepoRegistry(outpostHome).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
       parsedArgs = yield* resolveCreateArgs(parsedArgsInput, {
         interactive: options.interactive,
@@ -823,25 +816,35 @@ export function runCreate(
     yield* validateBranchName(branchName);
 
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const mutation = parsedArgs.dryRun
       ? undefined
       : yield* acquireHomeMutationLock(outpostHome, "create").pipe(
-          Effect.mapError((error) => new CreateError({ message: error.message }))
+          Effect.mapError(
+            (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+          )
         );
     const record = (step: Record<string, unknown>) =>
       (mutation?.record(step) ?? Effect.void).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const selectedRepos = yield* getSelectedRepos(registry.repos, parsedArgs.repoIds);
 
     const workspacePath = parsedArgs.ticket;
     const ticketDirectory = yield* resolvePathWithinRoot(config.worktreesRoot, workspacePath).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (parsedArgs.dryRun) {
@@ -870,12 +873,14 @@ export function runCreate(
             base: plan.base,
           })),
         },
-      } satisfies CommandOutput;
+      } satisfies CommandOutput<"create">;
     }
 
     yield* Effect.acquireRelease(
       acquireTicketLock(outpostHome, parsedArgs.ticket).pipe(
-        Effect.mapError((error) => new CreateError({ message: error.message }))
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       ),
       () => releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.ignore)
     );
@@ -907,7 +912,11 @@ export function runCreate(
           Effect.gen(function* () {
             yield* fs
               .makeDirectory(ticketDirectory)
-              .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+              .pipe(
+                Effect.mapError(
+                  (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+                )
+              );
             created.ticketDirectory = true;
           })
         );
@@ -965,7 +974,9 @@ export function runCreate(
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             created.agents = yield* generateAgentsMarkdown(outpostHome, manifest).pipe(
-              Effect.mapError((error) => new CreateError({ message: error.message }))
+              Effect.mapError(
+                (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+              )
             );
           })
         );
@@ -974,7 +985,9 @@ export function runCreate(
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* writeManifest(outpostHome, manifest).pipe(
-              Effect.mapError((error) => new CreateError({ message: error.message }))
+              Effect.mapError(
+                (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+              )
             );
             created.committed = true;
           })
@@ -997,7 +1010,7 @@ export function runCreate(
               base: plan.base,
             })),
           },
-        } satisfies CommandOutput;
+        } satisfies CommandOutput<"create">;
       }).pipe(
         Effect.onInterrupt(() =>
           created.committed

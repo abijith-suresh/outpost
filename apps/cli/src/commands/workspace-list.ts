@@ -2,8 +2,8 @@ import { Effect, Result, Schema } from "effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import { domainDetails, ErrorDetailFields } from "../error-details.js";
 import type { CommandOutput } from "../types.js";
 import {
   deriveWorkspaceStatus,
@@ -28,12 +28,13 @@ export type WorkspaceSummary = {
 export class WorkspaceListError extends Schema.TaggedError<WorkspaceListError>()(
   "WorkspaceListError",
   {
+    ...ErrorDetailFields,
     message: Schema.String,
   }
 ) {}
 
 export function runWorkspaceList(): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"workspace list">,
   WorkspaceListError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -41,11 +42,15 @@ export function runWorkspaceList(): Effect.Effect<
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceListError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const managedTickets = yield* listManifestTickets(outpostHome).pipe(
-      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceListError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const managedResults: Array<WorkspaceSummary> = [];
@@ -94,7 +99,9 @@ export function runWorkspaceList(): Effect.Effect<
 
     const managedTicketSet = new Set(managedTickets);
     const unmanagedDirs = yield* scanWorktreesRoot(config.worktreesRoot, outpostHome).pipe(
-      Effect.mapError((error) => new WorkspaceListError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceListError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const unmanagedResults: Array<WorkspaceSummary> = [];
@@ -124,6 +131,6 @@ export function runWorkspaceList(): Effect.Effect<
       data: {
         workspaces: allWorkspaces,
       },
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"workspace list">;
   });
 }

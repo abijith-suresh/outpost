@@ -5,6 +5,7 @@ import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandResult, gitCommand } from "../child-process.js";
 import { loadConfig, resolveOutpostHome } from "../config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import {
   resolvePathWithinRoot,
@@ -29,6 +30,7 @@ import { type AgentsRemovalPrompt, promptAgentsRemovalConsent } from "./workspac
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
   "WorkspaceRemoveError",
   {
+    ...ErrorDetailFields,
     message: Schema.String,
   }
 ) {}
@@ -36,6 +38,7 @@ export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveErro
 function toMapError(error: unknown): WorkspaceRemoveError {
   return new WorkspaceRemoveError({
     message: error instanceof Error ? error.message : "Unknown workspace error",
+    ...domainDetails(error),
   });
 }
 
@@ -46,7 +49,7 @@ function partialRemovalOutput(
   completed: ReadonlyArray<string>,
   remaining: ReadonlyArray<string>,
   diagnostics: ReadonlyArray<string>
-): CommandOutput {
+): CommandOutput<"workspace remove"> {
   return {
     command: "workspace remove",
     data: {
@@ -71,37 +74,51 @@ export function runWorkspaceRemove(
     promptAgentsRemovalConsent?: AgentsRemovalPrompt;
   }
 ): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"workspace remove">,
   WorkspaceRemoveError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
-    if (!ticket || extraArgs.length > 0) {
+    const dryRun = extraArgs.length === 1 && extraArgs[0] === "--dry-run";
+    if (!ticket || (extraArgs.length > 0 && !dryRun)) {
       return yield* Effect.fail(
         new WorkspaceRemoveError({
+          ...reasonDetails("invalid-arguments"),
           message: "Usage: outpost workspace remove <ticket> [--json]",
         })
       );
     }
 
     yield* validateSemanticIdentifier("--ticket", ticket).pipe(
-      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* validatePathSegment("--ticket", ticket).pipe(
-      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
-    const mutation = yield* acquireHomeMutationLock(outpostHome, "workspace remove").pipe(
-      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
-    );
+    const mutation = dryRun
+      ? undefined
+      : yield* acquireHomeMutationLock(outpostHome, "workspace remove").pipe(
+          Effect.mapError(
+            (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+          )
+        );
     const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
-      Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message }))
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (!hasManifest) {
@@ -113,7 +130,12 @@ export function runWorkspaceRemove(
         const ticketDir = ticketDirResult.success;
         const dirExists = yield* fs
           .exists(ticketDir)
-          .pipe(Effect.mapError((error) => new WorkspaceRemoveError({ message: error.message })));
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+            )
+          );
 
         if (dirExists) {
           return yield* Effect.fail(
@@ -126,6 +148,7 @@ export function runWorkspaceRemove(
 
       return yield* Effect.fail(
         new WorkspaceRemoveError({
+          ...reasonDetails("workspace-missing"),
           message: `Unknown workspace ticket: ${ticket}`,
         })
       );
@@ -133,8 +156,13 @@ export function runWorkspaceRemove(
 
     const result = yield* Effect.scoped(
       Effect.acquireRelease(
-        acquireTicketLock(outpostHome, ticket).pipe(Effect.mapError(toMapError)),
-        () => releaseTicketLock(outpostHome, ticket).pipe(Effect.catch(() => Effect.void))
+        dryRun
+          ? Effect.void
+          : acquireTicketLock(outpostHome, ticket).pipe(Effect.mapError(toMapError)),
+        () =>
+          dryRun
+            ? Effect.void
+            : releaseTicketLock(outpostHome, ticket).pipe(Effect.catch(() => Effect.void))
       ).pipe(
         Effect.flatMap(() =>
           Effect.gen(function* () {
@@ -157,7 +185,7 @@ export function runWorkspaceRemove(
             );
             const { ownership } = agentsClassification;
 
-            if (ownership === "foreign" || ownership === "modified") {
+            if (!dryRun && (ownership === "foreign" || ownership === "modified")) {
               if (options.interactive) {
                 const consent = yield* Effect.tryPromise({
                   try: () =>
@@ -175,6 +203,7 @@ export function runWorkspaceRemove(
                 if (!consent) {
                   return yield* Effect.fail(
                     new WorkspaceRemoveError({
+                      ...reasonDetails("approval-needed"),
                       message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Delete AGENTS.md manually or approve its removal.`,
                     })
                   );
@@ -183,6 +212,7 @@ export function runWorkspaceRemove(
               } else {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
+                    ...reasonDetails("approval-needed"),
                     message:
                       ownership === "modified"
                         ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Delete it manually and rerun, or retry in interactive mode.`
@@ -218,6 +248,7 @@ export function runWorkspaceRemove(
               if (!managedRepoExists) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
+                    ...reasonDetails("repo-missing"),
                     message: `Cannot establish cleanliness for worktree ${resolvedWorktreePath}: managed repository ${resolvedManagedPath} is missing. Refusing removal.`,
                   })
                 );
@@ -236,7 +267,13 @@ export function runWorkspaceRemove(
                 );
               }
 
-              const statusCommand = gitCommand("-C", resolvedWorktreePath, "status", "--porcelain");
+              const statusCommand = gitCommand(
+                "--no-optional-locks",
+                "-C",
+                resolvedWorktreePath,
+                "status",
+                "--porcelain"
+              );
               const statusResult = yield* commandResult(statusCommand).pipe(
                 Effect.mapError(toMapError)
               );
@@ -252,12 +289,48 @@ export function runWorkspaceRemove(
               if (statusResult.stdout.truncated || statusResult.stdout.text.trim().length > 0) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
+                    ...reasonDetails("dirty-worktree"),
                     message: `Worktree ${resolvedWorktreePath} has uncommitted changes. Refusing removal. Commit or discard changes first.`,
                   })
                 );
               }
             }
 
+            if (dryRun) {
+              const worktreeNames = manifest.repositories.map((repo) => repo.worktreePath);
+              const entries = yield* fs.exists(workspaceDir).pipe(
+                Effect.flatMap((exists) =>
+                  exists ? fs.readDirectory(workspaceDir) : Effect.succeed([])
+                ),
+                Effect.mapError(toMapError)
+              );
+              const remaining = entries.filter(
+                (entry) => entry !== "AGENTS.md" && !worktreeNames.includes(entry)
+              );
+              return {
+                command: "workspace remove",
+                data: {
+                  ticket,
+                  ticketDirectory: workspaceDir,
+                  worktreeCount: worktreeNames.length,
+                  worktreeNames,
+                  completed: [],
+                  remaining,
+                  status: "preview",
+                  dryRun: true,
+                  agentsOwnership: ownership,
+                  approvalRequired: ownership === "foreign" || ownership === "modified",
+                  diagnostics: remaining.length
+                    ? ["Residual entries will be preserved; execution may return a partial result."]
+                    : [],
+                },
+              } satisfies CommandOutput<"workspace remove">;
+            }
+
+            if (!mutation)
+              return yield* Effect.fail(
+                new WorkspaceRemoveError({ message: "Missing mutation lock" })
+              );
             const completed: Array<string> = [];
             const remaining: Array<string> = [];
             const diagnostics: Array<string> = [];
@@ -418,7 +491,7 @@ export function runWorkspaceRemove(
                 remaining: [],
                 status: "success",
               },
-            } satisfies CommandOutput;
+            } satisfies CommandOutput<"workspace remove">;
           })
         )
       )

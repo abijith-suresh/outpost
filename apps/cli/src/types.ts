@@ -1,8 +1,11 @@
-export type CommandOutput = {
-  command: string;
-  data: Record<string, unknown>;
-  exitCode?: 0 | 1;
-};
+import type { ErrorDetails } from "./error-details.js";
+import type { DescribeData } from "./machine-contract.js";
+import type { DiagnosticSchema, DiagnosticTruncationSchema, ResultData } from "./result-schemas.js";
+
+type CommandData = ResultData & { describe: DescribeData };
+export type CommandOutput<K extends keyof CommandData = keyof CommandData> = {
+  [C in K]: { command: C; data: CommandData[C]; exitCode?: 0 | 1 };
+}[K];
 
 export const CLI_ERROR_CODES = [
   "INVALID_ARGUMENT",
@@ -22,29 +25,31 @@ export const CLI_ERROR_CODES = [
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
 
-export type CliErrorDiagnostic = Readonly<Record<string, unknown>>;
+export type CliErrorDiagnostic = typeof DiagnosticSchema.Type;
+export type DiagnosticTruncation = typeof DiagnosticTruncationSchema.Type;
 
 export interface JsonSuccessEnvelope {
   ok: true;
   command: string;
-  data: Record<string, unknown>;
+  data: CommandOutput["data"];
   exitCode: 0;
 }
 
 export interface JsonPartialEnvelope {
   ok: false;
   command: string;
-  data: Record<string, unknown>;
+  data: CommandOutput["data"];
   exitCode: 1;
 }
 
 export interface JsonErrorEnvelope {
   ok: false;
   command: string | null;
-  error: {
+  error: Partial<ErrorDetails> & {
     code: CliErrorCode;
     message: string;
     diagnostics?: ReadonlyArray<CliErrorDiagnostic>;
+    diagnosticTruncation?: DiagnosticTruncation;
   };
   exitCode: 1;
 }

@@ -4,11 +4,13 @@ import * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "./child-process.js";
 import type { RepoRecord } from "./config.js";
+import { domainDetails, ErrorDetailFields } from "./error-details.js";
 import { getCanonicalPortablePathKey } from "./path-safety.js";
 import { getFileManagedPathSegments, getManagedRepoPath } from "./remote-identity.js";
 import { resolveManagedPath } from "./workspace-manifest.js";
 
 export class ManagedRepoError extends Schema.TaggedError<ManagedRepoError>()("ManagedRepoError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -26,7 +28,11 @@ export function validateManagedRepoPath(reposRoot: string, repo: RepoRecord) {
     }
     const resolved = yield* resolveManagedPath(reposRoot, relative);
     return resolved;
-  }).pipe(Effect.mapError((error) => new ManagedRepoError({ message: error.message })));
+  }).pipe(
+    Effect.mapError(
+      (error) => new ManagedRepoError({ message: error.message, ...domainDetails(error) })
+    )
+  );
 }
 
 /** A marker or a verifiable legacy mirror layout proves ownership, never a name alone. */

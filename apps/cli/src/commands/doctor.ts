@@ -22,7 +22,7 @@ function formatErrorStatus(diagnostics: ReadonlyArray<string>): string {
 }
 
 export function runDoctor(): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"doctor">,
   never,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -54,7 +54,7 @@ export function runDoctor(): Effect.Effect<
           ...(operationRecords.length > 0 ? { operationRecords } : {}),
           status: "not-initialized",
         },
-      } satisfies CommandOutput;
+      } satisfies CommandOutput<"doctor">;
     }
 
     const diagnostics: Array<string> = [];
@@ -143,6 +143,6 @@ export function runDoctor(): Effect.Effect<
         status,
         worktreesRoot: configResult.config.worktreesRoot,
       },
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"doctor">;
   });
 }

@@ -3,9 +3,11 @@ import { hostname } from "node:os";
 import { Effect, Exit, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export class MutationError extends Schema.TaggedError<MutationError>()("MutationError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -33,6 +35,9 @@ export function acquireHomeMutationLock(outpostHome: string, operation: string) 
         Effect.mapError(
           (error) =>
             new MutationError({
+              ...reasonDetails(
+                error.reason._tag === "AlreadyExists" ? "lock-held" : "invalid-state"
+              ),
               message:
                 error.reason._tag === "AlreadyExists"
                   ? `Outpost home is locked by another mutation at ${lockPath}. Retry after it finishes. If it crashed, run outpost doctor and inspect the recorded owner and artifacts before manually removing any lock.`
@@ -84,7 +89,7 @@ export function inspectMutationState(outpostHome: string) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const records: Array<Record<string, unknown>> = [];
+    const records: Array<{ kind: string; path?: string; metadata?: unknown; error?: string }> = [];
     const inspect = (filePath: string, kind: string) =>
       Effect.gen(function* () {
         const raw = yield* fs.readFileString(filePath);

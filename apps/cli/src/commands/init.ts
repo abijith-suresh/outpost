@@ -10,17 +10,19 @@ import {
   loadRepoRegistry,
   resolveOutpostHome,
 } from "../config.js";
+import { domainDetails, ErrorDetailFields } from "../error-details.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { writeJsonFileAtomic } from "../store.js";
 import type { CommandOutput } from "../types.js";
 import { ensureWorkspaceStateRoot } from "../workspace-manifest.js";
 
 export class InitError extends Schema.TaggedError<InitError>()("InitError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
 export function runInit(): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"init">,
   InitError | PlatformError,
   FileSystem.FileSystem | Path.Path
 > {
@@ -30,7 +32,7 @@ export function runInit(): Effect.Effect<
     const outpostHome = yield* resolveOutpostHome();
     yield* fs.makeDirectory(outpostHome, { recursive: true });
     const mutation = yield* acquireHomeMutationLock(outpostHome, "init").pipe(
-      Effect.mapError((error) => new InitError({ message: error.message }))
+      Effect.mapError((error) => new InitError({ message: error.message, ...domainDetails(error) }))
     );
     const configFilePath = yield* getConfigFilePath(outpostHome);
     const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
@@ -55,7 +57,11 @@ export function runInit(): Effect.Effect<
         reposRoot: config.reposRoot,
         worktreesRoot: config.worktreesRoot,
       })
-      .pipe(Effect.mapError((error) => new InitError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new InitError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     yield* fs.makeDirectory(outpostHome, { recursive: true }).pipe(
       Effect.mapError(
@@ -116,7 +122,11 @@ export function runInit(): Effect.Effect<
     }
     yield* mutation
       .record({ action: "write-initialization-marker", configFilePath })
-      .pipe(Effect.mapError((error) => new InitError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new InitError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     yield* writeJsonFileAtomic(configFilePath, config).pipe(
       Effect.mapError(
         (error) =>
@@ -135,6 +145,6 @@ export function runInit(): Effect.Effect<
         configFilePath: path.normalize(configFilePath),
         initialized: true,
       },
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"init">;
   }).pipe(Effect.scoped);
 }

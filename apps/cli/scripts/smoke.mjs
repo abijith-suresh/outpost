@@ -167,11 +167,25 @@ try {
     ok: false,
     command: null,
     error: {
+      reason: "invalid-arguments",
+      retryable: false,
+      action:
+        "Use outpost describe <command> --json or outpost help <command> and correct the arguments.",
       code: "UNKNOWN_COMMAND",
       message: "Unknown command: wat",
     },
     exitCode: 1,
   });
+
+  console.log("Test: installed command contract");
+  const discovery = runInstalled(["describe", "create", "--json"]);
+  assertSuccess(discovery, "installed describe");
+  const contract = JSON.parse(discovery.stdout).data;
+  assert.equal(contract.cliVersion, version);
+  assert.equal(contract.contractVersion, "1.0.0");
+  assert.equal(contract.network, "none");
+  assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
+  assert.ok(contract.outputSchema.anyOf.length >= 2);
 
   console.log("Test: duplicate --json");
   const duplicateJsonResult = runInstalled(["doctor", "--json", "--json"]);
@@ -181,6 +195,10 @@ try {
     ok: false,
     command: "doctor",
     error: {
+      reason: "invalid-arguments",
+      retryable: false,
+      action:
+        "Use outpost describe <command> --json or outpost help <command> and correct the arguments.",
       code: "INVALID_ARGUMENT",
       message: "Usage: outpost <command> [options]\n--json may only be provided once.",
     },

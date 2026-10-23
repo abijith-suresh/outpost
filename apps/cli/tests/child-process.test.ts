@@ -107,9 +107,11 @@ if (args[0] === 'fetch') {
   expect(result._tag).toBe("Failure");
   if (result._tag !== "Failure") throw new Error("Expected noisy fetch failure");
   expect(result.failure.message).toMatch(/exit status 23/);
-  expect(result.failure.diagnostics).toHaveLength(131073);
-  expect(result.failure.diagnostics.at(-1)).toEqual({
-    stream: "stderr",
-    line: "[output truncated]",
+  expect(result.failure.diagnostics.length).toBeLessThanOrEqual(80);
+  expect(JSON.stringify(result.failure).length).toBeLessThan(30_000);
+  expect(result.failure.diagnosticTruncation).toMatchObject({
+    truncated: true,
+    capturedOutputTruncated: true,
+    omittedLineCount: expect.any(Number),
   });
 });
