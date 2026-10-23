@@ -401,22 +401,6 @@ function resolveRemoteHeadBaseBranch(
   );
 }
 
-function remoteBranchExists(
-  repo: RepoRecord,
-  baseBranch: string
-): Effect.Effect<boolean, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
-  return commandExitCode(
-    gitCommand(
-      "--git-dir",
-      repo.managedRepoPath,
-      "show-ref",
-      "--verify",
-      "--quiet",
-      `refs/heads/${baseBranch}`
-    )
-  ).pipe(Effect.map((exitCode) => exitCode === 0));
-}
-
 function localBranchExists(
   repo: RepoRecord,
   branchName: string
@@ -450,11 +434,15 @@ function buildCreatePlan(
               })
           )
         );
-    const baseExists = yield* remoteBranchExists(repo, baseBranch).pipe(
+    const remoteRef = `refs/remotes/origin/${baseBranch}`;
+    const remoteExists = yield* commandExitCode(
+      gitCommand("--git-dir", repo.managedRepoPath, "show-ref", "--verify", "--quiet", remoteRef)
+    ).pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+    const localExists = yield* localBranchExists(repo, baseBranch).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message }))
     );
 
-    if (!baseExists) {
+    if (remoteExists !== 0 && !localExists) {
       return yield* Effect.fail(
         new CreateError({
           message: `Base branch ${baseBranch} not found for repo ${repo.id}.`,
@@ -486,7 +474,7 @@ function buildCreatePlan(
       worktreePath,
       branch: branchName,
       base: baseBranch,
-      startPoint: baseBranch,
+      startPoint: remoteExists === 0 ? remoteRef : `refs/heads/${baseBranch}`,
     } satisfies CreatePlan;
   });
 }

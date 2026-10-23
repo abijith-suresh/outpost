@@ -206,7 +206,7 @@ describe("run", () => {
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
-    mkdirSync(managedRepoPath, { recursive: true });
+    await initBareGitRepo(managedRepoPath);
     const repo = makeRepoRecord({
       id: "diagnostic",
       managedRepoPath,

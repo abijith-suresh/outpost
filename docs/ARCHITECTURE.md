@@ -95,7 +95,7 @@ Repositories are identified by a canonical identity derived from their remote UR
 
 The identity determines the managed mirror path under `repos/`. Path segments are percent-encoded to produce filesystem-safe names (`encodeManagedPathSegment`).
 
-**Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Fetched with `git fetch --all --prune --tags`. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
+**Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create resolves bases from remote tracking refs first, then existing local branches. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
 
 **Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
 

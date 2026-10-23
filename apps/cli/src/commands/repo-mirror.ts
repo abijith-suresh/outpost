@@ -78,19 +78,41 @@ export function cloneBareRepository(
   remoteUrl: string,
   managedRepoPath: string
 ): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
-  return runGitCommand(
-    gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
-    `git clone --mirror failed for ${remoteUrl}`
-  );
+  return Effect.gen(function* () {
+    yield* runGitCommand(
+      gitCommand("clone", "--mirror", remoteUrl, managedRepoPath),
+      `git clone --mirror failed for ${remoteUrl}`
+    );
+    yield* fetchBareRepository(managedRepoPath);
+  });
 }
 
 export function fetchBareRepository(
   managedRepoPath: string
 ): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
-  return runGitCommand(
-    gitCommand("fetch", "--all", "--prune", "--tags").pipe(ChildProcess.setCwd(managedRepoPath)),
-    `git fetch failed for ${managedRepoPath}`
-  );
+  return Effect.gen(function* () {
+    // Replace the legacy mirror refspec before fetching. Never rewrite or delete
+    // refs/heads: they may contain work created by agents or older workspaces.
+    yield* runGitCommand(
+      gitCommand(
+        "config",
+        "--replace-all",
+        "remote.origin.fetch",
+        "+refs/heads/*:refs/remotes/origin/*"
+      ).pipe(ChildProcess.setCwd(managedRepoPath)),
+      `Failed to configure safe fetch refs for ${managedRepoPath}`
+    );
+    yield* runGitCommand(
+      gitCommand("config", "remote.origin.mirror", "false").pipe(
+        ChildProcess.setCwd(managedRepoPath)
+      ),
+      `Failed to disable mirror updates for ${managedRepoPath}`
+    );
+    yield* runGitCommand(
+      gitCommand("fetch", "origin", "--prune", "--tags").pipe(ChildProcess.setCwd(managedRepoPath)),
+      `git fetch failed for ${managedRepoPath}`
+    );
+  });
 }
 
 export function updateBareRepositoryRemote(
