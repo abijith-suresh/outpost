@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -11,6 +12,7 @@ import {
 } from "../command-spec.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import type { CommandDescriptionSchema } from "../machine-contract.js";
+import { SCHEMA_ASSET_SHA256 } from "../schema-integrity.js";
 import type { CommandOutput } from "../types.js";
 
 export class DescribeError extends Schema.TaggedError<DescribeError>()("DescribeError", {
@@ -27,7 +29,7 @@ function describeInstalledCommand(spec: CommandSpec) {
         new URL(`../../schemas/${spec.path.join("-")}.output.json`, import.meta.url)
       );
       const content = yield* fs
-        .readFileString(asset)
+        .readFile(asset)
         .pipe(
           Effect.mapError(
             (error) => new DescribeError({ message: error.message, ...domainDetails(error) })
@@ -35,8 +37,20 @@ function describeInstalledCommand(spec: CommandSpec) {
         );
       outputSchema = yield* Effect.try({
         try: () => {
-          const { $schema: _dialect, ...document } = JSON.parse(content);
-          return document as NonNullable<typeof outputSchema>;
+          const name = `${spec.path.join("-")}.output.json`;
+          const expected = SCHEMA_ASSET_SHA256[name];
+          if (!expected || createHash("sha256").update(content).digest("hex") !== expected) {
+            throw new Error(
+              "Asset differs from the schema generated for this command; reinstall the package."
+            );
+          }
+          const document: unknown = JSON.parse(new TextDecoder().decode(content));
+          if (typeof document !== "object" || document === null || Array.isArray(document)) {
+            throw new Error("Expected a schema object.");
+          }
+          const verified = document as Record<string, unknown>;
+          delete verified.$schema;
+          return verified;
         },
         catch: (error) =>
           new DescribeError({

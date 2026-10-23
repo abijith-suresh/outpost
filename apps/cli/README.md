@@ -206,3 +206,9 @@ fresh collision index and reads each manifest once per invocation. It still
 checks Git ownership and HEAD health for every worktree. Results are advisory
 snapshots; mutation commands always validate current state under their locks.
 There is no persistent cache to invalidate.
+
+Installed `describe` checks output schema integrity against per-command digests
+compiled with the CLI. Changed or stale schema assets fail with a structured
+`invalid-state` error instead of advertising a successful contract. Restore or
+reinstall the package rather than editing installed schemas. This check works
+offline and detects individual asset damage, not replacement of package code.

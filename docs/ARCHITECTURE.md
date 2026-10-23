@@ -396,3 +396,14 @@ Fresh processes still benefit from OS filesystem caches and timings vary with ho
 load; they are observations, not latency guarantees. Git health checks remain a
 linear per-worktree cost. No fetch concurrency or mutation locking changes are
 included in this performance layer.
+
+Installed discovery checks each output schema's bytes against a generated SHA256
+map compiled into the CLI before parsing. The authoritative registry/schema
+generator creates and drift-checks both assets and `src/schema-integrity.ts`;
+checksums never derive from an installed asset at runtime. Changed, stale or
+wrong-command assets fail as one structured stderr error, including all-command
+discovery. Successful discovery still uses only the filesystem Effect runtime and
+Node crypto, without runtime Ajv or mutation handlers. This detects individual
+asset damage relative to compiled package code. It does not authenticate a
+package whose code and assets have both been replaced. Even formatting changes
+require restoring the shipped asset or regenerating the matching package code.

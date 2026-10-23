@@ -149,7 +149,7 @@ try {
       `const { runCli } = await import(${JSON.stringify(pathToFileURL(join(installedPackage, "dist", "index.js")).href)});`,
       'await runCli(["--version"]); await runCli(["--help"]);',
       'if (loaded.some(url => /node_modules\\/(effect|@effect)\\//.test(url))) throw new Error("Fast startup loaded Effect runtime");',
-      'await runCli(["describe", "help", "--json"]);',
+      'await runCli(["describe", "doctor", "--json"]);',
       'if (loaded.some(url => /\\/(program|runtime)\\.js$|\\/commands\\/(create|repo-add)\\.js$/.test(url))) throw new Error("Discovery loaded mutation handlers");',
       'process.stdout.write("LAZY OK\\n");',
     ].join("\n"),
@@ -183,6 +183,60 @@ try {
     const validate = new Ajv2020({ strict: true }).compile(schema);
     assert.ok(validate(output), JSON.stringify(validate.errors));
   };
+  console.log("Test: installed schema identity rejects corruption and command substitution");
+  const fullDiscovery = runInstalled(["describe", "--json"]);
+  assertSuccess(fullDiscovery, "all installed schema identities");
+  validateInstalled("describe", JSON.parse(fullDiscovery.stdout));
+  for (const entry of schemaIndex.schemas.filter((entry) => entry.kind === "output")) {
+    const described = runInstalled(["describe", ...entry.command.split(" "), "--json"]);
+    assertSuccess(described, `valid installed schema ${entry.command}`);
+    const expected = JSON.parse(readFileSync(join(assets.schemasPath, entry.path), "utf8"));
+    delete expected.$schema;
+    assert.deepEqual(JSON.parse(described.stdout).data.outputSchema, expected);
+  }
+  const doctorAsset = join(assets.schemasPath, "doctor.output.json");
+  const originalDoctor = readFileSync(doctorAsset);
+  const malformedNested = JSON.parse(originalDoctor.toString("utf8"));
+  malformedNested.anyOf[0].properties.data.properties.status = { type: "not-a-type" };
+  const invalidKeyword = JSON.parse(originalDoctor.toString("utf8"));
+  invalidKeyword.anyOf[0].required = "ok";
+  const corruptAssets = [
+    ["syntax", "{"],
+    ["null", "null"],
+    ["number", "42"],
+    ["string", '"schema"'],
+    ["boolean", "true"],
+    ["array", "[]"],
+    ["empty object", "{}"],
+    ["invalid type", '{"type":"definitely-not-a-type"}'],
+    ["malformed nested schema", JSON.stringify(malformedNested)],
+    ["invalid keyword value", JSON.stringify(invalidKeyword)],
+    ["valid wrong result schema", '{"type":"string"}'],
+    ["valid wrong command schema", readFileSync(join(assets.schemasPath, "repo-add.output.json"))],
+    ["changed formatting", Buffer.concat([originalDoctor, Buffer.from("\n")])],
+  ];
+  try {
+    for (const [name, content] of corruptAssets) {
+      writeFileSync(doctorAsset, content);
+      for (const args of [
+        ["describe", "doctor", "--json"],
+        ["describe", "--json"],
+      ]) {
+        const refused = runInstalled(args);
+        assert.equal(refused.status, 1, name);
+        assert.equal(refused.stdout, "", name);
+        const failure = JSON.parse(refused.stderr);
+        assert.equal(failure.ok, false, name);
+        assert.equal(failure.command, "describe", name);
+        assert.equal(failure.error.reason, "invalid-state", name);
+        validateInstalled("describe", failure);
+      }
+    }
+  } finally {
+    writeFileSync(doctorAsset, originalDoctor);
+  }
+  assertSuccess(runInstalled(["describe", "--json"]), "restored installed schema identities");
+
   validateInstalled("skill path", JSON.parse(locations.stdout));
   for (const topic of ["overview", "commands", "recovery", "schemas"]) {
     const docs = runInstalled(["docs", topic, "--json"]);
