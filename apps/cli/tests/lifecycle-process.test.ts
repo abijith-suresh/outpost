@@ -88,7 +88,7 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 /** Pause one exact Git mutation. Other Git commands use the real executable. */
-function barrier(match: string[]) {
+function barrier(match: string[], ignoreTerm = false) {
   const root = createTempDir("outpost-barrier-");
   const ready = path.join(root, "ready");
   const release = path.join(root, "release");
@@ -100,6 +100,7 @@ function barrier(match: string[]) {
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const args = process.argv.slice(2);
+${ignoreTerm ? 'process.on("SIGTERM", () => {});' : ""}
 const match = ${JSON.stringify(match)};
 if (match.every((part, index) => args[index] === part)) {
   fs.writeFileSync(${JSON.stringify(ready)}, String(process.pid));
@@ -311,6 +312,88 @@ describe("cancellation and recovery subprocesses", () => {
   }, 20_000);
 });
 
+it("keeps finite tiny-line SSH diagnostics in JSON for both partial fetch and failed import", async () => {
+  await fixture(0);
+  const source = await createManagedRepoFixture({ defaultBranch: "main" });
+  const root = createTempDir("outpost-ssh-lines-");
+  const ssh = path.join(root, "ssh");
+  writeFileSync(ssh, '#!/bin/sh\nexec git upload-pack "$OUTPOST_TEST_REMOTE"\n');
+  chmodSync(ssh, 0o755);
+  const env = {
+    GIT_SSH_COMMAND: ssh,
+    GIT_SSH_VARIANT: "ssh",
+    OUTPOST_TEST_REMOTE: source.tempRemote,
+  };
+  git(source.tempRepo, "remote", "set-url", "origin", "ssh://example.invalid/team/demo.git");
+  expect((await launch(["repo", "add", source.tempRepo], env).done).code).toBe(0);
+  writeFileSync(
+    ssh,
+    `#!${process.execPath}\nprocess.stderr.write("x\\n".repeat(200000));process.exitCode=7;\n`
+  );
+  const fetch = await launch(["repo", "fetch", "--all"], env).done;
+  expect(fetch.code).toBe(1);
+  expect(fetch.stderr).toBe("");
+  const partial = JSON.parse(fetch.stdout);
+  expect(partial).toMatchObject({
+    ok: false,
+    command: "repo fetch",
+    exitCode: 1,
+    data: { failedCount: 1, fetchedCount: 0 },
+  });
+  expect(partial.data.results[0].error).toMatch(/exit status 128/);
+  const diagnostics = partial.data.results[0].diagnostics;
+  expect(diagnostics.length).toBeLessThanOrEqual(131073);
+  expect(diagnostics.at(-1)).toEqual({ stream: "stderr", line: "[output truncated]" });
+  git(source.tempRepo, "remote", "set-url", "origin", "ssh://example.invalid/team/other.git");
+  const add = await launch(["repo", "add", source.tempRepo], env).done;
+  expect(add.code).toBe(1);
+  expect(add.stdout).toBe("");
+  const failure = JSON.parse(add.stderr);
+  expect(failure).toMatchObject({
+    ok: false,
+    command: "repo add",
+    exitCode: 1,
+    error: { code: "REPO_ADD_FAILED" },
+  });
+  expect(failure.error.diagnostics.length).toBeLessThanOrEqual(131073);
+  expect(failure.error.diagnostics.at(-1)).toEqual({
+    stream: "stderr",
+    line: "[output truncated]",
+  });
+}, 20_000);
+
+it("releases lifecycle locks and rolls back when the active Git child ignores SIGTERM", async () => {
+  const { home, repos } = await fixture(2);
+  const pause = barrier(["--git-dir", repos[1].managedRepoPath, "worktree", "add"], true);
+  const creating = launch(createArgs("STUBBORN", repos), pause.env);
+  await waitForFile(pause.ready);
+  const pid = Number(readFileSync(pause.ready, "utf8"));
+  let watchdogTriggered = false;
+  const watchdog = setTimeout(() => {
+    watchdogTriggered = true;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* Already reaped. */
+    }
+    creating.child.kill("SIGKILL");
+  }, 6_000);
+  try {
+    const startedAt = Date.now();
+    creating.child.kill("SIGTERM");
+    expect((await creating.done).code).not.toBe(0);
+    expect(watchdogTriggered).toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(existsSync(path.join(home, ".mutation.lock"))).toBe(false);
+    expect(existsSync(path.join(home, "workspaces", ".stubborn.lock"))).toBe(false);
+    expect(existsSync(path.join(home, "worktrees", "STUBBORN"))).toBe(false);
+    for (const repo of repos)
+      expect(git(repo.managedRepoPath, "for-each-ref", "refs/heads/fix/STUBBORN")).toBe("");
+  } finally {
+    clearTimeout(watchdog);
+  }
+}, 15_000);
+
 describe("create rollback operation ownership", () => {
   it.each([
     { artifact: "branch", outcome: "failure" },
@@ -324,11 +407,14 @@ describe("create rollback operation ownership", () => {
       const repo = repos[0];
       const branch = "fix/FOREIGN";
       const worktree = path.join(home, "worktrees", "FOREIGN", repo.name);
-      const pause = barrier([
-        "--git-dir",
-        repo.managedRepoPath,
-        ...(artifact === "branch" ? ["branch", branch] : ["worktree", "add"]),
-      ]);
+      const pause = barrier(
+        [
+          "--git-dir",
+          repo.managedRepoPath,
+          ...(artifact === "branch" ? ["branch", branch] : ["worktree", "add"]),
+        ],
+        true
+      );
       const creating = launch(createArgs("FOREIGN", repos), pause.env);
       await waitForFile(pause.ready);
       const pid = Number(readFileSync(pause.ready, "utf8"));
