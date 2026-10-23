@@ -290,3 +290,10 @@ current behavior.
 Changes to shipped `apps/cli/skills/`, `apps/cli/man/` or `apps/cli/schemas/` are
 releasable package changes and require a patch changeset, including asset-only PRs.
 Repository documentation that does not ship remains exempt under the usual policy.
+
+To reproduce CLI latency, run `npm run benchmark --workspace @abijith-suresh/outpost`.
+It builds the CLI, creates temporary local Git fixtures and reports three-process
+medians for cheap startup paths and listing 1/10/50/100 real workspaces. Run before
+and after on the same Node version and machine without other test suites running;
+fixture setup is not timed. Keep raw samples and distinguish this measurement from
+prior audit baselines.

@@ -1,13 +1,12 @@
 import { createRequire } from "node:module";
-
-import { NodeServices } from "@effect/platform-node";
-import { Effect } from "effect";
-
-import { run } from "./program.js";
+import { runEarly } from "./entry.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 
-export function runCli(argv: readonly string[]): Promise<number> {
-  return Effect.runPromise(run(argv, version).pipe(Effect.provide(NodeServices.layer)));
+export async function runCli(argv: readonly string[]): Promise<number> {
+  const early = await runEarly(argv, version);
+  if (early !== undefined) return early;
+  const { runWithServices } = await import("./runtime.js");
+  return runWithServices(argv, version);
 }

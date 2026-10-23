@@ -3,8 +3,7 @@ import {
   ALL_COMMANDS,
   CONTRACT_VERSION,
   type CommandSpec,
-  commandInputSchema,
-  commandPolicy,
+  describeCommandMetadata,
 } from "./command-spec.js";
 import { ERROR_REASONS } from "./error-details.js";
 import { DiagnosticSchema, DiagnosticTruncationSchema, ResultSchemas } from "./result-schemas.js";
@@ -102,24 +101,7 @@ export function outputSchema(spec: CommandSpec) {
 }
 
 export function describeCommand(spec: CommandSpec) {
-  const policy = commandPolicy(spec);
-  return {
-    path: spec.path,
-    usage: spec.path.join(" "),
-    description: spec.description,
-    arguments: spec.arguments ?? [],
-    options: spec.options ?? [],
-    mutation: spec.mutation,
-    interactive: spec.interactive,
-    json: spec.json,
-    dryRun: spec.dryRun,
-    network: policy.network,
-    retry: policy.retry,
-    sideEffects: policy.sideEffects,
-    dryRunPolicy: policy.dryRun,
-    inputSchema: commandInputSchema(spec),
-    outputSchema: outputSchema(spec),
-  };
+  return { ...describeCommandMetadata(spec), outputSchema: outputSchema(spec) };
 }
 export function describeAll(cliVersion: string): DescribeData {
   return {

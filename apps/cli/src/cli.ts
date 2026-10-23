@@ -1,23 +1,14 @@
 #!/usr/bin/env node
-
 import { createRequire } from "node:module";
 import process from "node:process";
-
-import { NodeRuntime, NodeServices } from "@effect/platform-node";
-import { Effect } from "effect";
-
-import { run } from "./program.js";
+import { runEarly } from "./entry.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
-
-const program = run(process.argv.slice(2), version).pipe(
-  Effect.provide(NodeServices.layer),
-  Effect.tap((exitCode) =>
-    Effect.sync(() => {
-      process.exitCode = exitCode;
-    })
-  )
-);
-
-NodeRuntime.runMain(program);
+const argv = process.argv.slice(2);
+const early = await runEarly(argv, version);
+if (early !== undefined) process.exitCode = early;
+else {
+  const { runMain } = await import("./runtime.js");
+  runMain(argv, version);
+}

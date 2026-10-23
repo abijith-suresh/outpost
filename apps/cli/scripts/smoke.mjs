@@ -139,6 +139,24 @@ try {
   assert.equal(importResult.stdout, "OK\n");
   assert.equal(importResult.stderr, "");
 
+  console.log("Test: lazy startup through the installed runCli API");
+  const lazyResult = run(process.execPath, [
+    "--input-type=module",
+    "--eval",
+    [
+      'import { registerHooks } from "node:module";',
+      "const loaded = []; registerHooks({ load(url, context, next) { loaded.push(url); return next(url, context); } });",
+      `const { runCli } = await import(${JSON.stringify(pathToFileURL(join(installedPackage, "dist", "index.js")).href)});`,
+      'await runCli(["--version"]); await runCli(["--help"]);',
+      'if (loaded.some(url => /node_modules\\/(effect|@effect)\\//.test(url))) throw new Error("Fast startup loaded Effect runtime");',
+      'await runCli(["describe", "help", "--json"]);',
+      'if (loaded.some(url => /\\/(program|runtime)\\.js$|\\/commands\\/(create|repo-add)\\.js$/.test(url))) throw new Error("Discovery loaded mutation handlers");',
+      'process.stdout.write("LAZY OK\\n");',
+    ].join("\n"),
+  ]);
+  assertSuccess(lazyResult, "lazy installed API");
+  assert.ok(lazyResult.stdout.endsWith("LAZY OK\n"));
+
   console.log("Test: installed offline skill, schema documents and scoped-package man link");
   const installedManifest = JSON.parse(
     readFileSync(join(installedPackage, "package.json"), "utf8")

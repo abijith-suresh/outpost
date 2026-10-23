@@ -564,3 +564,23 @@ export function requireCommand(path: readonly string[]): CommandSpec {
   if (!spec) throw new Error(`Command missing from registry: ${path.join(" ")}`);
   return spec;
 }
+
+export function describeCommandMetadata(spec: CommandSpec) {
+  const policy = commandPolicy(spec);
+  return {
+    path: spec.path,
+    usage: spec.path.join(" "),
+    description: spec.description,
+    arguments: spec.arguments ?? [],
+    options: spec.options ?? [],
+    mutation: spec.mutation,
+    interactive: spec.interactive,
+    json: spec.json,
+    dryRun: spec.dryRun,
+    network: policy.network,
+    retry: policy.retry,
+    sideEffects: policy.sideEffects,
+    dryRunPolicy: policy.dryRun,
+    inputSchema: commandInputSchema(spec),
+  };
+}

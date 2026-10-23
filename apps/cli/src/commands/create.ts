@@ -1,9 +1,10 @@
 import { rmdir } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";

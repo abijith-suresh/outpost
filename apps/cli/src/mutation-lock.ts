@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { Effect, Exit, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { writeJsonFileAtomic } from "./store.js";
 

@@ -1,13 +1,15 @@
-import { Effect, Result, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import { domainDetails, ErrorDetailFields } from "../error-details.js";
 import type { CommandOutput } from "../types.js";
 import {
-  deriveWorkspaceStatus,
-  listManifestTickets,
+  buildManifestReadSnapshot,
+  deriveManifestStatus,
   readManifest,
   resolveWorkspacePath,
   scanWorktreesRoot,
@@ -47,15 +49,16 @@ export function runWorkspaceList(): Effect.Effect<
       )
     );
 
-    const managedTickets = yield* listManifestTickets(outpostHome).pipe(
+    const snapshot = yield* buildManifestReadSnapshot(outpostHome, config).pipe(
       Effect.mapError(
         (error) => new WorkspaceListError({ message: error.message, ...domainDetails(error) })
       )
     );
 
+    const managedTickets = snapshot.tickets;
     const managedResults: Array<WorkspaceSummary> = [];
     for (const ticket of managedTickets) {
-      const manifestResult = yield* readManifest(outpostHome, ticket).pipe(Effect.result);
+      const manifestResult = yield* readManifest(outpostHome, ticket, snapshot).pipe(Effect.result);
 
       if (Result.isFailure(manifestResult)) {
         managedResults.push({
@@ -72,7 +75,7 @@ export function runWorkspaceList(): Effect.Effect<
       }
 
       const manifest = manifestResult.success;
-      const status = yield* deriveWorkspaceStatus(outpostHome, config, ticket).pipe(
+      const status = yield* deriveManifestStatus(config, manifest).pipe(
         Effect.catch(() => Effect.succeed("invalid" as WorkspaceStatus))
       );
 

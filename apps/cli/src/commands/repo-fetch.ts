@@ -1,7 +1,8 @@
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import type { ErrorDetails } from "../error-details.js";
