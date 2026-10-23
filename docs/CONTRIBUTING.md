@@ -6,8 +6,8 @@ Welcome to Outpost — a CLI tool for managing local Git repository workspaces. 
 
 **Prerequisites:** Node.js >= 24.19.0 <25 (Node.js 24 only), npm >= 11.5.1.
 
-Use a version manager that reads the checked-in `.node-version`; it pins local
-work and CI to Node.js `24.19.0`.
+Use a version manager that reads the checked-in `.node-version` for the local
+and CI runtime. Use the exact npm release declared in root `packageManager`.
 
 ```bash
 git clone https://github.com/abijith-suresh/outpost.git
@@ -98,10 +98,11 @@ npm run verify
 
 This runs, in order:
 
-1. `format:check` — repository-wide Prettier formatting check
-2. `lint` — repository-wide ESLint
-3. CLI verification — TypeScript strict mode and Vitest
-4. Website verification — Astro check and TypeScript
+1. `format:check` — repository-wide Biome formatting check
+2. `lint` — repository-wide Biome lint
+3. `test:policy` — Changeset policy and command tests
+4. CLI verification — TypeScript strict mode and Vitest
+5. Website verification — Astro check and TypeScript
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
@@ -120,7 +121,7 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 
 | Hook         | Action                                                                                        |
 | ------------ | --------------------------------------------------------------------------------------------- |
-| `pre-commit` | Runs lint-staged: ESLint fix + Prettier on staged code, styles, data, and documentation files |
+| `pre-commit` | Runs lint-staged: Biome checks and fixes on staged code, styles, and data files |
 | `commit-msg` | Validates the commit message against `@commitlint/config-conventional`                        |
 | `pre-push`   | Runs repository-wide `npm run verify`                                                         |
 
@@ -129,8 +130,8 @@ Husky manages Git hooks. They run automatically — never use `--no-verify` to b
 - **TypeScript strict mode** with ES modules (`"type": "module"` in package.json)
 - **Effect-TS conventions:** use `Effect.gen` for effectful logic, `Schema.TaggedError` for typed error variants, `pipe` for composition
 - **No CLI framework:** arguments are parsed manually from `process.argv` — follow the existing pattern in `apps/cli/src/program.ts` when adding flags
-- **Formatting:** Prettier (double quotes, semicolons, trailing commas)
-- **Linting:** ESLint with the TypeScript and Astro recommended rules; tests disable project-service parsing
+- **Formatting and linting:** Biome, configured in `biome.json`. Run `npm run format` for formatting and `npm run lint:fix` for lint fixes. Markdown files are not included in the staged-code hook.
+- **Runtime types:** the CLI declares Node.js types directly for the supported runtime major. Keep the website compiler within the Astro checker's peer dependency range.
 
 ## Testing
 
@@ -159,8 +160,8 @@ Tests use [Vitest](https://vitest.dev) and run sequentially (`fileParallelism: f
 GitHub Actions run on every pull request and push to `main`:
 
 - `npm quality (Node 24) / Install and verify` calls the zero-input central
-  `.github/workflows/npm-quality.yml` workflow at released central workflows
-  v0.2.0 commit `5ed781e53cbc2c985682393e7de9449f555888ae`. The central workflow reads
+  `.github/workflows/npm-quality.yml` workflow pinned in the local CI caller.
+  The central workflow reads
   `.node-version` and `packageManager` from the repository, installs
   dependencies with `npm ci`, and runs root `npm run verify`.
 - `Changeset policy` remains local because it needs pull-request base/head
@@ -172,30 +173,22 @@ GitHub Actions run on every pull request and push to `main`:
   Outpost-specific application check; website verification runs through the
   central quality command. Pages deployment and release validation also read
   `.node-version`.
-- Outpost has one runtime policy: Node.js 24. The root and published CLI
-  manifests declare `>=24.19.0 <25`, which means every Node.js 24 patch from
-  the verified LTS baseline onward, but no Node.js 22 or 25 runtime. The
-  checked-in `.node-version` pins CI and local development to `24.19.0`, the
-  latest Node.js 24 LTS patch verified against official Node release metadata.
-  This is a range for the package contract rather than an exact patch lock, so
-  later compatible Node.js 24 security patches remain supported. npm remains
-  the exact `npm@11.16.0` declared by `packageManager`.
+- Outpost supports the Node.js major and minimum patch declared in the root and
+  published CLI manifests. `.node-version` selects the CI and development patch;
+  update it when supported security releases arrive. The root `packageManager`
+  field is authoritative for npm. Package manifests and workflow files contain
+  the current versions and pins.
 - Main branch protection still requires `validate (22)` and `validate (24)`.
   Those names are retained as documented temporary aggregation aliases only;
   both report the same Node 24 jobs and neither sets up or tests Node 22. A
   later settings PR should replace those historical required names with the
   actual Node 24 job names and remove the aliases.
 
-The dependency-review caller remains pinned to released central workflows
-commit `b42be9571985efb1ce10970340250fcccc657050` (`v0.1.0`). The
-conventional-commit-title caller uses the finalized central workflows v0.3.0
-commit `0f257b2642d2a010fefe0ff9d03374799d73eb44`. Dependency review stays
-enabled through the central caller; if its check is blocked, a repository owner
-must enable the dependency graph in repository settings. The npm-quality caller
-uses the released central workflows v0.2.0 commit
-`5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs; the
-central workflow owns Node and npm setup from the caller repository's root
-contract.
+The dependency-review and conventional-commit-title callers are pinned in their
+respective `.github/workflows/` files. Dependency review remains enabled through
+the central caller; if its check is blocked, a repository owner must enable the
+dependency graph in repository settings. The central npm-quality workflow owns
+Node and npm setup from the caller repository's root contract.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate
@@ -224,16 +217,9 @@ by resolving the tag from the canonical action repository (for example via
 to their underlying commit SHA; the pinned value is always the commit SHA, not
 the tag-object SHA.
 
-Reusable workflows are also pinned to full immutable SHAs. The central
-conventional-commit-title caller uses the finalized
-`abijith-suresh/workflows` v0.3.0 commit
-`0f257b2642d2a010fefe0ff9d03374799d73eb44`; the dependency-review caller
-remains on v0.1.0 commit
-`b42be9571985efb1ce10970340250fcccc657050`. The npm-quality caller uses the
-released central workflows v0.2.0 commit
-`5ed781e53cbc2c985682393e7de9449f555888ae` and intentionally has no inputs;
-the central workflow owns Node and npm setup from the caller repository's root
-contract.
+Reusable workflows follow the same immutable-SHA rule. Their `uses:` references
+and release comments in `.github/workflows/` are authoritative; avoid duplicating
+changing pins in documentation.
 
 ## Release Process
 
