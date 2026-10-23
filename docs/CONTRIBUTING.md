@@ -275,3 +275,18 @@ dispatch. Pull requests validate without deploying.
 The Pages deployment step allows up to 20 minutes for GitHub's deployment
 queue before failing. This bounded window tolerates queue backlogs without
 indicating that deployments are expected to take that long.
+
+## Shipped guidance and schemas
+
+After changing the command registry or result schemas, run
+`npm run docs:generate --workspace @abijith-suresh/outpost` and commit the updated
+command reference, man page and schemas. Both CLI build and verify reject drift.
+The assets are checked in so installed packages work offline with scripts disabled.
+Use `npm run test:smoke` to test the actual packed global install, including its
+scoped-package man link. Validate skill edits with the skill creator's
+`quick_validate.py` when available and review lifecycle/recovery decisions against
+current behavior.
+
+Changes to shipped `apps/cli/skills/`, `apps/cli/man/` or `apps/cli/schemas/` are
+releasable package changes and require a patch changeset, including asset-only PRs.
+Repository documentation that does not ship remains exempt under the usual policy.

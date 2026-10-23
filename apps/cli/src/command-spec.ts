@@ -62,6 +62,48 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     dryRun: false,
   },
   {
+    path: ["docs"],
+    description: "Read bundled offline guidance",
+    arguments: [
+      { name: "topic", description: "overview, commands, recovery or schemas", required: false },
+    ],
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["skill", "show"],
+    description: "Read the bundled portable Outpost skill",
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["skill", "path"],
+    description: "Locate installed skill, reference, man and schema assets",
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["skill", "export"],
+    description: "Copy the portable skill to a selected directory without overwriting",
+    arguments: [
+      {
+        name: "directory",
+        description: "Parent directory for a new outpost skill folder",
+        required: true,
+      },
+    ],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
     path: ["create"],
     description: "Create worktrees for imported repositories",
     options: [
@@ -508,9 +550,11 @@ export function commandPolicy(spec: CommandSpec) {
         ? ["local-branches", "worktrees", "workspace-metadata"]
         : name === "workspace remove"
           ? ["worktrees", "workspace-metadata"]
-          : name === "init"
-            ? ["configuration", "directories"]
-            : ["managed-repositories", "registry"],
+          : name === "skill export"
+            ? ["exported-guidance"]
+            : name === "init"
+              ? ["configuration", "directories"]
+              : ["managed-repositories", "registry"],
     dryRun: spec.dryRun ? { mutations: false, locks: false, advisory: true } : null,
   };
 }

@@ -50,6 +50,17 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
   }
 
   switch (output.command) {
+    case "docs":
+    case "skill show":
+      return Console.log(output.data.content);
+    case "skill path":
+      return Effect.forEach(Object.entries(output.data), ([key, value]) =>
+        Console.log(`${key}: ${value}`)
+      ).pipe(Effect.asVoid);
+    case "skill export":
+      return Console.log(
+        `Exported ${output.data.files.length} skill files to ${output.data.skillPath}`
+      );
     case "doctor":
       return Effect.all([
         Console.log("outpost doctor"),

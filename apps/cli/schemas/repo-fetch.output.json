@@ -1,0 +1,614 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [true]
+        },
+        "command": {
+          "type": "string",
+          "enum": ["repo fetch"]
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "failedCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "fetchedCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "repoCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "managedRepoPath": {
+                    "type": "string"
+                  },
+                  "remoteName": {
+                    "type": "string"
+                  },
+                  "remoteUrl": {
+                    "type": "string"
+                  },
+                  "sourceRepoPath": {
+                    "type": "string"
+                  },
+                  "fetchStatus": {
+                    "type": "string",
+                    "enum": ["fetched", "failed"]
+                  },
+                  "lastFetchedAt": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "retryable": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "action": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diagnostics": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "stream": {
+                              "type": "string",
+                              "enum": ["stdout", "stderr"]
+                            },
+                            "line": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["stream", "line"],
+                          "additionalProperties": true
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diagnosticTruncation": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "truncated": {
+                            "type": "boolean"
+                          },
+                          "omittedLineCount": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "capturedOutputTruncated": {
+                            "type": "boolean"
+                          },
+                          "maxLines": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "maxCharacters": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "truncated",
+                          "omittedLineCount",
+                          "capturedOutputTruncated",
+                          "maxLines",
+                          "maxCharacters"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "managedRepoPath",
+                  "remoteName",
+                  "remoteUrl",
+                  "sourceRepoPath",
+                  "fetchStatus",
+                  "lastFetchedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["failedCount", "fetchedCount", "repoCount", "results"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [0]
+        }
+      },
+      "required": ["ok", "command", "data", "exitCode"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [false]
+        },
+        "command": {
+          "type": "string",
+          "enum": ["repo fetch"]
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "failedCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "fetchedCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "repoCount": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string",
+                  "enum": ["Infinity", "-Infinity", "NaN"]
+                }
+              ]
+            },
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "managedRepoPath": {
+                    "type": "string"
+                  },
+                  "remoteName": {
+                    "type": "string"
+                  },
+                  "remoteUrl": {
+                    "type": "string"
+                  },
+                  "sourceRepoPath": {
+                    "type": "string"
+                  },
+                  "fetchStatus": {
+                    "type": "string",
+                    "enum": ["fetched", "failed"]
+                  },
+                  "lastFetchedAt": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "retryable": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "action": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diagnostics": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "stream": {
+                              "type": "string",
+                              "enum": ["stdout", "stderr"]
+                            },
+                            "line": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["stream", "line"],
+                          "additionalProperties": true
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "diagnosticTruncation": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "truncated": {
+                            "type": "boolean"
+                          },
+                          "omittedLineCount": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "capturedOutputTruncated": {
+                            "type": "boolean"
+                          },
+                          "maxLines": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "maxCharacters": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "truncated",
+                          "omittedLineCount",
+                          "capturedOutputTruncated",
+                          "maxLines",
+                          "maxCharacters"
+                        ],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "managedRepoPath",
+                  "remoteName",
+                  "remoteUrl",
+                  "sourceRepoPath",
+                  "fetchStatus",
+                  "lastFetchedAt"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": ["failedCount", "fetchedCount", "repoCount", "results"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [1]
+        }
+      },
+      "required": ["ok", "command", "data", "exitCode"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [false]
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "GUIDANCE_FAILED",
+                "INVALID_ARGUMENT",
+                "UNKNOWN_COMMAND",
+                "CREATE_FAILED",
+                "DOCTOR_FAILED",
+                "INIT_FAILED",
+                "REPO_ADD_FAILED",
+                "REPO_FETCH_FAILED",
+                "REPO_LIST_FAILED",
+                "REPO_REMOVE_FAILED",
+                "REPO_SHOW_FAILED",
+                "WORKSPACE_LIST_FAILED",
+                "WORKSPACE_REMOVE_FAILED",
+                "WORKSPACE_SHOW_FAILED"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "lock-held",
+                "dirty-worktree",
+                "repo-in-use",
+                "repo-missing",
+                "workspace-missing",
+                "invalid-arguments",
+                "invalid-state",
+                "approval-needed",
+                "operation-failed"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": "string"
+            },
+            "diagnostics": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stream": {
+                        "type": "string",
+                        "enum": ["stdout", "stderr"]
+                      },
+                      "line": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["stream", "line"],
+                    "additionalProperties": true
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diagnosticTruncation": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "omittedLineCount": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "capturedOutputTruncated": {
+                      "type": "boolean"
+                    },
+                    "maxLines": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "maxCharacters": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "truncated",
+                    "omittedLineCount",
+                    "capturedOutputTruncated",
+                    "maxLines",
+                    "maxCharacters"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["code", "message", "reason", "retryable", "action"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [1]
+        }
+      },
+      "required": ["ok", "command", "error", "exitCode"],
+      "additionalProperties": true
+    }
+  ]
+}

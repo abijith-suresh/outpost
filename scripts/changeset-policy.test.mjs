@@ -537,3 +537,29 @@ test("case-variant readme changeset path does not satisfy policy", () => {
   assert.equal(result.ok, false);
   assert.equal(result.changesetRequired, true);
 });
+
+for (const asset of [
+  "skills/outpost/SKILL.md",
+  "skills/outpost/references/recovery.md",
+  "man/outpost.1",
+  "schemas/repo-list.output.json",
+]) {
+  test(`shipped guidance requires a patch changeset: ${asset}`, () => {
+    const diffEntries = [entry("M", `apps/cli/${asset}`)];
+    assert.equal(classifyChangesetPolicy({ diffEntries, changesetFiles: [] }).ok, false);
+    assert.equal(
+      classifyChangesetPolicy({
+        diffEntries,
+        changesetFiles: [{ path: ".changeset/guidance.md", content: patchChangeset() }],
+      }).ok,
+      true
+    );
+    assert.equal(
+      classifyChangesetPolicy({
+        diffEntries: [renameEntry(`apps/cli/${asset}`, "docs/archived-guide.md")],
+        changesetFiles: [],
+      }).changesetRequired,
+      true
+    );
+  });
+}

@@ -1,0 +1,170 @@
+{
+  "contractVersion": "1.0.0",
+  "schemas": [
+    {
+      "command": "help",
+      "kind": "input",
+      "path": "help.input.json"
+    },
+    {
+      "command": "describe",
+      "kind": "input",
+      "path": "describe.input.json"
+    },
+    {
+      "command": "describe",
+      "kind": "output",
+      "path": "describe.output.json"
+    },
+    {
+      "command": "docs",
+      "kind": "input",
+      "path": "docs.input.json"
+    },
+    {
+      "command": "docs",
+      "kind": "output",
+      "path": "docs.output.json"
+    },
+    {
+      "command": "skill show",
+      "kind": "input",
+      "path": "skill-show.input.json"
+    },
+    {
+      "command": "skill show",
+      "kind": "output",
+      "path": "skill-show.output.json"
+    },
+    {
+      "command": "skill path",
+      "kind": "input",
+      "path": "skill-path.input.json"
+    },
+    {
+      "command": "skill path",
+      "kind": "output",
+      "path": "skill-path.output.json"
+    },
+    {
+      "command": "skill export",
+      "kind": "input",
+      "path": "skill-export.input.json"
+    },
+    {
+      "command": "skill export",
+      "kind": "output",
+      "path": "skill-export.output.json"
+    },
+    {
+      "command": "create",
+      "kind": "input",
+      "path": "create.input.json"
+    },
+    {
+      "command": "create",
+      "kind": "output",
+      "path": "create.output.json"
+    },
+    {
+      "command": "doctor",
+      "kind": "input",
+      "path": "doctor.input.json"
+    },
+    {
+      "command": "doctor",
+      "kind": "output",
+      "path": "doctor.output.json"
+    },
+    {
+      "command": "init",
+      "kind": "input",
+      "path": "init.input.json"
+    },
+    {
+      "command": "init",
+      "kind": "output",
+      "path": "init.output.json"
+    },
+    {
+      "command": "repo add",
+      "kind": "input",
+      "path": "repo-add.input.json"
+    },
+    {
+      "command": "repo add",
+      "kind": "output",
+      "path": "repo-add.output.json"
+    },
+    {
+      "command": "repo fetch",
+      "kind": "input",
+      "path": "repo-fetch.input.json"
+    },
+    {
+      "command": "repo fetch",
+      "kind": "output",
+      "path": "repo-fetch.output.json"
+    },
+    {
+      "command": "repo list",
+      "kind": "input",
+      "path": "repo-list.input.json"
+    },
+    {
+      "command": "repo list",
+      "kind": "output",
+      "path": "repo-list.output.json"
+    },
+    {
+      "command": "repo remove",
+      "kind": "input",
+      "path": "repo-remove.input.json"
+    },
+    {
+      "command": "repo remove",
+      "kind": "output",
+      "path": "repo-remove.output.json"
+    },
+    {
+      "command": "repo show",
+      "kind": "input",
+      "path": "repo-show.input.json"
+    },
+    {
+      "command": "repo show",
+      "kind": "output",
+      "path": "repo-show.output.json"
+    },
+    {
+      "command": "workspace list",
+      "kind": "input",
+      "path": "workspace-list.input.json"
+    },
+    {
+      "command": "workspace list",
+      "kind": "output",
+      "path": "workspace-list.output.json"
+    },
+    {
+      "command": "workspace remove",
+      "kind": "input",
+      "path": "workspace-remove.input.json"
+    },
+    {
+      "command": "workspace remove",
+      "kind": "output",
+      "path": "workspace-remove.output.json"
+    },
+    {
+      "command": "workspace show",
+      "kind": "input",
+      "path": "workspace-show.input.json"
+    },
+    {
+      "command": "workspace show",
+      "kind": "output",
+      "path": "workspace-show.output.json"
+    }
+  ]
+}

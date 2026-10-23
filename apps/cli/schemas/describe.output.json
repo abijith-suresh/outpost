@@ -1,0 +1,539 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [true]
+        },
+        "command": {
+          "type": "string",
+          "enum": ["describe"]
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "contractVersion": {
+                  "type": "string"
+                },
+                "cliVersion": {
+                  "type": "string"
+                },
+                "commands": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "usage": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "arguments": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "repeatable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["name", "description", "required"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "valueName": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "repeatable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["name", "description", "required"],
+                          "additionalProperties": true
+                        }
+                      },
+                      "mutation": {
+                        "type": "boolean"
+                      },
+                      "interactive": {
+                        "type": "boolean"
+                      },
+                      "json": {
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "network": {
+                        "type": "string",
+                        "enum": ["none", "explicit"]
+                      },
+                      "retry": {
+                        "type": "string",
+                        "enum": ["safe", "inspect-before-retry"]
+                      },
+                      "sideEffects": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "dryRunPolicy": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mutations": {
+                                "type": "boolean"
+                              },
+                              "locks": {
+                                "type": "boolean"
+                              },
+                              "advisory": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["mutations", "locks", "advisory"],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "inputSchema": {
+                        "type": "object"
+                      },
+                      "outputSchema": {
+                        "anyOf": [
+                          {
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "usage",
+                      "description",
+                      "arguments",
+                      "options",
+                      "mutation",
+                      "interactive",
+                      "json",
+                      "dryRun",
+                      "network",
+                      "retry",
+                      "sideEffects",
+                      "dryRunPolicy",
+                      "inputSchema",
+                      "outputSchema"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": ["contractVersion", "cliVersion", "commands"],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "contractVersion": {
+                  "type": "string"
+                },
+                "cliVersion": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "usage": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "repeatable": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "description", "required"],
+                    "additionalProperties": true
+                  }
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "valueName": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "repeatable": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "description", "required"],
+                    "additionalProperties": true
+                  }
+                },
+                "mutation": {
+                  "type": "boolean"
+                },
+                "interactive": {
+                  "type": "boolean"
+                },
+                "json": {
+                  "type": "boolean"
+                },
+                "dryRun": {
+                  "type": "boolean"
+                },
+                "network": {
+                  "type": "string",
+                  "enum": ["none", "explicit"]
+                },
+                "retry": {
+                  "type": "string",
+                  "enum": ["safe", "inspect-before-retry"]
+                },
+                "sideEffects": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "dryRunPolicy": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mutations": {
+                          "type": "boolean"
+                        },
+                        "locks": {
+                          "type": "boolean"
+                        },
+                        "advisory": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["mutations", "locks", "advisory"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inputSchema": {
+                  "type": "object"
+                },
+                "outputSchema": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "contractVersion",
+                "cliVersion",
+                "path",
+                "usage",
+                "description",
+                "arguments",
+                "options",
+                "mutation",
+                "interactive",
+                "json",
+                "dryRun",
+                "network",
+                "retry",
+                "sideEffects",
+                "dryRunPolicy",
+                "inputSchema",
+                "outputSchema"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [0]
+        }
+      },
+      "required": ["ok", "command", "data", "exitCode"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [false]
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "GUIDANCE_FAILED",
+                "INVALID_ARGUMENT",
+                "UNKNOWN_COMMAND",
+                "CREATE_FAILED",
+                "DOCTOR_FAILED",
+                "INIT_FAILED",
+                "REPO_ADD_FAILED",
+                "REPO_FETCH_FAILED",
+                "REPO_LIST_FAILED",
+                "REPO_REMOVE_FAILED",
+                "REPO_SHOW_FAILED",
+                "WORKSPACE_LIST_FAILED",
+                "WORKSPACE_REMOVE_FAILED",
+                "WORKSPACE_SHOW_FAILED"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "lock-held",
+                "dirty-worktree",
+                "repo-in-use",
+                "repo-missing",
+                "workspace-missing",
+                "invalid-arguments",
+                "invalid-state",
+                "approval-needed",
+                "operation-failed"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": "string"
+            },
+            "diagnostics": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stream": {
+                        "type": "string",
+                        "enum": ["stdout", "stderr"]
+                      },
+                      "line": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["stream", "line"],
+                    "additionalProperties": true
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diagnosticTruncation": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "omittedLineCount": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "capturedOutputTruncated": {
+                      "type": "boolean"
+                    },
+                    "maxLines": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "maxCharacters": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "truncated",
+                    "omittedLineCount",
+                    "capturedOutputTruncated",
+                    "maxLines",
+                    "maxCharacters"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["code", "message", "reason", "retryable", "action"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [1]
+        }
+      },
+      "required": ["ok", "command", "error", "exitCode"],
+      "additionalProperties": true
+    }
+  ]
+}

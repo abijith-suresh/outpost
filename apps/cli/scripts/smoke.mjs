@@ -1,11 +1,12 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
@@ -138,6 +139,55 @@ try {
   assert.equal(importResult.stdout, "OK\n");
   assert.equal(importResult.stderr, "");
 
+  console.log("Test: installed offline skill, schema documents and scoped-package man link");
+  const installedManifest = JSON.parse(
+    readFileSync(join(installedPackage, "package.json"), "utf8")
+  );
+  assert.equal(Object.keys(installedManifest.dependencies).length, 2);
+  assert.equal(installedManifest.dependencies.ajv, undefined);
+  const locations = runInstalled(["skill", "path", "--json"]);
+  assertSuccess(locations, "installed guidance paths");
+  const assets = JSON.parse(locations.stdout).data;
+  assert.equal(
+    realpathSync(assets.skillPath),
+    realpathSync(join(installedPackage, "skills", "outpost", "SKILL.md"))
+  );
+  const schemaIndex = JSON.parse(readFileSync(join(assets.schemasPath, "index.json"), "utf8"));
+  for (const entry of schemaIndex.schemas) {
+    const schema = JSON.parse(readFileSync(join(assets.schemasPath, entry.path), "utf8"));
+    // Synchronous compilation has no remote loader, so unresolved references fail offline.
+    new Ajv2020({ strict: true }).compile(schema);
+  }
+  const validateInstalled = (command, output) => {
+    const schema = JSON.parse(
+      readFileSync(join(assets.schemasPath, `${command.replaceAll(" ", "-")}.output.json`), "utf8")
+    );
+    const validate = new Ajv2020({ strict: true }).compile(schema);
+    assert.ok(validate(output), JSON.stringify(validate.errors));
+  };
+  validateInstalled("skill path", JSON.parse(locations.stdout));
+  for (const topic of ["overview", "commands", "recovery", "schemas"]) {
+    const docs = runInstalled(["docs", topic, "--json"]);
+    assertSuccess(docs, `installed docs ${topic}`);
+    validateInstalled("docs", JSON.parse(docs.stdout));
+    assert.ok(JSON.parse(docs.stdout).data.content.length > 100);
+  }
+  const exported = runInstalled(["skill", "export", join(smokeRoot, "exported"), "--json"]);
+  assertSuccess(exported, "explicit skill export");
+  const exportedData = JSON.parse(exported.stdout);
+  validateInstalled("skill export", exportedData);
+  const portable = exportedData.data.skillPath;
+  assert.equal(readFileSync(portable, "utf8"), readFileSync(assets.skillPath, "utf8"));
+  const refusal = runInstalled(["skill", "export", join(smokeRoot, "exported"), "--json"]);
+  assert.equal(refusal.status, 1);
+  assert.equal(refusal.stdout, "");
+  validateInstalled("skill export", JSON.parse(refusal.stderr));
+  assert.equal(readFileSync(portable, "utf8"), readFileSync(assets.skillPath, "utf8"));
+  if (process.platform !== "win32") {
+    const manLink = join(installPrefix, "share", "man", "man1", "outpost.1");
+    assert.equal(realpathSync(manLink), realpathSync(join(installedPackage, "man", "outpost.1")));
+  }
+
   console.log("Test: outpost --help");
   const helpResult = runInstalled(["--help"]);
   assert.equal(helpResult.status, 0);
@@ -257,6 +307,7 @@ try {
   assert.equal(partialOutput.exitCode, 1);
   assert.equal(partialOutput.data.failedCount, 1);
   assert.equal(partialOutput.data.results[0].fetchStatus, "failed");
+  validateInstalled("repo fetch", partialOutput);
 
   console.log("\nAll smoke tests passed.");
 } finally {

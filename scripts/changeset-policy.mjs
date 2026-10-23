@@ -28,6 +28,7 @@ export function toPosixPath(path) {
  * Releasable paths:
  *   - apps/cli/src/**
  *   - apps/cli/scripts/**
+ *   - apps/cli/skills/**, apps/cli/man/**, apps/cli/schemas/**
  *   - apps/cli/package.json
  *   - apps/cli/tsconfig.json
  *
@@ -44,6 +45,12 @@ export function isReleasablePath(path) {
   if (normalized === "apps/cli/tsconfig.json") return true;
   if (normalized.startsWith("apps/cli/src/")) return true;
   if (normalized.startsWith("apps/cli/scripts/")) return true;
+  if (
+    ["skills", "man", "schemas"].some((directory) =>
+      normalized.startsWith(`apps/cli/${directory}/`)
+    )
+  )
+    return true;
   return false;
 }
 

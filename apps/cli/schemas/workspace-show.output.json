@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [true]
+        },
+        "command": {
+          "type": "string",
+          "enum": ["workspace show"]
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "ticket": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["ready", "missing", "invalid", "unmanaged"]
+            },
+            "worktrees": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "base": {
+                    "type": "string"
+                  },
+                  "managedPath": {
+                    "type": "string"
+                  },
+                  "worktreePath": {
+                    "type": "string"
+                  },
+                  "resolvedManagedPath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resolvedWorktreePath": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "worktreeExists": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "managedExists": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["id", "name", "base", "managedPath", "worktreePath"],
+                "additionalProperties": true
+              }
+            },
+            "ticketDirectory": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "branch": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workspacePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "manifestPath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diagnostics": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["ticket", "status", "worktrees"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [0]
+        }
+      },
+      "required": ["ok", "command", "data", "exitCode"],
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "enum": [false]
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "GUIDANCE_FAILED",
+                "INVALID_ARGUMENT",
+                "UNKNOWN_COMMAND",
+                "CREATE_FAILED",
+                "DOCTOR_FAILED",
+                "INIT_FAILED",
+                "REPO_ADD_FAILED",
+                "REPO_FETCH_FAILED",
+                "REPO_LIST_FAILED",
+                "REPO_REMOVE_FAILED",
+                "REPO_SHOW_FAILED",
+                "WORKSPACE_LIST_FAILED",
+                "WORKSPACE_REMOVE_FAILED",
+                "WORKSPACE_SHOW_FAILED"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "lock-held",
+                "dirty-worktree",
+                "repo-in-use",
+                "repo-missing",
+                "workspace-missing",
+                "invalid-arguments",
+                "invalid-state",
+                "approval-needed",
+                "operation-failed"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": "string"
+            },
+            "diagnostics": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "stream": {
+                        "type": "string",
+                        "enum": ["stdout", "stderr"]
+                      },
+                      "line": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["stream", "line"],
+                    "additionalProperties": true
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diagnosticTruncation": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "omittedLineCount": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "capturedOutputTruncated": {
+                      "type": "boolean"
+                    },
+                    "maxLines": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "maxCharacters": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "truncated",
+                    "omittedLineCount",
+                    "capturedOutputTruncated",
+                    "maxLines",
+                    "maxCharacters"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["code", "message", "reason", "retryable", "action"],
+          "additionalProperties": true
+        },
+        "exitCode": {
+          "type": "number",
+          "enum": [1]
+        }
+      },
+      "required": ["ok", "command", "error", "exitCode"],
+      "additionalProperties": true
+    }
+  ]
+}

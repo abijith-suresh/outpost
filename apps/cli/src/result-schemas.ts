@@ -63,6 +63,25 @@ const removal = Schema.Struct({
   approvalRequired: optionalBoolean,
 });
 export const ResultSchemas = {
+  docs: Schema.Struct({
+    topic: Schema.String,
+    path: Schema.String,
+    format: Schema.Literals(["markdown", "json"]),
+    content: Schema.String,
+  }),
+  "skill show": Schema.Struct({ path: Schema.String, content: Schema.String }),
+  "skill path": Schema.Struct({
+    skillPath: Schema.String,
+    skillDirectory: Schema.String,
+    referencesPath: Schema.String,
+    manPath: Schema.String,
+    schemasPath: Schema.String,
+  }),
+  "skill export": Schema.Struct({
+    directory: Schema.String,
+    skillPath: Schema.String,
+    files: strings,
+  }),
   init: Schema.Struct({
     outpostHome: Schema.String,
     reposRoot: Schema.String,
