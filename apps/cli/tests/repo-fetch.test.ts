@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   addGitRemote,
+  createManagedRepoFixture,
   createTempDir,
   initBareGitRepo,
   initGitRepo,
@@ -12,10 +13,10 @@ import {
   mkdirSync,
   path,
   readFileSync,
+  readRegistry,
   runCli,
   setupAfterEach,
   writeFileSync,
-  writeRegistry,
 } from "./helpers.ts";
 
 const GIT_STDOUT_SENTINEL = "OUTPOST_GIT_STDOUT_SENTINEL";
@@ -202,16 +203,12 @@ describe("run", () => {
 
   it("keeps captured git fetch diagnostics structured in json and out of human output", async () => {
     const tempHome = createTempDir("outpost-test-");
-    const managedRepoPath = path.join(tempHome, "repos", "diagnostic.git");
     process.env.OUTPOST_HOME = tempHome;
 
     await runCli(["init"]);
-    await initBareGitRepo(managedRepoPath);
-    const repo = makeRepoRecord({
-      id: "diagnostic",
-      managedRepoPath,
-    });
-    writeRegistry(tempHome, [repo]);
+    const source = await createManagedRepoFixture({ defaultBranch: "main" });
+    await runCli(["repo", "add", source.tempRepo]);
+    const managedRepoPath = readRegistry(tempHome).repos[0].managedRepoPath;
     installFailingGitShim("fetch");
 
     const infoSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
