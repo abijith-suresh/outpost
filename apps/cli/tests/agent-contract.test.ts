@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vitest";
@@ -11,12 +11,14 @@ import {
   createManagedRepoFixture,
   createTempDir,
   existsSync,
+  mkdirSync,
   path,
   readRegistry,
   runCli,
   setupAfterEach,
   version,
   writeFileSync,
+  writeRegistry,
 } from "./helpers.ts";
 
 setupAfterEach();
@@ -180,6 +182,72 @@ describe("agent command contract", () => {
     expect((await run(["repo", "show", repo.id], 1)).error.reason).toBe("repo-missing");
     expect((await run(["workspace", "show", "AGENT"], 1)).error.reason).toBe("workspace-missing");
   });
+
+  it("classifies invalid Git branch and explicit remote selections as argument errors", async () => {
+    const home = createTempDir();
+    process.env.OUTPOST_HOME = home;
+    const run = capture();
+    await run(["init"]);
+    const source = await createManagedRepoFixture({ defaultBranch: "main" });
+    await run(["repo", "add", source.tempRepo]);
+    const repo = readRegistry(home).repos[0];
+    const branch = await run(
+      ["create", "--ticket", "bad..ticket", "--type", "fix", "--repo", repo.id],
+      1
+    );
+    expect(branch.error).toMatchObject({
+      code: "CREATE_FAILED",
+      reason: "invalid-arguments",
+      retryable: false,
+      action: expect.any(String),
+    });
+    const remote = await run(["repo", "add", source.tempRepo, "--remote", "absent"], 1);
+    expect(remote.error).toMatchObject({
+      code: "REPO_ADD_FAILED",
+      reason: "invalid-arguments",
+      retryable: false,
+      action: expect.any(String),
+    });
+  });
+
+  it.each(["create preview", "fetch"])(
+    "distinguishes a missing mirror from foreign/corrupt state in %s",
+    async (operation) => {
+      const home = createTempDir();
+      process.env.OUTPOST_HOME = home;
+      const run = capture();
+      await run(["init"]);
+      const source = await createManagedRepoFixture({ defaultBranch: "main" });
+      await run(["repo", "add", source.tempRepo]);
+      const repo = readRegistry(home).repos[0];
+      renameSync(repo.managedRepoPath, `${repo.managedRepoPath}.preserved`);
+      const invoke = async () =>
+        operation === "fetch"
+          ? (await run(["repo", "fetch", "--all"], 1)).data.results[0]
+          : (
+              await run(
+                ["create", "--ticket", "MISSING", "--type", "fix", "--repo", repo.id, "--dry-run"],
+                1
+              )
+            ).error;
+      expect(await invoke()).toMatchObject({
+        reason: "repo-missing",
+        retryable: false,
+        action: expect.any(String),
+      });
+      mkdirSync(repo.managedRepoPath);
+      writeFileSync(path.join(repo.managedRepoPath, "sentinel"), "Foreign content");
+      expect(await invoke()).toMatchObject({ reason: "invalid-state", retryable: false });
+      expect(readFileSync(path.join(repo.managedRepoPath, "sentinel"), "utf8")).toBe(
+        "Foreign content"
+      );
+      const foreign = createTempDir();
+      writeFileSync(path.join(foreign, "sentinel"), "Unrelated files");
+      writeRegistry(home, [{ ...repo, managedRepoPath: foreign }]);
+      expect(await invoke()).toMatchObject({ reason: "invalid-state", retryable: false });
+      expect(readFileSync(path.join(foreign, "sentinel"), "utf8")).toBe("Unrelated files");
+    }
+  );
 
   it("bounds tiny and long diagnostic lines with explicit metadata for both streams", () => {
     const tiny = collectDiagnostics({

@@ -88,6 +88,7 @@ function selectRemoteName(
     if (!remoteNames.includes(requestedRemoteName)) {
       return Effect.fail(
         new RepoAddError({
+          ...reasonDetails("invalid-arguments"),
           message: `Unknown remote: ${requestedRemoteName}. Available remotes: ${remoteNames.join(", ")}.`,
         })
       );

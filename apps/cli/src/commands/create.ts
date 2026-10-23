@@ -189,6 +189,7 @@ function validateBranchName(
         ? Effect.void
         : Effect.fail(
             new CreateError({
+              ...reasonDetails("invalid-arguments"),
               message: `Invalid create branch name: ${branchName}`,
             })
           )
