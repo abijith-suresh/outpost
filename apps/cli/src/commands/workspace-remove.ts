@@ -1,10 +1,9 @@
 import { rmdir } from "node:fs/promises";
-import { Effect, Result, Schema, Stream } from "effect";
+import { Effect, Result, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
-import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { commandExitCode, gitCommand } from "../child-process.js";
+import { commandExitCode, commandResult, gitCommand } from "../child-process.js";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import {
@@ -235,20 +234,9 @@ export function runWorkspaceRemove(
               }
 
               const statusCommand = gitCommand("-C", resolvedWorktreePath, "status", "--porcelain");
-              const statusResult = yield* Effect.scoped(
-                Effect.gen(function* () {
-                  const process = yield* statusCommand;
-                  const output = yield* process.stdout.pipe(
-                    Stream.decodeText(),
-                    Stream.runFold(
-                      () => "",
-                      (all, chunk) => all + chunk
-                    )
-                  );
-                  const exitCode = yield* process.exitCode;
-                  return { exitCode, output };
-                })
-              ).pipe(Effect.mapError(toMapError));
+              const statusResult = yield* commandResult(statusCommand).pipe(
+                Effect.mapError(toMapError)
+              );
 
               if (statusResult.exitCode !== 0) {
                 return yield* Effect.fail(
@@ -258,7 +246,7 @@ export function runWorkspaceRemove(
                 );
               }
 
-              if (statusResult.output.trim().length > 0) {
+              if (statusResult.stdout.truncated || statusResult.stdout.text.trim().length > 0) {
                 return yield* Effect.fail(
                   new WorkspaceRemoveError({
                     message: `Worktree ${resolvedWorktreePath} has uncommitted changes. Refusing removal. Commit or discard changes first.`,
