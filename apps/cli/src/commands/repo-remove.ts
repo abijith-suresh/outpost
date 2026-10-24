@@ -171,6 +171,9 @@ export function runRepoRemove(
         )
       );
     if (exists) {
+      warnings.push(
+        "Removing this managed repository deletes its local branches and any commits stored only here. Save needed branches and commits outside this mirror before repository cleanup."
+      );
       yield* verifyManagedRepository(config.reposRoot, existingRepo).pipe(
         Effect.mapError(
           (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })

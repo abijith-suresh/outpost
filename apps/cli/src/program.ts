@@ -14,6 +14,7 @@ import {
 import { runCreate } from "./commands/create.js";
 import { runDescribe } from "./commands/describe.js";
 import { runDoctor } from "./commands/doctor.js";
+import { runDocs, runSkillExport, runSkillPath, runSkillShow } from "./commands/guidance.js";
 import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoFetch } from "./commands/repo-fetch.js";
@@ -197,6 +198,20 @@ function resolveCommand(
     case "describe":
       return runDescribe(positionalArgs.slice(1), options.version).pipe(
         Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message, undefined, error))
+      );
+    case "docs":
+      return runDocs(positionalArgs[1]).pipe(
+        Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
+      );
+    case "skill show":
+      return runSkillShow().pipe(
+        Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
+      );
+    case "skill path":
+      return runSkillPath();
+    case "skill export":
+      return runSkillExport(positionalArgs[2]).pipe(
+        Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
       );
     case "doctor":
       if (positionalArgs.length > 1) {

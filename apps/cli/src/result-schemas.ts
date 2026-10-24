@@ -10,10 +10,10 @@ export const DiagnosticSchema = Schema.Struct({
 });
 export const DiagnosticTruncationSchema = Schema.Struct({
   truncated: Schema.Boolean,
-  omittedLineCount: Schema.Number,
+  omittedLineCount: Schema.Natural,
   capturedOutputTruncated: Schema.Boolean,
-  maxLines: Schema.Number,
-  maxCharacters: Schema.Number,
+  maxLines: Schema.Natural,
+  maxCharacters: Schema.Natural,
 });
 const repoFields = {
   id: Schema.String,
@@ -43,14 +43,14 @@ const workspaceSummary = Schema.Struct({
   type: optionalString,
   branch: optionalString,
   createdAt: optionalString,
-  worktreeCount: Schema.Number,
+  worktreeCount: Schema.Natural,
   status,
   diagnostics: strings,
 });
 const removal = Schema.Struct({
   ticket: Schema.String,
   ticketDirectory: Schema.String,
-  worktreeCount: Schema.Number,
+  worktreeCount: Schema.Natural,
   worktreeNames: strings,
   completed: strings,
   remaining: strings,
@@ -63,6 +63,25 @@ const removal = Schema.Struct({
   approvalRequired: optionalBoolean,
 });
 export const ResultSchemas = {
+  docs: Schema.Struct({
+    topic: Schema.String,
+    path: Schema.String,
+    format: Schema.Literals(["markdown", "json"]),
+    content: Schema.String,
+  }),
+  "skill show": Schema.Struct({ path: Schema.String, content: Schema.String }),
+  "skill path": Schema.Struct({
+    skillPath: Schema.String,
+    skillDirectory: Schema.String,
+    referencesPath: Schema.String,
+    manPath: Schema.String,
+    schemasPath: Schema.String,
+  }),
+  "skill export": Schema.Struct({
+    directory: Schema.String,
+    skillPath: Schema.String,
+    files: strings,
+  }),
   init: Schema.Struct({
     outpostHome: Schema.String,
     reposRoot: Schema.String,
@@ -90,7 +109,7 @@ export const ResultSchemas = {
   doctor: Schema.Struct({
     cwd: Schema.String,
     initialized: Schema.Boolean,
-    missingRepoCount: Schema.Number,
+    missingRepoCount: Schema.Natural,
     missingRepos: strings,
     node: Schema.String,
     outpostHome: Schema.String,
@@ -101,8 +120,8 @@ export const ResultSchemas = {
     repoRegistryFilePath: optionalString,
     reposRoot: optionalString,
     worktreesRoot: optionalString,
-    repoCount: Schema.optional(Schema.Number),
-    unhealthyWorkspaceCount: Schema.optional(Schema.Number),
+    repoCount: Schema.optional(Schema.Natural),
+    unhealthyWorkspaceCount: Schema.optional(Schema.Natural),
     workspaceHealth: Schema.optional(
       Schema.Array(Schema.Struct({ ticket: Schema.String, status }))
     ),
@@ -132,12 +151,12 @@ export const ResultSchemas = {
     ready: Schema.Boolean,
     blockers: strings,
   }),
-  "repo list": Schema.Struct({ missingRepoCount: Schema.Number, repos: Schema.Array(repo) }),
+  "repo list": Schema.Struct({ missingRepoCount: Schema.Natural, repos: Schema.Array(repo) }),
   "repo show": repo,
   "repo fetch": Schema.Struct({
-    failedCount: Schema.Number,
-    fetchedCount: Schema.Number,
-    repoCount: Schema.Number,
+    failedCount: Schema.Natural,
+    fetchedCount: Schema.Natural,
+    repoCount: Schema.Natural,
     results: Schema.Array(
       Schema.Struct({
         id: Schema.String,

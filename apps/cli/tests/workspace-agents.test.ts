@@ -82,9 +82,11 @@ This directory coordinates one ticket workspace. It is not a Git repository.
 
 - Each listed child directory is an independent Git worktree.
 - Run Git, build, test, and commit commands inside the relevant worktree.
-- Read that worktree's own AGENTS.md before modifying it.
+- Read that worktree's own AGENTS.md, if present, before modifying it.
 - Verify the current branch before committing; branch values below are creation-time expectations.
 - Do not modify Outpost-managed Git metadata.
+- Outpost owns this generated file and records its content hash. Do not edit it.
+- For lifecycle and recovery guidance, run \`outpost docs\` or \`outpost skill show\`; use \`outpost describe <command> --json\` for the installed command contract.
 
 ## Workspace
 

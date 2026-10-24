@@ -136,10 +136,13 @@ export function renderAgentsMarkdown(
     body += "\n";
     body += "- Each listed child directory is an independent Git worktree.\n";
     body += "- Run Git, build, test, and commit commands inside the relevant worktree.\n";
-    body += "- Read that worktree's own AGENTS.md before modifying it.\n";
+    body += "- Read that worktree's own AGENTS.md, if present, before modifying it.\n";
     body +=
       "- Verify the current branch before committing; branch values below are creation-time expectations.\n";
     body += "- Do not modify Outpost-managed Git metadata.\n";
+    body += "- Outpost owns this generated file and records its content hash. Do not edit it.\n";
+    body +=
+      "- For lifecycle and recovery guidance, run `outpost docs` or `outpost skill show`; use `outpost describe <command> --json` for the installed command contract.\n";
     body += "\n";
     body += "## Workspace\n";
     body += "\n";

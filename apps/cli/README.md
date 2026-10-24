@@ -28,6 +28,10 @@ outpost <command> [options]
 Commands:
   help [<command> ...] Show this help output
   describe [<command> ...] [--json] Show command specifications
+  docs [<topic>] [--json] Read bundled offline guidance
+  skill show [--json] Read the bundled portable Outpost skill
+  skill path [--json] Locate installed skill, reference, man and schema assets
+  skill export <directory> [--json] Copy the portable skill without overwriting
   create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
@@ -73,7 +77,11 @@ Removes all worktrees for the given ticket. The command refuses to remove:
 - Worktrees it cannot prove it owns
 - Workspaces where `AGENTS.md` has been modified or replaced (interactive mode prompts for confirmation; non-interactive mode fails)
 
-Branches in the managed mirrors are preserved.
+Workspace removal preserves branches in the managed mirrors. Repository removal
+deletes that storage, including its local refs and any commits stored only there.
+Keep the mirror or save needed work elsewhere before `repo remove`, for example
+with a local Git bundle. Push only when the user explicitly authorizes network
+access. Existing-mirror previews and removal results always include this warning.
 
 ### Interactive vs non-interactive
 
@@ -169,3 +177,23 @@ Git import and fetch diagnostics include at most 80 lines and 16,384 text
 characters total, split equally across stdout and stderr. `diagnosticTruncation`
 reports omitted captured lines and capture truncation explicitly. It replaces
 unbounded line expansion and does not change concise human error summaries.
+
+### Offline guidance and portable skill
+
+`outpost docs` reads the shipped skill. Use `outpost docs commands`,
+`outpost docs recovery` or `outpost docs schemas` for the generated reference,
+recovery decisions or schema index. These commands work without initializing an
+Outpost home or contacting the network. `outpost skill show` prints the skill;
+`outpost skill path --json` returns installed skill, reference, man and schema paths.
+
+`outpost skill export <directory> --json` copies the portable skill and its
+references to `<directory>/outpost`. The destination must not exist. Export never
+merges or overwrites an existing skill and never installs into an agent's settings
+automatically. If a copy fails partway, inspect the reported destination before
+choosing another directory. Source assets stay inside the installed package.
+
+The npm package includes `skills/outpost/SKILL.md`, its references, `schemas/` and
+`man/outpost.1`; package exports expose these paths. A global npm install on Unix
+links `outpost.1` in `<prefix>/share/man/man1/`, so use `man outpost` when that prefix
+is in the system man path, or `man <path>` using the path from `skill path`.
+All assets are prebuilt and remain available with install scripts disabled.

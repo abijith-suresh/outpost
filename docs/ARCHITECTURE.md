@@ -320,3 +320,37 @@ residual files that execution would preserve. Previews are advisory snapshots;
 execution always repeats validation under the normal home and ticket locks.
 The shared path planner reserves the canonical `AGENTS.md` identity both when
 creating a workspace and when validating an existing manifest.
+
+## Bundled guidance
+
+The portable skill lives at `apps/cli/skills/outpost/SKILL.md`. It routes agents to
+command and recovery references on demand. `docs [topic]`, `skill show` and
+`skill path` read package assets without loading or initializing Outpost state.
+`skill export <directory>` writes only an explicitly chosen new
+`<directory>/outpost` destination, creates it exclusively and uses exclusive file
+writes. It never merges existing skill content or chooses an agent configuration
+directory automatically. Partial export failures leave created files for inspection.
+
+`apps/cli/scripts/generate-docs.mjs` uses the command registry and executable result
+schemas to generate the command reference, `man/outpost.1` and Draft 2020-12 input
+and output schemas. Schema files are standalone and resolve local references
+offline. The index maps command names to files and identifies the contract version.
+`docs:generate` updates tracked artifacts; build and verify check their exact bytes
+and reject stale or extra schema files. The generator uses direct Node filesystem
+and subprocess calls as development tooling, outside CLI command workflows.
+
+Package `files`, `man` and asset exports include guidance without postinstall
+hooks. Unix global npm installs link the scoped package's actual `outpost.1`.
+Installed tarball smoke tests read assets, compile every schema without a network
+loader, validate installed guidance/partial/error envelopes, export the portable
+skill, reject a second export and verify the man link resolves into the package.
+The workspace AGENTS generator adds a short offline guidance pointer and states
+that Outpost owns the generated file and records its hash.
+
+Repository-removal previews and results always warn when an existing mirror will
+be deleted, including its local refs and commits stored only there. Workspace
+removal preserves those branches; repository removal does not. Shipped guidance
+requires retaining the mirror or saving needed work elsewhere first and grants no
+implicit permission to push. Result counts use nonnegative safe integer schemas,
+which exclude nonfinite values and generate stable optional-count JSON under both
+paired Effect patches used by the source and maintenance stacks.

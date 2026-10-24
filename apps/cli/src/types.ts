@@ -8,6 +8,7 @@ export type CommandOutput<K extends keyof CommandData = keyof CommandData> = {
 }[K];
 
 export const CLI_ERROR_CODES = [
+  "GUIDANCE_FAILED",
   "INVALID_ARGUMENT",
   "UNKNOWN_COMMAND",
   "CREATE_FAILED",
