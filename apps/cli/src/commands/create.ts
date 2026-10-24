@@ -8,6 +8,7 @@ import { commandExitCode, commandString, gitCommand } from "../child-process.js"
 import type { RepoRecord } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
 import { verifyManagedRepository } from "../managed-repo.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import {
   getCanonicalPortablePathKey,
   resolvePathWithinRoot,
@@ -23,6 +24,7 @@ import {
   getWorkspaceStateRoot,
   manifestExists,
   releaseTicketLock,
+  verifyWorktreeOwnership,
   writeManifest,
 } from "../workspace-manifest.js";
 import * as CreatePrompt from "./create-prompt.js";
@@ -65,6 +67,7 @@ type CreatedArtifacts = {
   branches: Array<CreatePlan>;
   worktrees: Array<CreatePlan>;
   ticketDirectory: boolean;
+  committed: boolean;
   agents?: GeneratedAgentsFile;
 };
 
@@ -486,7 +489,15 @@ function buildCreatePlan(
       worktreePath,
       branch: branchName,
       base: baseBranch,
-      startPoint: remoteExists === 0 ? remoteRef : `refs/heads/${baseBranch}`,
+      startPoint: (yield* commandString(
+        gitCommand(
+          "--git-dir",
+          repo.managedRepoPath,
+          "rev-parse",
+          "--verify",
+          `${remoteExists === 0 ? remoteRef : `refs/heads/${baseBranch}`}^{commit}`
+        )
+      ).pipe(Effect.mapError((error) => new CreateError({ message: error.message })))).trim(),
     } satisfies CreatePlan;
   });
 }
@@ -581,43 +592,85 @@ function rollbackCreatedArtifacts(
     const cleanupErrors: Array<string> = [];
 
     for (const plan of [...created.worktrees].reverse()) {
+      const exists = yield* fs.exists(plan.worktreePath).pipe(Effect.orElseSucceed(() => true));
+      if (!exists) continue;
+      const owned = yield* verifyWorktreeOwnership(plan.worktreePath, plan.managedRepoPath).pipe(
+        Effect.orElseSucceed(() => false)
+      );
+      if (!owned) {
+        cleanupErrors.push(`Preserved unowned residual path ${plan.worktreePath}`);
+        continue;
+      }
+      const branch = yield* commandString(
+        gitCommand("-C", plan.worktreePath, "symbolic-ref", "--quiet", "HEAD")
+      ).pipe(Effect.result);
+      if (branch._tag === "Failure" || branch.success.trim() !== `refs/heads/${plan.branch}`) {
+        cleanupErrors.push(
+          `Preserved worktree ${plan.worktreePath}: branch changed or could not be inspected`
+        );
+        continue;
+      }
+      const head = yield* commandString(
+        gitCommand("-C", plan.worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
+      ).pipe(Effect.result);
+      if (head._tag === "Failure" || head.success.trim() !== plan.startPoint) {
+        cleanupErrors.push(
+          `Preserved worktree ${plan.worktreePath}: HEAD changed or could not be inspected`
+        );
+        continue;
+      }
+      // No force: new untracked files or agent edits must survive rollback.
       yield* commandExitCode(
-        gitCommand(
-          "--git-dir",
-          plan.managedRepoPath,
-          "worktree",
-          "remove",
-          "--force",
-          plan.worktreePath
-        )
+        gitCommand("--git-dir", plan.managedRepoPath, "worktree", "remove", plan.worktreePath)
       ).pipe(
         Effect.flatMap((exitCode) =>
           exitCode === 0
             ? Effect.void
-            : Effect.fail(`git worktree remove exited with status ${exitCode}`)
+            : Effect.fail(
+                `git worktree remove exited with status ${exitCode}; residual worktree preserved`
+              )
         ),
         Effect.mapError((error) => (typeof error === "string" ? error : error.message)),
-        Effect.catch((message) => {
-          cleanupErrors.push(`Failed to remove worktree ${plan.worktreePath}: ${message}`);
-          return Effect.void;
-        })
+        Effect.catch((message) =>
+          Effect.sync(() => {
+            cleanupErrors.push(`Failed to remove worktree ${plan.worktreePath}: ${message}`);
+          })
+        )
       );
     }
 
     for (const plan of [...created.branches].reverse()) {
-      yield* commandExitCode(
-        gitCommand("--git-dir", plan.managedRepoPath, "branch", "-D", plan.branch)
-      ).pipe(
-        Effect.flatMap((exitCode) =>
-          exitCode === 0 ? Effect.void : Effect.fail(`git branch -D exited with status ${exitCode}`)
-        ),
-        Effect.mapError((error) => (typeof error === "string" ? error : error.message)),
-        Effect.catch((message) => {
-          cleanupErrors.push(
-            `Failed to delete branch ${plan.branch} for ${plan.repoId}: ${message}`
+      yield* Effect.gen(function* () {
+        const ref = `refs/heads/${plan.branch}`;
+        const exists = yield* commandExitCode(
+          gitCommand("--git-dir", plan.managedRepoPath, "show-ref", "--verify", "--quiet", ref)
+        );
+        if (exists === 1) return;
+        if (exists !== 0) return yield* Effect.fail(`Cannot inspect branch ${plan.branch}`);
+        const worktrees = yield* commandString(
+          gitCommand("--git-dir", plan.managedRepoPath, "worktree", "list", "--porcelain", "-z")
+        );
+        if (worktrees.split("\0").includes(`branch ${ref}`)) {
+          return yield* Effect.fail(
+            `Preserved branch ${plan.branch}: it is still linked to a worktree`
           );
-          return Effect.void;
-        })
+        }
+        // Compare-and-delete refuses a branch advanced after creation. The
+        // immutable starting commit is recorded before the branch mutation.
+        const status = yield* commandExitCode(
+          gitCommand("--git-dir", plan.managedRepoPath, "update-ref", "-d", ref, plan.startPoint)
+        );
+        if (status !== 0)
+          return yield* Effect.fail(
+            `Preserved branch ${plan.branch}: its commit changed or deletion failed`
+          );
+      }).pipe(
+        Effect.mapError((error) => (typeof error === "string" ? error : error.message)),
+        Effect.catch((message) =>
+          Effect.sync(() => {
+            cleanupErrors.push(message);
+          })
+        )
       );
     }
 
@@ -772,6 +825,15 @@ export function runCreate(
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message }))
     );
+    const mutation = parsedArgs.dryRun
+      ? undefined
+      : yield* acquireHomeMutationLock(outpostHome, "create").pipe(
+          Effect.mapError((error) => new CreateError({ message: error.message }))
+        );
+    const record = (step: Record<string, unknown>) =>
+      (mutation?.record(step) ?? Effect.void).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message }))
+      );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.mapError((error) => new CreateError({ message: error.message }))
     );
@@ -811,8 +873,11 @@ export function runCreate(
       } satisfies CommandOutput;
     }
 
-    yield* acquireTicketLock(outpostHome, parsedArgs.ticket).pipe(
-      Effect.mapError((error) => new CreateError({ message: error.message }))
+    yield* Effect.acquireRelease(
+      acquireTicketLock(outpostHome, parsedArgs.ticket).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message }))
+      ),
+      () => releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.ignore)
     );
 
     const result = yield* Effect.gen(function* () {
@@ -828,19 +893,44 @@ export function runCreate(
         branches: [],
         worktrees: [],
         ticketDirectory: false,
+        committed: false,
       };
 
+      yield* record({
+        action: "create-workspace",
+        ticket: parsedArgs.ticket,
+        ticketDirectory,
+        plans,
+      });
       return yield* Effect.gen(function* () {
-        yield* fs
-          .makeDirectory(ticketDirectory)
-          .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
-        created.ticketDirectory = true;
+        yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* fs
+              .makeDirectory(ticketDirectory)
+              .pipe(Effect.mapError((error) => new CreateError({ message: error.message })));
+            created.ticketDirectory = true;
+          })
+        );
 
         for (const plan of plans) {
-          yield* createBranch(plan);
-          created.branches.push(plan);
-          yield* createWorktree(plan);
-          created.worktrees.push(plan);
+          yield* record({ action: "create-branch", phase: "intent", ...plan });
+          yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              // Git remains interruptible. Only a successful result confirms
+              // that this operation created the artifact; intent is not proof.
+              yield* restore(createBranch(plan));
+              created.branches.push(plan);
+            })
+          );
+          yield* record({ action: "create-branch", phase: "confirmed", ...plan });
+          yield* record({ action: "create-worktree", phase: "intent", ...plan });
+          yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              yield* restore(createWorktree(plan));
+              created.worktrees.push(plan);
+            })
+          );
+          yield* record({ action: "create-worktree", phase: "confirmed", ...plan });
         }
 
         const pathModule = yield* Path.Path;
@@ -868,12 +958,26 @@ export function runCreate(
           repositories: [...repositoryEntries],
         };
 
-        created.agents = yield* generateAgentsMarkdown(outpostHome, manifest).pipe(
-          Effect.mapError((error) => new CreateError({ message: error.message }))
+        yield* record({
+          action: "generate-guidance",
+          filePath: pathModule.join(ticketDirectory, "AGENTS.md"),
+        });
+        yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            created.agents = yield* generateAgentsMarkdown(outpostHome, manifest).pipe(
+              Effect.mapError((error) => new CreateError({ message: error.message }))
+            );
+          })
         );
 
-        yield* writeManifest(outpostHome, manifest).pipe(
-          Effect.mapError((error) => new CreateError({ message: error.message }))
+        yield* record({ action: "write-workspace-manifest", ticket: parsedArgs.ticket, manifest });
+        yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            yield* writeManifest(outpostHome, manifest).pipe(
+              Effect.mapError((error) => new CreateError({ message: error.message }))
+            );
+            created.committed = true;
+          })
         );
 
         return {
@@ -894,13 +998,22 @@ export function runCreate(
             })),
           },
         } satisfies CommandOutput;
-      }).pipe(Effect.catch((error) => rollbackCreatedArtifacts(created, ticketDirectory, error)));
-    }).pipe(
-      Effect.ensuring(
-        releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.catch(() => Effect.void))
-      )
-    );
+      }).pipe(
+        Effect.onInterrupt(() =>
+          created.committed
+            ? Effect.void
+            : rollbackCreatedArtifacts(
+                created,
+                ticketDirectory,
+                new CreateError({ message: "Workspace creation interrupted" })
+              ).pipe(Effect.ignore)
+        ),
+        Effect.catch((error) =>
+          Effect.uninterruptible(rollbackCreatedArtifacts(created, ticketDirectory, error))
+        )
+      );
+    });
 
     return result;
-  });
+  }).pipe(Effect.scoped);
 }

@@ -1,6 +1,7 @@
 import { Effect, Result, Schema } from "effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import type { CommandOutput } from "../types.js";
@@ -34,7 +35,7 @@ export class WorkspaceListError extends Schema.TaggedError<WorkspaceListError>()
 export function runWorkspaceList(): Effect.Effect<
   CommandOutput,
   WorkspaceListError,
-  FileSystem.FileSystem | Path.Path
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     const path = yield* Path.Path;

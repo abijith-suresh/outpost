@@ -124,10 +124,20 @@ Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branche
 - **Semantic identifier validation:** empty values and ASCII control characters are rejected in tickets, branch inputs, repository identities, remote names, and persisted state before filesystem or Git operations.
 - **Dirty worktree protection:** workspace removal checks `git status --porcelain` and refuses worktrees with uncommitted changes.
 - **Ownership verification:** worktree `.git` files must point to the expected bare repository.
-- **Ticket locks:** concurrent operations on the same ticket are serialized with exclusive lock files.
+- **Mutation locks:** init, repository add/fetch/remove, workspace create, and workspace remove take one exclusive home mutation lock before reading state for mutation. An overlapping mutation fails with a clear retry message. Create and remove then take the ticket lock, in that order. Dry-run does not take locks.
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
-- **Rollback:** if `create` fails partway through, it rolls back branches, worktrees, and generated files.
+- **Rollback:** failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.
+
+### Cancellation and crash recovery
+
+`doctor` and `doctor --json` report held home/ticket locks and incomplete operation records. Records include the operation ID, PID, host, start time, and intended paths, branches, and starting commits. Mutation intent is recorded under `$OUTPOST_HOME/operations/` before artifacts change. Branch and worktree steps record an `intent` phase, followed by `confirmed` only when Git reports success. An unconfirmed step may have left artifacts, but matching paths, repository association, or starting commits do not prove operation ownership. Successful operations remove their record; interrupted or failed operations retain it for inspection, even when rollback cleaned up everything. Workspace health also checks that HEAD resolves to a commit. Switching branches or detaching HEAD is allowed.
+
+SIGINT and SIGTERM run cleanup finalizers. On POSIX, checked commands own separate process groups: cleanup requests SIGTERM, then SIGKILL after a one-second grace period. Timeout completion includes cleanup; the Effect spawner can also wait one additional second for the group after escalation. Children that retain inherited output pipes in that group are included, even after the original process exits. SIGKILL, process crashes, machine shutdown, and storage failures can leave partial artifacts and locks. Writes use atomic rename, without a power-loss durability guarantee. Outpost never reaps a lock because of age or a dead-looking PID, and metadata alone does not authorize deletion or adoption.
+
+After a crash, run `outpost doctor --json` and inspect the reported lock and operation files. Verify the recorded process and host independently, then compare the recorded plans with `git --git-dir <managed-path> worktree list --porcelain`, the current refs, and each worktree's status. Preserve edits and unfamiliar paths. Only after establishing that no mutation is running should you manually release the corresponding home and ticket locks. Keep operation records until all reported artifacts have been accounted for. There is no blanket force-recovery command. Residual workspaces without manifests remain unmanaged; unregistered repository directories require manual inspection and are not adopted on retry.
+
+Initialization writes the registry before the config marker. If the config write fails, retrying init preserves the installed registry. If config exists but the registry is missing, init reports incomplete initialization and refuses to replace potentially lost registry state. Restore or reconstruct that registry only after inspecting existing repositories and workspaces.
 
 ## Website
 

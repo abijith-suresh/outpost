@@ -1,6 +1,7 @@
 import { Effect, Result, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { loadConfig, resolveOutpostHome } from "../config.js";
 import {
@@ -29,7 +30,11 @@ export class WorkspaceShowError extends Schema.TaggedError<WorkspaceShowError>()
 export function runWorkspaceShow(
   ticket: string | undefined,
   extraArgs: ReadonlyArray<string>
-): Effect.Effect<CommandOutput, WorkspaceShowError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  CommandOutput,
+  WorkspaceShowError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
     if (!ticket || extraArgs.length > 0) {
       return yield* Effect.fail(

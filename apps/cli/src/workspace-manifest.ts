@@ -1,7 +1,10 @@
+import { hostname } from "node:os";
 import { Effect, Result, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { commandExitCode, gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import {
@@ -634,7 +637,11 @@ export function deriveWorkspaceStatus(
   outpostHome: string,
   config: OutpostConfig,
   ticket: string
-): Effect.Effect<WorkspaceStatus, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  WorkspaceStatus,
+  PlatformError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const manifestFilePath = yield* getManifestFilePath(outpostHome, ticket);
@@ -721,6 +728,13 @@ export function deriveWorkspaceStatus(
       if (!ownershipValid) {
         return "invalid";
       }
+      const headValid = yield* commandExitCode(
+        gitCommand("-C", resolvedWorktree, "rev-parse", "--verify", "HEAD^{commit}")
+      ).pipe(
+        Effect.map((status) => status === 0),
+        Effect.orElseSucceed(() => false)
+      );
+      if (!headValid) return "invalid";
     }
 
     return hasMissingPath ? "missing" : "ready";
@@ -795,20 +809,26 @@ export function acquireTicketLock(
       )
     );
 
-    yield* fs.writeFileString(lockFilePath, "", { flag: "wx" }).pipe(
-      Effect.mapError((error) => {
-        // effect v4 normalizes EEXIST to the `AlreadyExists` system error tag;
-        // detect the held-lock case on the reason, not the message text.
-        if (error._tag === "PlatformError" && error.reason._tag === "AlreadyExists") {
+    yield* fs
+      .writeFileString(
+        lockFilePath,
+        `${JSON.stringify({ ticket, pid: process.pid, hostname: hostname(), startedAt: new Date().toISOString() })}\n`,
+        { flag: "wx" }
+      )
+      .pipe(
+        Effect.mapError((error) => {
+          // effect v4 normalizes EEXIST to the `AlreadyExists` system error tag;
+          // detect the held-lock case on the reason, not the message text.
+          if (error._tag === "PlatformError" && error.reason._tag === "AlreadyExists") {
+            return new LockError({
+              message: `Ticket ${ticket} is locked by another operation. Wait for it to complete. After a crash, run outpost doctor and inspect the recorded owner and artifacts before manually removing the lock.`,
+            });
+          }
           return new LockError({
-            message: `Ticket ${ticket} is locked by another operation. Wait for it to complete or remove the lock manually.`,
+            message: `Failed to acquire lock for ticket ${ticket}: ${error.message}`,
           });
-        }
-        return new LockError({
-          message: `Failed to acquire lock for ticket ${ticket}: ${error.message}`,
-        });
-      })
-    );
+        })
+      );
   });
 }
 

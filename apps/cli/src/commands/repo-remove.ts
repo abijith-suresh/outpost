@@ -5,6 +5,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandString, gitCommand } from "../child-process.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import { validateManagedRepoPath, verifyManagedRepository } from "../managed-repo.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import {
@@ -46,6 +47,9 @@ export function runRepoRemove(
       Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
     );
 
+    const mutation = yield* acquireHomeMutationLock(outpostHome, "repo remove").pipe(
+      Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
+    );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
     );
@@ -157,14 +161,21 @@ export function runRepoRemove(
           })
         );
       }
-      yield* fs
-        .remove(managedPath, { recursive: true })
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new RepoRemoveError({ message: `Failed to remove repo directory: ${error.message}` })
-          )
-        );
+      yield* mutation
+        .record({
+          action: "remove-repository",
+          repoId: existingRepo.id,
+          managedRepoPath: managedPath,
+        })
+        .pipe(Effect.mapError((error) => new RepoRemoveError({ message: error.message })));
+      yield* fs.remove(managedPath, { recursive: true }).pipe(
+        Effect.mapError(
+          (error) =>
+            new RepoRemoveError({
+              message: `Failed to remove repo directory: ${error.message}`,
+            })
+        )
+      );
     }
 
     const nextRegistry = {
@@ -172,6 +183,13 @@ export function runRepoRemove(
       repos: registry.repos.filter((repo) => repo.id !== repoId),
     };
 
+    yield* mutation
+      .record({
+        action: "unregister-repository",
+        repoId: existingRepo.id,
+        managedRepoPath: managedPath,
+      })
+      .pipe(Effect.mapError((error) => new RepoRemoveError({ message: error.message })));
     yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(
       Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
     );
@@ -187,5 +205,5 @@ export function runRepoRemove(
         warnings,
       },
     } satisfies CommandOutput;
-  });
+  }).pipe(Effect.scoped);
 }

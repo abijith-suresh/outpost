@@ -132,6 +132,23 @@ function printCommandOutput(output: CommandOutput, asJson: boolean): Effect.Effe
         Console.log(`node: ${String(output.data.node)}`),
         Console.log(`platform: ${String(output.data.platform)}`),
         Console.log(`cwd: ${String(output.data.cwd)}`),
+        ...(Array.isArray(output.data.diagnostics)
+          ? output.data.diagnostics.map((diagnostic: unknown) =>
+              Console.log(`diagnostic: ${String(diagnostic)}`)
+            )
+          : []),
+        ...(Array.isArray(output.data.operationRecords)
+          ? output.data.operationRecords.map((record: unknown) =>
+              Console.log(`recovery record: ${JSON.stringify(record)}`)
+            )
+          : []),
+        ...(Array.isArray(output.data.workspaceHealth)
+          ? output.data.workspaceHealth
+              .filter((workspace) => workspace.status !== "ready")
+              .map((workspace) =>
+                Console.log(`workspace ${String(workspace.ticket)}: ${String(workspace.status)}`)
+              )
+          : []),
       ]).pipe(Effect.asVoid);
     case "init":
       return Effect.all([

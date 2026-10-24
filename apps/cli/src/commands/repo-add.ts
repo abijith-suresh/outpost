@@ -5,13 +5,13 @@ import type { PlatformError } from "effect/PlatformError";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
-
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import {
   markManagedRepository,
   validateManagedRepoPath,
   verifyManagedRepository,
 } from "../managed-repo.js";
+import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
 import { getManagedRepoPath, resolveRemoteIdentity } from "../remote-identity.js";
 import type { CommandOutput } from "../types.js";
@@ -132,6 +132,9 @@ export function runRepoAdd(
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError((error) => new RepoAddError({ message: error.message }))
     );
+    const mutation = yield* acquireHomeMutationLock(outpostHome, "repo add").pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+    );
     const sourceRepoPath = path.resolve(inputPath);
     const exists = yield* fs
       .exists(sourceRepoPath)
@@ -206,6 +209,16 @@ export function runRepoAdd(
       .exists(managedRepoPath)
       .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
 
+    yield* mutation
+      .record({
+        action: "import-repository",
+        repoId: identity.id,
+        managedRepoPath,
+        sourceRepoPath,
+        remoteUrl: identity.transportUrl,
+        existing: managedRepoExists,
+      })
+      .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
     if (managedRepoExists) {
       if (!existingRecord) {
         return yield* Effect.fail(
@@ -296,5 +309,5 @@ export function runRepoAdd(
       command: "repo add",
       data,
     } satisfies CommandOutput;
-  });
+  }).pipe(Effect.scoped);
 }
