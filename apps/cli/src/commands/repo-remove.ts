@@ -1,8 +1,10 @@
-import { Console, Effect, Result, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
-
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { commandString, gitCommand } from "../child-process.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import { validateManagedRepoPath, verifyManagedRepository } from "../managed-repo.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import {
@@ -19,7 +21,11 @@ export class RepoRemoveError extends Schema.TaggedError<RepoRemoveError>()("Repo
 export function runRepoRemove(
   repoId: string | undefined,
   extraArgs: ReadonlyArray<string>
-): Effect.Effect<CommandOutput, RepoRemoveError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  CommandOutput,
+  RepoRemoveError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
     if (!repoId || extraArgs.length > 0) {
       return yield* Effect.fail(
@@ -118,20 +124,48 @@ export function runRepoRemove(
       Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
     );
 
-    if (unmanagedTickets.length > 0) {
-      yield* Console.warn(
-        `Warning: ${unmanagedTickets.length} unmanaged workspace(s) found under worktreesRoot. They have no manifests and cannot reference repos, but consider cleaning them up.`
-      );
-    }
-
-    yield* fs.remove(existingRepo.managedRepoPath, { recursive: true }).pipe(
-      Effect.mapError(
-        (error) =>
-          new RepoRemoveError({
-            message: `Failed to remove repo directory: ${error.message}`,
-          })
-      )
+    const warnings =
+      unmanagedTickets.length > 0
+        ? [
+            `${unmanagedTickets.length} unmanaged workspace(s) found under worktreesRoot. Inspect them before cleanup; Git-linked worktrees still block repository removal.`,
+          ]
+        : [];
+    const managedPath = yield* validateManagedRepoPath(config.reposRoot, existingRepo).pipe(
+      Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
     );
+    const exists = yield* fs
+      .exists(managedPath)
+      .pipe(Effect.mapError((error) => new RepoRemoveError({ message: error.message })));
+    if (exists) {
+      yield* verifyManagedRepository(config.reposRoot, existingRepo).pipe(
+        Effect.mapError((error) => new RepoRemoveError({ message: error.message }))
+      );
+      const worktrees = yield* commandString(
+        gitCommand("--git-dir", managedPath, "worktree", "list", "--porcelain", "-z")
+      ).pipe(
+        Effect.mapError(
+          (error) =>
+            new RepoRemoveError({ message: `Cannot inspect Git worktrees: ${error.message}` })
+        )
+      );
+      // The first record describes the bare repository itself. Any subsequent
+      // record protects an actual link, even if its path or manifest is missing.
+      if (worktrees.split("\0").filter((field) => field.startsWith("worktree ")).length > 1) {
+        return yield* Effect.fail(
+          new RepoRemoveError({
+            message: `Cannot remove repo ${existingRepo.id}: linked Git worktrees still exist. Inspect them with git worktree list before retrying.`,
+          })
+        );
+      }
+      yield* fs
+        .remove(managedPath, { recursive: true })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new RepoRemoveError({ message: `Failed to remove repo directory: ${error.message}` })
+          )
+        );
+    }
 
     const nextRegistry = {
       ...registry,
@@ -150,6 +184,7 @@ export function runRepoRemove(
         managedRepoPath: existingRepo.managedRepoPath,
         remoteUrl: existingRepo.remoteUrl,
         sourceRepoPath: existingRepo.sourceRepoPath,
+        warnings,
       },
     } satisfies CommandOutput;
   });

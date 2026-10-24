@@ -298,6 +298,11 @@ function printCommandOutput(output: CommandOutput, asJson: boolean): Effect.Effe
         Console.log(`managed repo path: ${String(output.data.managedRepoPath)}`),
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
+        ...(Array.isArray(output.data.warnings)
+          ? output.data.warnings.map((warning: unknown) =>
+              Console.warn(`Warning: ${String(warning)}`)
+            )
+          : []),
       ]).pipe(Effect.asVoid);
     case "repo show":
       return Effect.all([

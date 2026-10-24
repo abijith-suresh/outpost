@@ -4,6 +4,7 @@ import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import { verifyManagedRepository } from "../managed-repo.js";
 import type { CommandOutput } from "../types.js";
 import { fetchBareRepository, type RepoMirrorDiagnostic } from "./repo-mirror.js";
 
@@ -68,9 +69,15 @@ type RepoProcessResult = {
 };
 
 function fetchOneRepo(
-  repo: RepoRecord
-): Effect.Effect<RepoProcessResult, never, ChildProcessSpawner.ChildProcessSpawner> {
-  return fetchBareRepository(repo.managedRepoPath).pipe(
+  repo: RepoRecord,
+  reposRoot: string
+): Effect.Effect<
+  RepoProcessResult,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
+  return verifyManagedRepository(reposRoot, repo).pipe(
+    Effect.flatMap(() => fetchBareRepository(repo.managedRepoPath)),
     Effect.map(() => {
       const lastFetchedAt = new Date().toISOString();
 
@@ -85,7 +92,11 @@ function fetchOneRepo(
     Effect.catch((error) =>
       Effect.succeed({
         registryRepo: repo,
-        result: buildFailureResult(repo, error.message, error.diagnostics),
+        result: buildFailureResult(
+          repo,
+          error.message,
+          "diagnostics" in error ? error.diagnostics : []
+        ),
       } satisfies RepoProcessResult)
     )
   );
@@ -115,14 +126,16 @@ export function runRepoFetch(
 
     const outpostHome = yield* resolveOutpostHome();
 
-    yield* loadConfig(outpostHome).pipe(
+    const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError((error) => new RepoFetchError({ message: error.message }))
     );
 
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.mapError((error) => new RepoFetchError({ message: error.message }))
     );
-    const processedRepos = yield* Effect.forEach(registry.repos, fetchOneRepo);
+    const processedRepos = yield* Effect.forEach(registry.repos, (repo) =>
+      fetchOneRepo(repo, config.reposRoot)
+    );
     const nextRegistry = buildUpdatedRegistry(registry, processedRepos);
 
     yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(

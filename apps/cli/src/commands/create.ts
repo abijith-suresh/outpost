@@ -7,6 +7,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
 import type { RepoRecord } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import { verifyManagedRepository } from "../managed-repo.js";
 import {
   getCanonicalPortablePathKey,
   resolvePathWithinRoot,
@@ -71,10 +72,21 @@ function ensureUniqueWorktreePaths(
   plans: ReadonlyArray<CreatePlan>
 ): Effect.Effect<void, CreateError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
+    const path = yield* Path.Path;
     const pathsByPortableKey = new Map<string, { worktreePath: string; repoIds: Array<string> }>();
 
     for (const plan of plans) {
       const portableKey = yield* getCanonicalPortablePathKey(plan.worktreePath);
+      const agentsKey = yield* getCanonicalPortablePathKey(
+        path.join(path.dirname(plan.worktreePath), "AGENTS.md")
+      );
+      if (portableKey === agentsKey) {
+        return yield* Effect.fail(
+          new CreateError({
+            message: `Repository ${plan.repoId} collides with reserved generated path AGENTS.md: ${plan.worktreePath}`,
+          })
+        );
+      }
       const existing = pathsByPortableKey.get(portableKey);
 
       if (existing) {
@@ -699,6 +711,14 @@ function prepareCreate(
       );
     }
 
+    const config = yield* loadConfig(outpostHome).pipe(
+      Effect.mapError((error) => new CreateError({ message: error.message }))
+    );
+    yield* Effect.forEach(selectedRepos, (repo) =>
+      verifyManagedRepository(config.reposRoot, repo).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message }))
+      )
+    );
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
       buildCreatePlan(repo, ticketDirectory, branchName, base)
     );

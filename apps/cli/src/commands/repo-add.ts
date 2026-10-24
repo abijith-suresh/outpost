@@ -7,6 +7,11 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
 
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import {
+  markManagedRepository,
+  validateManagedRepoPath,
+  verifyManagedRepository,
+} from "../managed-repo.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
 import { getManagedRepoPath, resolveRemoteIdentity } from "../remote-identity.js";
 import type { CommandOutput } from "../types.js";
@@ -184,11 +189,34 @@ export function runRepoAdd(
     );
     const existingRecord = registry.repos.find((repo) => repo.id === identity.id);
     const managedRepoPath = existingRecord?.managedRepoPath ?? derivedManagedRepoPath;
+    yield* validateManagedRepoPath(
+      config.reposRoot,
+      existingRecord ?? {
+        id: identity.id,
+        name: identity.name,
+        remoteUrl: identity.transportUrl,
+        managedRepoPath,
+        remoteName,
+        sourceRepoPath,
+        importedAt: "",
+        lastFetchedAt: "",
+      }
+    ).pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
     const managedRepoExists = yield* fs
       .exists(managedRepoPath)
       .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
 
     if (managedRepoExists) {
+      if (!existingRecord) {
+        return yield* Effect.fail(
+          new RepoAddError({
+            message: `Refusing unregistered repository directory at ${managedRepoPath}. Inspect it before retrying.`,
+          })
+        );
+      }
+      yield* verifyManagedRepository(config.reposRoot, existingRecord).pipe(
+        Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      );
       yield* updateBareRepositoryRemote(managedRepoPath, identity.transportUrl).pipe(
         Effect.mapError(
           (error) =>
@@ -224,6 +252,9 @@ export function runRepoAdd(
       );
     }
 
+    yield* markManagedRepository(managedRepoPath, identity.id).pipe(
+      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+    );
     const now = new Date().toISOString();
     const updatedRecord = {
       id: identity.id,

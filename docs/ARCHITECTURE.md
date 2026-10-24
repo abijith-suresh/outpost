@@ -225,6 +225,8 @@ When a workspace is created, Outpost generates an `AGENTS.md` file in the worksp
 
 Outpost automatically deletes `"generated"` files. A `"foreign"` or `"modified"` file is deleted only after explicit interactive approval; non-interactive removal fails. Deletion compares the exact classified snapshot immediately before removal so a concurrently changed file is preserved.
 
+Repository mutation boundaries validate absolute registry paths through `resolveManagedPath`, including canonical ancestor containment, and require the identity-derived managed path for legacy mirrors without ownership markers. Marked repositories may retain a registered relocated path within the root. Create reserves the generated `AGENTS.md` path with the same canonical portable identity checks as worktree paths. Ownership requires a bare Git repository, a matching local origin URL, and either a matching `outpost.repository-id` local Git config marker or the legacy mirror refspec at the expected registered path. Repo add writes the marker after a successful import; it refuses unregistered pre-existing directories. Fetch and create preflight also verify ownership before modifying a repository. Repo removal additionally inspects `git worktree list --porcelain -z` and refuses all linked entries regardless of manifest presence. Missing mirrors may be safely unregistered after path and manifest checks. Unmanaged-directory warnings are structured command data; only the human renderer prints them to stderr.
+
 ## Path Safety (`apps/cli/src/path-safety.ts`)
 
 Path and semantic identifier validation are separate contracts:
