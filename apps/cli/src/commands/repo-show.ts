@@ -1,6 +1,7 @@
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import {
   getRepoHealthDiagnostics,
   loadConfig,

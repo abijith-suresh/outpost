@@ -19,11 +19,11 @@ filesystem, process, path, and console effects.
 
 ## CLI Routing
 
-**Executable entry point:** `apps/cli/src/cli.ts` is the dedicated executable binary entry point pointed to by `apps/cli/package.json#bin`. It starts unconditionally, propagates the numeric command result through `process.exitCode`, and uses `NodeRuntime.runMain` for lifecycle management and signal handling.
+**Executable entry point:** `apps/cli/src/cli.ts` is the dedicated executable binary entry point pointed to by `apps/cli/package.json#bin`. It starts unconditionally and propagates numeric results through `process.exitCode`. Pure help/version/global-validation output runs at the process boundary before loading Effect. Discovery loads a small filesystem-only Effect runtime. State commands lazily load `runtime.ts`, which provides the full Node services and `NodeRuntime.runMain` lifecycle/signal handling.
 
-**API entry point:** `apps/cli/src/index.ts` loads the package version and exports `runCli()` for programmatic use. It is import-safe with no side effects — importing the package does not execute the CLI.
+**API entry point:** `apps/cli/src/index.ts` loads the package version and exports the asynchronous `runCli()` for programmatic use. Importing it loads neither Effect nor command handlers. It is import-safe with no side effects — importing the package does not execute the CLI.
 
-**Argument parsing** in `apps/cli/src/program.ts`:
+**Argument parsing** starts in the pure `early-output.ts` prelude, shared by the executable, API and Effect program:
 
 1. Validate duplicate global flags (`--json`, `--help`, `--version`) before any short-circuit.
 2. Detect `--json` for machine-readable command output.
@@ -56,7 +56,7 @@ The main command workflows use Effect services for:
 - **ChildProcessSpawner** (`effect/process/ChildProcessSpawner`) — child process spawning (`git` commands)
 - **Console** (`effect/Console`) — stdout/stderr output
 
-The `NodeServices.layer` is provided at the entry points in `apps/cli/src/cli.ts` and `apps/cli/src/index.ts`. Some process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, lock metadata reads the PID and OS hostname and generates UUIDs, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
+The full `NodeServices.layer` is provided lazily in `runtime.ts`. Discovery uses only `NodeFileSystem.layer` in `discovery-runtime.ts`. Pure early output uses console at the process boundary and returns an exit code; it performs no state workflow. Other process-level integration remains direct: TTY detection reads `process.stdin` and `process.stdout`, environment resolution reads `process.env`, timestamps use `Date`, lock metadata reads the PID and OS hostname and generates UUIDs, and interactive prompts use Node readline. Tests control those boundaries through temporary process state and mocks.
 
 ## Persisted State
 
@@ -354,3 +354,56 @@ requires retaining the mirror or saving needed work elsewhere first and grants n
 implicit permission to push. Result counts use nonnegative safe integer schemas,
 which exclude nonfinite values and generate stable optional-count JSON under both
 paired Effect patches used by the source and maintenance stacks.
+
+## Startup and workspace inspection performance
+
+Runtime modules import Effect and Node platform modules by subpath. Help, version
+and duplicate-global-option failures use a shared pure prelude and do not load
+Effect or handlers. Installed API smoke checks trace actual module loads to guard
+that boundary. Discovery reads the generated standalone output schemas through an
+Effect filesystem layer and shares pure registry metadata with the generator;
+it does not compile schemas or load mutation handlers at startup. Complete
+discovery envelopes still pass the same JSON Schema acceptance checks.
+
+`workspace list` builds one `ManifestReadSnapshot` for each invocation, containing
+configuration, sorted tickets and canonical manifest identity collision indexes.
+It reads each manifest once and derives health from that validated value. The
+index catches canonical and portable name collisions without rescanning sibling
+manifest paths for each result. Filesystem ownership, containment and Git HEAD
+checks still run per worktree. There is no persistent cache, and listing remains
+an advisory inspection rather than a locked, atomic snapshot.
+
+Mutation preflights call `readManifest` without an inspection snapshot. They build
+a fresh identity index under the normal home/ticket locks. A regression uses real
+worktrees at 10 and 30 workspaces, counts filesystem reads/canonicalizations and
+checks refreshed invalid, missing, collision and unmanaged results; a later
+mutation still refuses a newly introduced identity collision.
+
+Reproduce latency with `npm run benchmark --workspace @abijith-suresh/outpost`.
+The script creates temporary Git repositories and one real worktree per workspace,
+checks every listed workspace is ready, and measures three fresh Node processes
+at 1, 10, 50 and 100 workspaces. It also measures an empty Node process and
+version/help/describe startup. Fixture setup is outside the measurements.
+
+On Linux x64, Node 24.19.0, the corrected guidance baseline `bcc0d0f` measured
+median startup times of 379 ms for version, 381 ms for help and 353 ms for describe;
+empty Node was 19 ms. This implementation measured 22, 23 and 139 ms respectively,
+with empty Node at 16 ms. Listing medians at 1/10/50/100 workspaces changed from
+411/553/1,958/5,077 ms to 195/299/777/1,303 ms on the same machine and runtime.
+These are post-safety and corrected guidance measurements, separate from both the
+initial audit and an earlier exploratory run on guidance commit `913d8b1`.
+Fresh processes still benefit from OS filesystem caches and timings vary with host
+load; they are observations, not latency guarantees. Git health checks remain a
+linear per-worktree cost. No fetch concurrency or mutation locking changes are
+included in this performance layer.
+
+Installed discovery checks each output schema's bytes against a generated SHA256
+map compiled into the CLI before parsing. The authoritative registry/schema
+generator creates and drift-checks both assets and `src/schema-integrity.ts`;
+checksums never derive from an installed asset at runtime. Changed, stale or
+wrong-command assets fail as one structured stderr error, including all-command
+discovery. Successful discovery still uses only the filesystem Effect runtime and
+Node crypto, without runtime Ajv or mutation handlers. This detects individual
+asset damage relative to compiled package code. It does not authenticate a
+package whose code and assets have both been replaced. Even formatting changes
+require restoring the shipped asset or regenerating the matching package code.

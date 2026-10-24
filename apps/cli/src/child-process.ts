@@ -1,7 +1,8 @@
-import { Effect, Stream } from "effect";
+import * as Effect from "effect/Effect";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Stream from "effect/Stream";
 
 /** Git must inherit PATH/HOME while refusing interactive credential prompts. */
 export function gitCommand(...args: ReadonlyArray<string>): ChildProcess.Command {

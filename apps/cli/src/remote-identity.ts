@@ -1,8 +1,9 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 
 import { resolvePathWithinRoot, validatePathSegment } from "./path-safety.js";
 

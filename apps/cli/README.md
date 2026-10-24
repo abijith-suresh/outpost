@@ -197,3 +197,18 @@ The npm package includes `skills/outpost/SKILL.md`, its references, `schemas/` a
 links `outpost.1` in `<prefix>/share/man/man1/`, so use `man outpost` when that prefix
 is in the system man path, or `man <path>` using the path from `skill path`.
 All assets are prebuilt and remain available with install scripts disabled.
+
+### Inspection cost
+
+Help and version avoid loading the command runtime, and discovery reads the
+bundled schemas without loading mutation handlers. Workspace listing builds a
+fresh collision index and reads each manifest once per invocation. It still
+checks Git ownership and HEAD health for every worktree. Results are advisory
+snapshots; mutation commands always validate current state under their locks.
+There is no persistent cache to invalidate.
+
+Installed `describe` checks output schema integrity against per-command digests
+compiled with the CLI. Changed or stale schema assets fail with a structured
+`invalid-state` error instead of advertising a successful contract. Restore or
+reinstall the package rather than editing installed schemas. This check works
+offline and detects individual asset damage, not replacement of package code.

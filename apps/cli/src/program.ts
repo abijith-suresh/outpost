@@ -1,13 +1,14 @@
 import process from "node:process";
-import { Console, Effect, Schema } from "effect";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 import {
   findCommand,
   findCommandPrefix,
   formatCommandDetail,
-  formatHelpText,
   parseCommandInput,
   requireCommand,
 } from "./command-spec.js";
@@ -24,6 +25,7 @@ import { runRepoShow } from "./commands/repo-show.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
+import { commandTokens, resolveEarlyOutput } from "./early-output.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { jsonErrorEnvelope, printCommandOutput } from "./renderer.js";
 import { DiagnosticSchema, DiagnosticTruncationSchema } from "./result-schemas.js";
@@ -73,15 +75,6 @@ function cliError(
   });
 }
 
-function printHelp(version: string): string {
-  return formatHelpText(version);
-}
-
-function commandHelp(commandPath: ReadonlyArray<string>): string | undefined {
-  const spec = findCommand(commandPath);
-  return spec ? formatCommandDetail(spec) : undefined;
-}
-
 function printUnknownCommand(command: string, asJson: boolean): Effect.Effect<number> {
   if (asJson) {
     return Console.error(
@@ -115,24 +108,6 @@ function printError(
     ).pipe(Effect.as(1));
   }
   return Console.error(error.message).pipe(Effect.as(1));
-}
-
-function validateGlobalOptions(args: ReadonlyArray<string>): Effect.Effect<void, CliError> {
-  const duplicateOption = ["--json", "--help", "--version"].find(
-    (option) => args.filter((arg) => arg === option).length > 1
-  );
-
-  if (duplicateOption) {
-    return Effect.fail(
-      new CliError({
-        ...reasonDetails("invalid-arguments"),
-        code: "INVALID_ARGUMENT",
-        message: `Usage: outpost <command> [options]\n${duplicateOption} may only be provided once.`,
-      })
-    );
-  }
-
-  return Effect.void;
 }
 
 type KnownCommand = Exclude<ReturnType<typeof resolveCommandIdentity>, null>;
@@ -311,58 +286,14 @@ export function run(
       Effect.mapError((error) => cliError("INVALID_ARGUMENT", error.message, undefined, error))
     );
 
-    yield* validateGlobalOptions(input.argv);
-
-    const wantsHelp = input.argv.includes("--help");
+    const early = resolveEarlyOutput(input.argv, input.version);
+    if (early) {
+      yield* Console[early.stream](early.text);
+      return early.exitCode;
+    }
     const asJson = input.argv.includes("--json");
     const interactive = !asJson && process.stdin.isTTY === true && process.stdout.isTTY === true;
-    const positionalArgs = input.argv.filter(
-      (arg) => arg !== "--json" && arg !== "--version" && arg !== "--help"
-    );
-
-    if (wantsHelp) {
-      const helpTarget = positionalArgs[0] === "help" ? positionalArgs.slice(1) : positionalArgs;
-      const helpText = helpTarget.length > 0 ? commandHelp(helpTarget) : undefined;
-
-      yield* Console.log(helpText ?? printHelp(input.version));
-      return 0;
-    }
-
-    if (input.argv.includes("--version")) {
-      yield* Console.log(input.version);
-      return 0;
-    }
-
-    if (positionalArgs.length === 0) {
-      yield* Console.log(printHelp(input.version));
-      return 0;
-    }
-
-    if (positionalArgs[0] === "help") {
-      const helpTarget = positionalArgs.slice(1);
-
-      if (helpTarget.length > 0) {
-        const helpText = commandHelp(helpTarget);
-
-        if (helpText) {
-          yield* Console.log(helpText);
-          return 0;
-        }
-
-        return yield* printError(
-          "help",
-          {
-            ...reasonDetails("invalid-arguments"),
-            code: "INVALID_ARGUMENT",
-            message: `Unknown command: ${helpTarget.join(" ")}`,
-          },
-          asJson
-        );
-      }
-
-      yield* Console.log(printHelp(input.version));
-      return 0;
-    }
+    const positionalArgs = commandTokens(input.argv);
 
     const command = resolveCommandIdentity(positionalArgs);
     if (command === null) {

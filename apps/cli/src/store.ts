@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { Effect, Exit, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 
 export class StoreError extends Schema.TaggedError<StoreError>()("StoreError", {
   message: Schema.String,

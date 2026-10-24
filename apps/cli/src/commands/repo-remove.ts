@@ -1,7 +1,9 @@
-import { Effect, Result, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { commandString, gitCommand } from "../child-process.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";

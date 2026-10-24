@@ -1,9 +1,11 @@
 import { hostname } from "node:os";
-import { Effect, Result, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { commandExitCode, gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
@@ -260,9 +262,47 @@ export function resolveWorktreePath(
   });
 }
 
+/** One inspection's identity index. Never persist it or pass it to a mutation. */
+export type ManifestReadSnapshot = {
+  outpostHome: string;
+  config: OutpostConfig;
+  tickets: readonly string[];
+  keysByFile: ReadonlyMap<string, string>;
+  filesByKey: ReadonlyMap<string, readonly string[]>;
+};
+
+export function buildManifestReadSnapshot(outpostHome: string, config: OutpostConfig) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
+    const entries = (yield* fs.exists(stateRoot)) ? yield* fs.readDirectory(stateRoot) : [];
+    const files = entries.filter((entry) => entry.endsWith(".json"));
+    const keysByFile = new Map<string, string>();
+    const filesByKey = new Map<string, string[]>();
+    for (const file of files) {
+      const key = yield* getCanonicalPortablePathKey(path.join(stateRoot, file));
+      keysByFile.set(file, key);
+      const collisions = filesByKey.get(key) ?? [];
+      collisions.push(file);
+      filesByKey.set(key, collisions);
+    }
+    return {
+      outpostHome,
+      config,
+      keysByFile,
+      filesByKey,
+      tickets: files
+        .map((file) => file.slice(0, -".json".length))
+        .sort((a, b) => a.localeCompare(b)),
+    } satisfies ManifestReadSnapshot;
+  });
+}
+
 export function readManifest(
   outpostHome: string,
-  ticket: string
+  ticket: string,
+  inspection?: ManifestReadSnapshot
 ): Effect.Effect<
   Manifest,
   ManifestError | ManifestNotFoundError | PlatformError,
@@ -318,39 +358,32 @@ export function readManifest(
       );
     }
 
-    const stateRoot = yield* getWorkspaceStateRoot(outpostHome);
-    const allEntries = yield* fs.readDirectory(stateRoot).pipe(
-      Effect.mapError(
-        (error) =>
-          new ManifestError({
-            message: `Failed to read workspace state directory ${stateRoot}: ${error.message}`,
-          })
-      )
-    );
-
-    const manifestFiles = allEntries.filter((entry) => entry.endsWith(".json"));
+    const config =
+      inspection?.outpostHome === outpostHome
+        ? inspection.config
+        : yield* loadConfig(outpostHome).pipe(
+            Effect.mapError(
+              (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+            )
+          );
+    // Default reads (including all mutation preflights) always build a fresh identity index.
+    const snapshot =
+      inspection?.outpostHome === outpostHome
+        ? inspection
+        : yield* buildManifestReadSnapshot(outpostHome, config);
     const targetFileName = path.basename(manifestFilePath);
-    const targetKey = yield* getCanonicalPortablePathKey(manifestFilePath);
-
-    for (const file of manifestFiles) {
-      if (file === targetFileName) continue;
-      const candidatePath = path.join(stateRoot, file);
-      const candidateKey = yield* getCanonicalPortablePathKey(candidatePath);
-
-      if (candidateKey === targetKey) {
-        return yield* Effect.fail(
-          new ManifestError({
-            message: `Ticket identity collision detected for ${ticket}: manifest ${file} has the same canonical path identity`,
-          })
-        );
-      }
-    }
-
-    const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError(
-        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
-      )
-    );
+    const targetKey = snapshot.keysByFile.get(targetFileName);
+    if (targetKey === undefined)
+      return yield* Effect.fail(
+        new ManifestError({ message: `Manifest changed during inspection: ${manifestFilePath}` })
+      );
+    const collision = snapshot.filesByKey.get(targetKey)?.find((file) => file !== targetFileName);
+    if (collision)
+      return yield* Effect.fail(
+        new ManifestError({
+          message: `Ticket identity collision detected for ${ticket}: manifest ${collision} has the same canonical path identity`,
+        })
+      );
 
     if (path.isAbsolute(manifest.workspacePath)) {
       return yield* Effect.fail(
@@ -712,8 +745,21 @@ export function deriveWorkspaceStatus(
       return "invalid";
     }
 
-    const manifest = manifestResult.manifest;
+    return yield* deriveManifestStatus(config, manifestResult.manifest);
+  });
+}
 
+/** Health checks for a manifest already validated during this inspection. */
+export function deriveManifestStatus(
+  config: OutpostConfig,
+  manifest: Manifest
+): Effect.Effect<
+  WorkspaceStatus,
+  PlatformError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const workspaceDirResult = yield* Effect.result(
       resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath)
     );

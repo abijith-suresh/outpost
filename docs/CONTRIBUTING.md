@@ -290,3 +290,17 @@ current behavior.
 Changes to shipped `apps/cli/skills/`, `apps/cli/man/` or `apps/cli/schemas/` are
 releasable package changes and require a patch changeset, including asset-only PRs.
 Repository documentation that does not ship remains exempt under the usual policy.
+
+To reproduce CLI latency, run `npm run benchmark --workspace @abijith-suresh/outpost`.
+It builds the CLI, creates temporary local Git fixtures and reports three-process
+medians for cheap startup paths and listing 1/10/50/100 real workspaces. Run before
+and after on the same Node version and machine without other test suites running;
+fixture setup is not timed. Keep raw samples and distinguish this measurement from
+prior audit baselines.
+
+Schema generation also updates `apps/cli/src/schema-integrity.ts`, whose compiled
+per-command digests identify installed output assets. Commit it with generated
+schema changes. `docs:generate` compiles the definitions, generates assets and
+the digest map, then recompiles so `dist describe` immediately uses the new map.
+Build and docs checks reject stale digest metadata as well as asset drift. Do not
+generate expected digests from installed assets at runtime.

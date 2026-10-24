@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { link } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";

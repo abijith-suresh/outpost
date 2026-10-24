@@ -1,6 +1,7 @@
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 import { commandResult, gitCommand } from "../child-process.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { DiagnosticSchema, DiagnosticTruncationSchema } from "../result-schemas.js";
