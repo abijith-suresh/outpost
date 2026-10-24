@@ -237,6 +237,12 @@ as `@abijith-suresh/outpost@0.0.25`.
 
 See `.github/workflows/release.yml` for details.
 
+The release action reads structured Changesets publication events through
+`CHANGESETS_OUTPUT` to identify published packages and push their tags. Custom
+publish scripts must preserve that environment variable. The workflow passes
+the release token through the action's explicit `github-token` input and keeps
+Git CLI pushes for version commits and tags.
+
 ## Website Development
 
 The marketing landing page lives in `apps/website/` as a private npm workspace.
