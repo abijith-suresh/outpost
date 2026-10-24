@@ -1,5 +1,30 @@
 # @abijith-suresh/outpost
 
+## 0.0.27
+
+### Patch Changes
+
+- 906fb60: Update the paired Effect runtime dependencies and refresh CLI test tooling, with explicit Node.js 24 types matching the supported runtime.
+- 59604ce: Align effect with the @effect/platform peer range.
+- 727d6bf: Upgrade the effect ecosystem to v4: `effect` 3.22.2 → 4.0.5 and `@effect/platform-node` 0.108.1 → 4.0.5. The separate `@effect/platform` package is removed; its file system, path, platform error, and child process APIs now ship in the `effect` core package (`effect/FileSystem`, `effect/Path`, `effect/PlatformError`, `effect/process/ChildProcess`).
+- 2a59f52: Guard shared lifecycle mutations with home and ticket locks, record progress before mutation, clean up interrupted creates conservatively, support initialization retry, and inspect crash artifacts and workspace HEAD health in doctor.
+
+  Confirm branch and worktree creation only after Git succeeds. Preserve unconfirmed or externally created artifacts and switched worktree branches during rollback, with intent and confirmation phases retained for inspection.
+
+- 0821c58: Check Git output status, drain both pipes, bound retained diagnostics, and terminate timed out or cancelled commands.
+
+  Escalate SIGTERM-resistant subprocess cleanup to SIGKILL after a one-second grace period and append bounded diagnostic lines individually so finite tiny-line Git output cannot bypass JSON error handling.
+
+- 1e08f65: Preserve local workspace branches and commits during repository fetch and re-import; migrate legacy mirrors to isolated remote tracking refs.
+- d9e447d: Expose a versioned agent command contract with typed schemas and structured recovery reasons, including semantic Git arguments and physically missing mirrors. Validate argument shapes from the registry, add mutation-free removal previews, and bound formatted Git diagnostics with explicit truncation metadata. Explain guidance preservation and explicit consent in workspace-removal refusals instead of suggesting deletion to bypass them.
+- 5892c91: Ship a portable Outpost skill, generated command reference, man page and standalone JSON schemas. Add offline docs and skill discovery/export commands without automatic agent configuration changes, and verify packaged assets and schema drift across supported Effect patches with finite integer counts. Clarify that repository cleanup deletes local branch storage and warn in previews and removal results. Clarify initialization before listing, optional child guidance, and explicit branch selection and commit verification when restoring local bundles before mirror cleanup.
+- 2318049: Escalate checked subprocess cleanup when SIGTERM is ignored and preserve structured JSON diagnostics for finite Git failures containing many tiny lines.
+
+  Confirm successful Git creation before making a branch or worktree eligible for rollback. Preserve unconfirmed or ambiguous artifacts after mutation failure or interruption, and retain intent/confirmation phases for recovery inspection.
+
+- 3416ee6: Load the CLI runtime lazily for faster help, version and command discovery. Build a per-invocation manifest identity snapshot and reuse validated manifests during workspace listing, preserving fresh mutation validation under locks. Verify installed discovery assets against generated per-command digests before parsing, rejecting damaged or mismatched schemas without loading the state runtime.
+- 6db079b: Validate repository containment and ownership before mutation, protect all linked Git worktrees, reserve AGENTS.md during create preflight, and keep removal warnings structured in JSON.
+
 ## 0.0.26
 
 ### Patch Changes
