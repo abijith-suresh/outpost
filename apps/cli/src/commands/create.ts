@@ -601,6 +601,15 @@ function rollbackCreatedArtifacts(
         cleanupErrors.push(`Preserved unowned residual path ${plan.worktreePath}`);
         continue;
       }
+      const branch = yield* commandString(
+        gitCommand("-C", plan.worktreePath, "symbolic-ref", "--quiet", "HEAD")
+      ).pipe(Effect.result);
+      if (branch._tag === "Failure" || branch.success.trim() !== `refs/heads/${plan.branch}`) {
+        cleanupErrors.push(
+          `Preserved worktree ${plan.worktreePath}: branch changed or could not be inspected`
+        );
+        continue;
+      }
       const head = yield* commandString(
         gitCommand("-C", plan.worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
       ).pipe(Effect.result);
@@ -904,14 +913,24 @@ export function runCreate(
         );
 
         for (const plan of plans) {
-          yield* record({ action: "create-branch", ...plan });
-          created.branches.push(plan);
-          yield* createBranch(plan);
-          yield* record({ action: "create-worktree", ...plan });
-          // A cancelled Git command may already have installed its worktree.
-          // Rollback verifies ownership and cleanliness before attempting removal.
-          created.worktrees.push(plan);
-          yield* createWorktree(plan);
+          yield* record({ action: "create-branch", phase: "intent", ...plan });
+          yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              // Git remains interruptible. Only a successful result confirms
+              // that this operation created the artifact; intent is not proof.
+              yield* restore(createBranch(plan));
+              created.branches.push(plan);
+            })
+          );
+          yield* record({ action: "create-branch", phase: "confirmed", ...plan });
+          yield* record({ action: "create-worktree", phase: "intent", ...plan });
+          yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function* () {
+              yield* restore(createWorktree(plan));
+              created.worktrees.push(plan);
+            })
+          );
+          yield* record({ action: "create-worktree", phase: "confirmed", ...plan });
         }
 
         const pathModule = yield* Path.Path;

@@ -219,7 +219,7 @@ describe("cancellation and recovery subprocesses", () => {
     ).toBe(true);
   }, 20_000);
 
-  it.each(["untracked", "commit"])(
+  it.each(["untracked", "commit", "branch-switch"])(
     "preserves %s work introduced during a cancelled create",
     async (kind) => {
       const { home, repos } = await fixture(2);
@@ -228,13 +228,19 @@ describe("cancellation and recovery subprocesses", () => {
       await waitForFile(pause.ready);
       const worktree = path.join(home, "worktrees", "EDIT", repos[0].name);
       await configureGitIdentity(worktree);
-      writeFileSync(path.join(worktree, "agent.txt"), "preserve me\n");
+      if (kind === "branch-switch") git(worktree, "switch", "-c", "external-work");
+      else writeFileSync(path.join(worktree, "agent.txt"), "preserve me\n");
       if (kind === "commit") await commitFile(worktree, "agent.txt", "preserve me\n", "agent work");
       const commit = git(worktree, "rev-parse", "HEAD");
       creating.child.kill("SIGTERM");
       await creating.done;
-      expect(readFileSync(path.join(worktree, "agent.txt"), "utf8")).toBe("preserve me\n");
-      expect(git(repos[0].managedRepoPath, "rev-parse", "refs/heads/fix/EDIT")).toBe(commit);
+      if (kind === "branch-switch") {
+        expect(git(worktree, "branch", "--show-current")).toBe("external-work");
+        expect(git(worktree, "status", "--porcelain")).toBe("");
+      } else {
+        expect(readFileSync(path.join(worktree, "agent.txt"), "utf8")).toBe("preserve me\n");
+        expect(git(repos[0].managedRepoPath, "rev-parse", "refs/heads/fix/EDIT")).toBe(commit);
+      }
       expect((await launch(["repo", "remove", repos[0].id]).done).code).toBe(1);
     },
     20_000
@@ -303,4 +309,91 @@ describe("cancellation and recovery subprocesses", () => {
     expect(readRegistry(home).repos).toEqual([]);
     expect(readdirSync(path.join(home, "operations")).length).toBeGreaterThan(0);
   }, 20_000);
+});
+
+describe("create rollback operation ownership", () => {
+  it.each([
+    { artifact: "branch", outcome: "failure" },
+    { artifact: "branch", outcome: "interruption" },
+    { artifact: "worktree", outcome: "failure" },
+    { artifact: "worktree", outcome: "interruption" },
+  ] as const)(
+    "preserves an external $artifact after $outcome before creation is confirmed",
+    async ({ artifact, outcome }) => {
+      const { home, repos } = await fixture();
+      const repo = repos[0];
+      const branch = "fix/FOREIGN";
+      const worktree = path.join(home, "worktrees", "FOREIGN", repo.name);
+      const pause = barrier([
+        "--git-dir",
+        repo.managedRepoPath,
+        ...(artifact === "branch" ? ["branch", branch] : ["worktree", "add"]),
+      ]);
+      const creating = launch(createArgs("FOREIGN", repos), pause.env);
+      await waitForFile(pause.ready);
+      const pid = Number(readFileSync(pause.ready, "utf8"));
+      const start = git(repo.managedRepoPath, "rev-parse", "refs/remotes/origin/main");
+      if (artifact === "branch") {
+        git(repo.managedRepoPath, "branch", branch, start);
+      } else {
+        git(repo.managedRepoPath, "worktree", "add", "-b", "external-work", worktree, start);
+        expect(git(worktree, "status", "--porcelain")).toBe("");
+      }
+      const inventory = git(repo.managedRepoPath, "worktree", "list", "--porcelain");
+      let watchdogTriggered = false;
+      const watchdog = setTimeout(() => {
+        watchdogTriggered = true;
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* Already reaped. */
+        }
+        creating.child.kill("SIGKILL");
+      }, 6_000);
+      try {
+        if (outcome === "failure") writeFileSync(pause.release, "go");
+        else creating.child.kill("SIGTERM");
+        const result = await creating.done;
+        expect(result.code).not.toBe(0);
+        if (outcome === "failure") {
+          expect(result.code).toBe(1);
+          expect(result.stdout).toBe("");
+          expect(JSON.parse(result.stderr).error.code).toBe("CREATE_FAILED");
+        }
+        expect(watchdogTriggered).toBe(false);
+        if (artifact === "branch") {
+          expect(
+            git(
+              repo.managedRepoPath,
+              "for-each-ref",
+              "--format=%(objectname)",
+              `refs/heads/${branch}`
+            )
+          ).toBe(start);
+        } else {
+          expect(existsSync(worktree)).toBe(true);
+          expect(git(worktree, "branch", "--show-current")).toBe("external-work");
+          expect(git(worktree, "rev-parse", "HEAD")).toBe(start);
+        }
+        expect(git(repo.managedRepoPath, "worktree", "list", "--porcelain")).toBe(inventory);
+        expect(existsSync(path.join(home, ".mutation.lock"))).toBe(false);
+        expect(existsSync(path.join(home, "workspaces", ".foreign.lock"))).toBe(false);
+        expect(existsSync(path.join(home, "workspaces", "FOREIGN.json"))).toBe(false);
+        const doctor = JSON.parse((await launch(["doctor"]).done).stdout).data;
+        expect(doctor.status).toBe("degraded");
+        const operation = doctor.operationRecords.find(
+          (record: { kind: string }) => record.kind === "operation"
+        );
+        expect(operation.metadata.steps).toContainEqual(
+          expect.objectContaining({ action: `create-${artifact}`, phase: "intent" })
+        );
+        expect(operation.metadata.steps).not.toContainEqual(
+          expect.objectContaining({ action: `create-${artifact}`, phase: "confirmed" })
+        );
+      } finally {
+        clearTimeout(watchdog);
+      }
+    },
+    20_000
+  );
 });
