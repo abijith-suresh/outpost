@@ -44,9 +44,32 @@ function executionError(description: string): PlatformError {
   return systemError({ _tag: "Unknown", module: "ChildProcess", method: "execute", description });
 }
 
+const terminationGraceMs = 1_000;
+
+/** Own a separate POSIX process group and escalate if SIGTERM is ignored.
+ * Apply this to every member of a pipeline as well as ordinary Git commands.
+ */
+function withTerminationPolicy(command: ChildProcess.Command): ChildProcess.Command {
+  if (command._tag === "PipedCommand") {
+    return ChildProcess.pipeTo(
+      withTerminationPolicy(command.left),
+      withTerminationPolicy(command.right),
+      command.options
+    );
+  }
+  return ChildProcess.make(command.command, command.args, {
+    ...command.options,
+    detached: process.platform !== "win32",
+    killSignal: "SIGTERM",
+    forceKillAfter: terminationGraceMs,
+  });
+}
+
 /**
  * Scoped execution drains stdout, stderr, and waits concurrently. Interruption
- * and timeout close the process scope, terminating the child before returning.
+ * and timeout close the process scope, requesting SIGTERM and escalating to
+ * SIGKILL after one second. POSIX cleanup covers the owned process group;
+ * detached descendants and OS-level termination failures have platform limits.
  * A nonzero status is intentionally returned for callers implementing probes.
  */
 export function commandResult(command: ChildProcess.Command, options: CommandOptions = {}) {
@@ -65,7 +88,7 @@ export function commandResult(command: ChildProcess.Command, options: CommandOpt
     }
     return Effect.scoped(
       Effect.gen(function* () {
-        const child = yield* command;
+        const child = yield* withTerminationPolicy(command);
         const [stdout, stderr, exitCode] = yield* Effect.all(
           [
             capture(child.stdout, maxOutputBytes),

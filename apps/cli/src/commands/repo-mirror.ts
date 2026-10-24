@@ -23,13 +23,10 @@ function runGitCommand(
     Effect.flatMap((result) => {
       const diagnostics: Array<RepoMirrorDiagnostic> = [];
       for (const source of ["stdout", "stderr"] as const) {
-        diagnostics.push(
-          ...result[source].text
-            .split(/\r?\n/u)
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .map((line) => ({ stream: source, line }))
-        );
+        for (const rawLine of result[source].text.split(/\r?\n/u)) {
+          const line = rawLine.trim();
+          if (line) diagnostics.push({ stream: source, line });
+        }
         if (result[source].truncated) {
           diagnostics.push({ stream: source, line: "[output truncated]" });
         }
