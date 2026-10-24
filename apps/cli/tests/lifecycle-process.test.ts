@@ -342,8 +342,12 @@ it("keeps finite tiny-line SSH diagnostics in JSON for both partial fetch and fa
   });
   expect(partial.data.results[0].error).toMatch(/exit status 128/);
   const diagnostics = partial.data.results[0].diagnostics;
-  expect(diagnostics.length).toBeLessThanOrEqual(131073);
-  expect(diagnostics.at(-1)).toEqual({ stream: "stderr", line: "[output truncated]" });
+  expect(diagnostics.length).toBeLessThanOrEqual(80);
+  expect(partial.data.results[0].diagnosticTruncation).toMatchObject({
+    truncated: true,
+    capturedOutputTruncated: true,
+  });
+  expect(fetch.stdout.length).toBeLessThan(30_000);
   git(source.tempRepo, "remote", "set-url", "origin", "ssh://example.invalid/team/other.git");
   const add = await launch(["repo", "add", source.tempRepo], env).done;
   expect(add.code).toBe(1);
@@ -355,11 +359,12 @@ it("keeps finite tiny-line SSH diagnostics in JSON for both partial fetch and fa
     exitCode: 1,
     error: { code: "REPO_ADD_FAILED" },
   });
-  expect(failure.error.diagnostics.length).toBeLessThanOrEqual(131073);
-  expect(failure.error.diagnostics.at(-1)).toEqual({
-    stream: "stderr",
-    line: "[output truncated]",
+  expect(failure.error.diagnostics.length).toBeLessThanOrEqual(80);
+  expect(failure.error.diagnosticTruncation).toMatchObject({
+    truncated: true,
+    capturedOutputTruncated: true,
   });
+  expect(add.stderr.length).toBeLessThan(30_000);
 }, 20_000);
 
 it("releases lifecycle locks and rolls back when the active Git child ignores SIGTERM", async () => {

@@ -246,14 +246,14 @@ describe("run", () => {
     expect(output.error.message).toContain("(exit status 23)");
     expect(output.error.message).not.toContain(GIT_STDOUT_SENTINEL);
     expect(output.error.message).not.toContain(GIT_STDERR_SENTINEL);
-    expect(output.error.diagnostics).toHaveLength(4096);
+    expect(output.error.diagnostics).toHaveLength(80);
     expect(output.error.diagnostics).toContainEqual({
       stream: "stdout",
       line: `${GIT_STDOUT_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
     });
     expect(output.error.diagnostics).toContainEqual({
       stream: "stderr",
-      line: `${GIT_STDERR_SENTINEL}-2047-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
+      line: `${GIT_STDERR_SENTINEL}-0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`,
     });
   }, 10_000);
 

@@ -1,8 +1,10 @@
 import { Effect, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 
 export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()("PathSafetyError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -42,7 +44,9 @@ export function validateSemanticIdentifier(
 ): Effect.Effect<void, PathSafetyError> {
   const message = getSemanticIdentifierError(label, value);
 
-  return message ? Effect.fail(new PathSafetyError({ message })) : Effect.void;
+  return message
+    ? Effect.fail(new PathSafetyError({ ...reasonDetails("invalid-arguments"), message }))
+    : Effect.void;
 }
 
 export function validatePathSegment(
@@ -53,6 +57,7 @@ export function validatePathSegment(
   if (value.includes("/") || value.includes("\\")) {
     return Effect.fail(
       new PathSafetyError({
+        ...reasonDetails("invalid-arguments"),
         message: `${label} may not contain path separators.`,
       })
     );
@@ -61,6 +66,7 @@ export function validatePathSegment(
   if (!options.allowTraversalSegments && (value === "." || value === "..")) {
     return Effect.fail(
       new PathSafetyError({
+        ...reasonDetails("invalid-arguments"),
         message: `${label} may not contain path traversal.`,
       })
     );
@@ -86,6 +92,7 @@ export function resolvePathWithinRoot(
     if (isOutsideRoot) {
       return yield* Effect.fail(
         new PathSafetyError({
+          ...reasonDetails("invalid-arguments"),
           message: `Path must remain within ${resolvedRoot}: ${resolvedPath}`,
         })
       );
@@ -114,5 +121,21 @@ export function getCanonicalPortablePathKey(
     const canonicalPath = yield* fs.realPath(value).pipe(Effect.orElseSucceed(() => value));
 
     return yield* getPortablePathKey(canonicalPath);
+  });
+}
+
+/** Reserve generated workspace guidance even on case-insensitive or aliased filesystems. */
+export function validateWorktreeGuidancePath(workspaceDirectory: string, worktreePath: string) {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const candidate = yield* getCanonicalPortablePathKey(worktreePath);
+    const reserved = yield* getCanonicalPortablePathKey(path.join(workspaceDirectory, "AGENTS.md"));
+    if (candidate === reserved)
+      return yield* Effect.fail(
+        new PathSafetyError({
+          ...reasonDetails("invalid-state"),
+          message: `Worktree collides with reserved generated path AGENTS.md: ${worktreePath}`,
+        })
+      );
   });
 }

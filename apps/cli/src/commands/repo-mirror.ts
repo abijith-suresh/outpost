@@ -2,17 +2,19 @@ import { Effect, Schema } from "effect";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandResult, gitCommand } from "../child-process.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
+import { DiagnosticSchema, DiagnosticTruncationSchema } from "../result-schemas.js";
+import type { DiagnosticTruncation } from "../types.js";
 
-export const RepoMirrorDiagnosticSchema = Schema.Struct({
-  stream: Schema.Literals(["stdout", "stderr"]),
-  line: Schema.String,
-});
+export const RepoMirrorDiagnosticSchema = DiagnosticSchema;
 
 export type RepoMirrorDiagnostic = typeof RepoMirrorDiagnosticSchema.Type;
 
 export class RepoMirrorError extends Schema.TaggedError<RepoMirrorError>()("RepoMirrorError", {
+  ...ErrorDetailFields,
   message: Schema.String,
   diagnostics: Schema.Array(RepoMirrorDiagnosticSchema),
+  diagnosticTruncation: Schema.optional(DiagnosticTruncationSchema),
 }) {}
 
 function runGitCommand(
@@ -21,22 +23,15 @@ function runGitCommand(
 ): Effect.Effect<void, RepoMirrorError, ChildProcessSpawner.ChildProcessSpawner> {
   return commandResult(command).pipe(
     Effect.flatMap((result) => {
-      const diagnostics: Array<RepoMirrorDiagnostic> = [];
-      for (const source of ["stdout", "stderr"] as const) {
-        for (const rawLine of result[source].text.split(/\r?\n/u)) {
-          const line = rawLine.trim();
-          if (line) diagnostics.push({ stream: source, line });
-        }
-        if (result[source].truncated) {
-          diagnostics.push({ stream: source, line: "[output truncated]" });
-        }
-      }
+      const { diagnostics, diagnosticTruncation } = collectDiagnostics(result);
       return result.exitCode === 0
         ? Effect.void
         : Effect.fail(
             new RepoMirrorError({
               message: `${failureMessage} (exit status ${result.exitCode})`,
               diagnostics,
+              diagnosticTruncation,
+              ...reasonDetails("operation-failed"),
             })
           );
     }),
@@ -46,6 +41,7 @@ function runGitCommand(
         : new RepoMirrorError({
             message: `${failureMessage}: ${error.message}`,
             diagnostics: [],
+            ...domainDetails(error, "operation-failed"),
           })
     )
   );
@@ -100,4 +96,46 @@ export function updateBareRepositoryRemote(
     gitCommand("remote", "set-url", "origin", remoteUrl).pipe(ChildProcess.setCwd(managedRepoPath)),
     `git remote set-url failed for ${managedRepoPath}`
   );
+}
+
+/** Bound formatted output as well as subprocess capture: tiny lines must not multiply JSON tokens. */
+export const DIAGNOSTIC_LIMITS = { maxLines: 80, maxCharacters: 16_384 } as const;
+export function collectDiagnostics(result: {
+  stdout: { text: string; truncated: boolean };
+  stderr: { text: string; truncated: boolean };
+}): { diagnostics: RepoMirrorDiagnostic[]; diagnosticTruncation: DiagnosticTruncation } {
+  const diagnostics: RepoMirrorDiagnostic[] = [];
+  let omittedLineCount = 0;
+  let truncated = false;
+  const capturedOutputTruncated = result.stdout.truncated || result.stderr.truncated;
+  for (const stream of ["stdout", "stderr"] as const) {
+    let streamLines = 0;
+    let streamCharacters = 0;
+    for (const raw of result[stream].text.split(/\r?\n/u)) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (
+        streamLines >= DIAGNOSTIC_LIMITS.maxLines / 2 ||
+        streamCharacters >= DIAGNOSTIC_LIMITS.maxCharacters / 2
+      ) {
+        omittedLineCount++;
+        truncated = true;
+        continue;
+      }
+      const kept = line.slice(0, DIAGNOSTIC_LIMITS.maxCharacters / 2 - streamCharacters);
+      truncated ||= kept.length < line.length;
+      streamCharacters += kept.length;
+      streamLines++;
+      diagnostics.push({ stream, line: kept });
+    }
+  }
+  return {
+    diagnostics,
+    diagnosticTruncation: {
+      truncated: truncated || capturedOutputTruncated,
+      omittedLineCount,
+      capturedOutputTruncated,
+      ...DIAGNOSTIC_LIMITS,
+    },
+  };
 }

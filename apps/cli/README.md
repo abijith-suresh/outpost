@@ -37,13 +37,13 @@ Commands:
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
   repo list [--json]   List imported repositories
-  repo remove <id> [--json]
+  repo remove <id> [--dry-run] [--json]
                          Remove an imported repository
   repo show <id> [--json]
                        Show one imported repository by id
   workspace list [--json]
                          List created ticket workspaces
-  workspace remove <ticket> [--json]
+  workspace remove <ticket> [--dry-run] [--json]
                          Remove a ticket workspace and all its worktrees
   workspace show <ticket> [--json]
                          Show one created ticket workspace
@@ -65,7 +65,7 @@ If run interactively (terminal, no `--json`), missing `--ticket`, `--type`, or `
 
 ### Workspace remove
 
-`outpost workspace remove <ticket> [--json]`
+`outpost workspace remove <ticket> [--dry-run] [--json]`
 
 Removes all worktrees for the given ticket. The command refuses to remove:
 
@@ -140,3 +140,32 @@ Initialization writes the registry before the config marker. If the config write
 ## Website
 
 The marketing landing page is built with Astro and deployed to GitHub Pages at [abijith-suresh.github.io/outpost](https://abijith-suresh.github.io/outpost/). See the [Pages workflow](https://github.com/abijith-suresh/outpost/blob/main/.github/workflows/pages.yml) for deployment behavior.
+
+### Machine contract and removal previews
+
+Use `outpost describe <command> --json` to read normalized input and output JSON
+Schemas, network access, retry policy and side effects. Discovery reports both
+`contractVersion`, which versions the machine contract independently, and the
+installed `cliVersion`. Input schemas describe `{ arguments, options }` after CLI
+normalization; named values are arrays, and boolean options are `true`.
+
+JSON errors keep command-level `code` and add `reason`, `retryable` and `action`.
+Inspect these fields instead of matching prose. A held lock can be retried after
+its owner finishes. Crash recovery still requires inspection and manual action.
+For partial results, inspect `data.results` or `data.completed` and `data.remaining`
+before choosing a recovery action. Partial JSON stays on stdout with exit code 1;
+errors without a result stay on stderr. `--json` remains opt-in, and help/version
+remain text.
+
+`outpost repo remove <id> --dry-run --json` and
+`outpost workspace remove <ticket> --dry-run --json` preview removal without
+writes or locks. They run removal's ownership, reference and cleanliness checks.
+Workspace previews report `agentsOwnership`, `approvalRequired` and residual
+entries. A preview never approves deletion and can become stale. Actual removal
+rechecks state under locks. Generated `AGENTS.md` paths are reserved during
+creation and manifest validation.
+
+Git import and fetch diagnostics include at most 80 lines and 16,384 text
+characters total, split equally across stdout and stderr. `diagnosticTruncation`
+reports omitted captured lines and capture truncation explicitly. It replaces
+unbounded line expansion and does not change concise human error summaries.

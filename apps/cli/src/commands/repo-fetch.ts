@@ -4,12 +4,15 @@ import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type { RepoRecord, RepoRegistry } from "../config.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import type { ErrorDetails } from "../error-details.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { verifyManagedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
-import type { CommandOutput } from "../types.js";
+import type { CommandOutput, DiagnosticTruncation } from "../types.js";
 import { fetchBareRepository, type RepoMirrorDiagnostic } from "./repo-mirror.js";
 
 export class RepoFetchError extends Schema.TaggedError<RepoFetchError>()("RepoFetchError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -24,10 +27,15 @@ type RepoFetchResult = {
   lastFetchedAt: string;
   error?: string;
   diagnostics?: ReadonlyArray<RepoMirrorDiagnostic>;
+  diagnosticTruncation?: DiagnosticTruncation;
+  reason?: string;
+  retryable?: boolean;
+  action?: string;
 };
 
 function usageError(): RepoFetchError {
   return new RepoFetchError({
+    ...reasonDetails("invalid-arguments"),
     message: "Usage: outpost repo fetch --all [--json]",
   });
 }
@@ -48,7 +56,9 @@ function buildSuccessResult(repo: RepoRecord, lastFetchedAt: string): RepoFetchR
 function buildFailureResult(
   repo: RepoRecord,
   error: string,
-  diagnostics: ReadonlyArray<RepoMirrorDiagnostic>
+  diagnostics: ReadonlyArray<RepoMirrorDiagnostic>,
+  details: ErrorDetails,
+  diagnosticTruncation?: DiagnosticTruncation
 ): RepoFetchResult {
   return {
     id: repo.id,
@@ -60,6 +70,8 @@ function buildFailureResult(
     fetchStatus: "failed",
     lastFetchedAt: repo.lastFetchedAt,
     error,
+    ...details,
+    ...(diagnosticTruncation ? { diagnosticTruncation } : {}),
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
   };
 }
@@ -96,7 +108,9 @@ function fetchOneRepo(
         result: buildFailureResult(
           repo,
           error.message,
-          "diagnostics" in error ? error.diagnostics : []
+          "diagnostics" in error ? error.diagnostics : [],
+          domainDetails(error, "operation-failed"),
+          "diagnosticTruncation" in error ? error.diagnosticTruncation : undefined
         ),
       } satisfies RepoProcessResult)
     )
@@ -116,7 +130,7 @@ function buildUpdatedRegistry(
 export function runRepoFetch(
   args: ReadonlyArray<string>
 ): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"repo fetch">,
   RepoFetchError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -128,14 +142,20 @@ export function runRepoFetch(
     const outpostHome = yield* resolveOutpostHome();
 
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new RepoFetchError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const mutation = yield* acquireHomeMutationLock(outpostHome, "repo fetch").pipe(
-      Effect.mapError((error) => new RepoFetchError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new RepoFetchError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* mutation
       .record({
@@ -145,14 +165,20 @@ export function runRepoFetch(
           managedRepoPath: repo.managedRepoPath,
         })),
       })
-      .pipe(Effect.mapError((error) => new RepoFetchError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     const processedRepos = yield* Effect.forEach(registry.repos, (repo) =>
       fetchOneRepo(repo, config.reposRoot)
     );
     const nextRegistry = buildUpdatedRegistry(registry, processedRepos);
 
     yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(
-      Effect.mapError((error) => new RepoFetchError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const results = processedRepos.map((processedRepo) => processedRepo.result);
@@ -168,6 +194,6 @@ export function runRepoFetch(
         results,
       },
       exitCode: failedCount > 0 ? 1 : 0,
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"repo fetch">;
   }).pipe(Effect.scoped);
 }

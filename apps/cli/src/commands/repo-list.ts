@@ -1,21 +1,22 @@
 import { Effect, Schema } from "effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
-
 import {
   getRepoHealthDiagnostics,
   loadConfig,
   loadRepoRegistry,
   resolveOutpostHome,
 } from "../config.js";
+import { domainDetails, ErrorDetailFields } from "../error-details.js";
 import type { CommandOutput } from "../types.js";
 
 export class RepoListError extends Schema.TaggedError<RepoListError>()("RepoListError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
 export function runRepoList(): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"repo list">,
   RepoListError,
   FileSystem.FileSystem | Path.Path
 > {
@@ -24,11 +25,15 @@ export function runRepoList(): Effect.Effect<
     const outpostHome = yield* resolveOutpostHome();
 
     yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new RepoListError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoListError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new RepoListError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoListError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const { missingRepoCount, repos } = yield* getRepoHealthDiagnostics(registry.repos).pipe(
       Effect.provideService(FileSystem.FileSystem, fs)
@@ -40,6 +45,6 @@ export function runRepoList(): Effect.Effect<
         missingRepoCount,
         repos,
       },
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"repo list">;
   });
 }

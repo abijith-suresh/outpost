@@ -586,7 +586,7 @@ describe("run", () => {
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenNthCalledWith(
         1,
-        "Usage: outpost workspace remove <ticket> [--json]"
+        "Usage: outpost workspace remove <ticket> [--dry-run] [--json]"
       );
     });
 

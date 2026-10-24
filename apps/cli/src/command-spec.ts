@@ -176,7 +176,14 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     mutation: true,
     interactive: false,
     json: true,
-    dryRun: false,
+    dryRun: true,
+    options: [
+      {
+        name: "--dry-run",
+        description: "Preview removal without locks or writes",
+        required: false,
+      },
+    ],
   },
   {
     path: ["repo", "show"],
@@ -214,7 +221,14 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     mutation: true,
     interactive: true,
     json: true,
-    dryRun: false,
+    dryRun: true,
+    options: [
+      {
+        name: "--dry-run",
+        description: "Preview removal without locks, writes or approval prompts",
+        required: false,
+      },
+    ],
   },
   {
     path: ["workspace", "show"],
@@ -370,4 +384,139 @@ export function formatCommandDetail(spec: CommandSpec): string {
       : [];
 
   return [usage, "", spec.description, "", ...attrs, ...commandArguments, ...options].join("\n");
+}
+
+/** Version of the machine contract, independent of the npm package version. */
+export const CONTRACT_VERSION = "1.0.0";
+
+export type ParsedCommandInput = {
+  arguments: Readonly<Record<string, readonly string[]>>;
+  options: Readonly<Record<string, readonly string[] | boolean>>;
+};
+
+/** Registry definitions are the single source for argument shape. Semantic checks stay in handlers. */
+export function parseCommandInput(
+  spec: CommandSpec,
+  tokens: readonly string[],
+  interactive = false
+): ParsedCommandInput {
+  const options: Record<string, string[] | boolean> = {};
+  const positional: string[] = [];
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+    const option = spec.options?.find((candidate) => candidate.name === token);
+    if (!option) throw new Error(`Unknown option: ${token}`);
+    if (token in options && !option.repeatable)
+      throw new Error(`${token} may only be provided once.`);
+    if (option.valueName) {
+      const value = tokens[++index];
+      if (!value || value.startsWith("--")) throw new Error(`${token} requires a value.`);
+      const previous = options[token];
+      options[token] = [...(Array.isArray(previous) ? previous : []), value];
+    } else {
+      options[token] = true;
+    }
+  }
+  const commandArguments: Record<string, string[]> = {};
+  let offset = 0;
+  for (const argument of spec.arguments ?? []) {
+    const values = argument.repeatable
+      ? positional.slice(offset)
+      : positional.slice(offset, offset + 1);
+    if (argument.required && values.length === 0)
+      throw new Error(`<${argument.name}> is required.`);
+    commandArguments[argument.name] = values;
+    offset += values.length;
+  }
+  if (offset < positional.length) throw new Error("Unexpected positional argument.");
+  const missing = (spec.options ?? []).filter(
+    (option) =>
+      option.required &&
+      !(interactive && spec.path.join(" ") === "create") &&
+      !(option.name in options)
+  );
+  if (missing.length)
+    throw new Error(
+      missing
+        .map((option) =>
+          option.repeatable
+            ? `At least one ${option.name} is required.`
+            : `${option.name} is required.`
+        )
+        .join("\n")
+    );
+  return { arguments: commandArguments, options };
+}
+
+/** JSON Schema describes the normalized arguments/options accepted by parseCommandInput. */
+export function commandInputSchema(spec: CommandSpec) {
+  const stringArray = { type: "array", items: { type: "string" }, minItems: 1 };
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["arguments", "options"],
+    properties: {
+      arguments: {
+        type: "object",
+        additionalProperties: false,
+        properties: Object.fromEntries(
+          (spec.arguments ?? []).map((argument) => [
+            argument.name,
+            {
+              ...stringArray,
+              minItems: argument.required ? 1 : 0,
+              ...(argument.repeatable ? {} : { maxItems: 1 }),
+            },
+          ])
+        ),
+        required: (spec.arguments ?? [])
+          .filter((argument) => argument.required)
+          .map((argument) => argument.name),
+      },
+      options: {
+        type: "object",
+        additionalProperties: false,
+        properties: Object.fromEntries(
+          (spec.options ?? []).map((option) => [
+            option.name,
+            option.valueName
+              ? { ...stringArray, ...(option.repeatable ? {} : { maxItems: 1 }) }
+              : { const: true },
+          ])
+        ),
+        required: (spec.options ?? [])
+          .filter((option) => option.required)
+          .map((option) => option.name),
+      },
+    },
+  };
+}
+
+export function commandPolicy(spec: CommandSpec) {
+  const name = spec.path.join(" ");
+  return {
+    network:
+      name === "repo add" || name === "repo fetch" ? ("explicit" as const) : ("none" as const),
+    retry: spec.mutation ? ("inspect-before-retry" as const) : ("safe" as const),
+    sideEffects: !spec.mutation
+      ? []
+      : name === "create"
+        ? ["local-branches", "worktrees", "workspace-metadata"]
+        : name === "workspace remove"
+          ? ["worktrees", "workspace-metadata"]
+          : name === "init"
+            ? ["configuration", "directories"]
+            : ["managed-repositories", "registry"],
+    dryRun: spec.dryRun ? { mutations: false, locks: false, advisory: true } : null,
+  };
+}
+
+export function requireCommand(path: readonly string[]): CommandSpec {
+  const spec = findCommand(path);
+  if (!spec) throw new Error(`Command missing from registry: ${path.join(" ")}`);
+  return spec;
 }

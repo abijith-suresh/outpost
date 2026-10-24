@@ -279,3 +279,44 @@ Path and semantic identifier validation are separate contracts:
 | `apps/cli/src/commands/workspace-remove.ts`        | Remove workspace with safety checks                                         |
 | `apps/website/`                                    | Private Astro static marketing landing page workspace                       |
 | `apps/cli/src/commands/workspace-remove-prompt.ts` | Interactive prompting for AGENTS.md consent                                 |
+
+## Agent command contract
+
+The command registry is the source for help, discovery and generic argument shape
+validation. `parseCommandInput` rejects unknown options, duplicates, missing values
+and surplus positional arguments before dispatch. It normalizes named arguments
+and option values into arrays. Required create options can be filled by an
+interactive prompt; identifier, Git and ownership checks remain in the commands.
+`renderer.ts` owns text and JSON formatting, while `program.ts` selects and runs
+commands.
+
+`describe --json` reports an independently versioned `contractVersion` and the
+installed `cliVersion`. Each command includes normalized input and output JSON
+Schemas, explicit network policy, retry policy, side effects and advisory dry-run
+behavior. Output types derive from the executable schemas in `result-schemas.ts`;
+only untrusted recovery metadata and JSON Schema documents contain opaque JSON.
+Help keeps its text contract, so its JSON output schema is null.
+
+Command-level error codes remain stable. Domain errors also carry `reason`,
+`retryable` and `action` through typed wrappers. Reasons are assigned at checks
+such as held locks, dirty worktrees, missing or in-use repos and guidance consent.
+Error mapping never classifies message text. A retryable held lock means waiting
+for the owner, not permission to remove the lock or repeat a mutation blindly.
+
+Repository subprocess diagnostics retain at most 40 lines and 8,192 characters
+per stream, 80 lines and 16,384 characters total. `diagnosticTruncation` reports
+`truncated`, the number of omitted nonblank captured lines, whether the underlying
+byte capture was truncated, and the configured total limits. A clipped long line
+sets `truncated` even when no whole line was omitted. Counts cannot include data
+beyond the subprocess capture limit. This bounds formatted JSON expansion from
+many tiny lines. Human error summaries and partial-result stream routing are
+unchanged.
+
+`repo remove --dry-run` and `workspace remove --dry-run` execute the same preflight
+as removal, then stop before acquiring locks, writing intent or deleting anything.
+Workspace status uses Git's `--no-optional-locks`. A preview reports modified or
+foreign guidance and the approval it would need without prompting, and reports
+residual files that execution would preserve. Previews are advisory snapshots;
+execution always repeats validation under the normal home and ticket locks.
+The shared path planner reserves the canonical `AGENTS.md` identity both when
+creating a workspace and when validating an existing manifest.

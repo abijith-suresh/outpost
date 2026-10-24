@@ -6,6 +6,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "../child-process.js";
 import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import {
   markManagedRepository,
   validateManagedRepoPath,
@@ -14,6 +15,7 @@ import {
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
 import { getManagedRepoPath, resolveRemoteIdentity } from "../remote-identity.js";
+import { DiagnosticTruncationSchema } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
 import {
   cloneBareRepository,
@@ -23,8 +25,10 @@ import {
 } from "./repo-mirror.js";
 
 export class RepoAddError extends Schema.TaggedError<RepoAddError>()("RepoAddError", {
+  ...ErrorDetailFields,
   message: Schema.String,
   diagnostics: Schema.optional(Schema.Array(RepoMirrorDiagnosticSchema)),
+  diagnosticTruncation: Schema.optional(DiagnosticTruncationSchema),
 }) {}
 
 type RepoImportResult = {
@@ -84,6 +88,7 @@ function selectRemoteName(
     if (!remoteNames.includes(requestedRemoteName)) {
       return Effect.fail(
         new RepoAddError({
+          ...reasonDetails("invalid-arguments"),
           message: `Unknown remote: ${requestedRemoteName}. Available remotes: ${remoteNames.join(", ")}.`,
         })
       );
@@ -107,7 +112,7 @@ export function runRepoAdd(
   inputPath: string | undefined,
   options: RepoAddOptions = {}
 ): Effect.Effect<
-  CommandOutput,
+  CommandOutput<"repo add">,
   RepoAddError,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > {
@@ -115,6 +120,7 @@ export function runRepoAdd(
     if (!inputPath) {
       return yield* Effect.fail(
         new RepoAddError({
+          ...reasonDetails("invalid-arguments"),
           message: "Usage: outpost repo add <path> [--remote <name>]",
         })
       );
@@ -122,7 +128,9 @@ export function runRepoAdd(
 
     if (options.remoteName !== undefined) {
       yield* validateSemanticIdentifier("--remote", options.remoteName).pipe(
-        Effect.mapError((error) => new RepoAddError({ message: error.message }))
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+        )
       );
     }
 
@@ -130,15 +138,23 @@ export function runRepoAdd(
     const path = yield* Path.Path;
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const mutation = yield* acquireHomeMutationLock(outpostHome, "repo add").pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const sourceRepoPath = path.resolve(inputPath);
     const exists = yield* fs
       .exists(sourceRepoPath)
-      .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     if (!exists) {
       return yield* Effect.fail(
@@ -149,7 +165,9 @@ export function runRepoAdd(
     }
 
     const isGitRepository = yield* checkGitRepository(sourceRepoPath).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (!isGitRepository) {
@@ -157,7 +175,9 @@ export function runRepoAdd(
     }
 
     const remoteNames = yield* getRemoteNames(sourceRepoPath).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (remoteNames.length === 0) {
@@ -170,25 +190,39 @@ export function runRepoAdd(
 
     const remoteName = yield* selectRemoteName(remoteNames, options.remoteName);
     yield* validateSemanticIdentifier("remote name", remoteName).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const remoteUrl = yield* getRemoteUrl(sourceRepoPath, remoteName).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const identity = yield* resolveRemoteIdentity(remoteUrl, sourceRepoPath).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* validateSemanticIdentifier("repository id", identity.id).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     yield* validateSemanticIdentifier("repository name", identity.name).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const derivedManagedRepoPath = yield* getManagedRepoPath(config.reposRoot, identity).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const existingRecord = registry.repos.find((repo) => repo.id === identity.id);
     const managedRepoPath = existingRecord?.managedRepoPath ?? derivedManagedRepoPath;
@@ -204,10 +238,18 @@ export function runRepoAdd(
         importedAt: "",
         lastFetchedAt: "",
       }
-    ).pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
+    ).pipe(
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const managedRepoExists = yield* fs
       .exists(managedRepoPath)
-      .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     yield* mutation
       .record({
@@ -218,7 +260,11 @@ export function runRepoAdd(
         remoteUrl: identity.transportUrl,
         existing: managedRepoExists,
       })
-      .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     if (managedRepoExists) {
       if (!existingRecord) {
         return yield* Effect.fail(
@@ -228,13 +274,19 @@ export function runRepoAdd(
         );
       }
       yield* verifyManagedRepository(config.reposRoot, existingRecord).pipe(
-        Effect.mapError((error) => new RepoAddError({ message: error.message }))
+        Effect.mapError(
+          (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+        )
       );
       yield* updateBareRepositoryRemote(managedRepoPath, identity.transportUrl).pipe(
         Effect.mapError(
           (error) =>
             new RepoAddError({
               message: error.message,
+              ...domainDetails(error),
+              ...(error.diagnosticTruncation
+                ? { diagnosticTruncation: error.diagnosticTruncation }
+                : {}),
               ...(error.diagnostics.length > 0 ? { diagnostics: error.diagnostics } : {}),
             })
         )
@@ -244,6 +296,10 @@ export function runRepoAdd(
           (error) =>
             new RepoAddError({
               message: error.message,
+              ...domainDetails(error),
+              ...(error.diagnosticTruncation
+                ? { diagnosticTruncation: error.diagnosticTruncation }
+                : {}),
               ...(error.diagnostics.length > 0 ? { diagnostics: error.diagnostics } : {}),
             })
         )
@@ -253,12 +309,20 @@ export function runRepoAdd(
         .makeDirectory(path.dirname(managedRepoPath), {
           recursive: true,
         })
-        .pipe(Effect.mapError((error) => new RepoAddError({ message: error.message })));
+        .pipe(
+          Effect.mapError(
+            (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+          )
+        );
       yield* cloneBareRepository(identity.transportUrl, managedRepoPath).pipe(
         Effect.mapError(
           (error) =>
             new RepoAddError({
               message: error.message,
+              ...domainDetails(error),
+              ...(error.diagnosticTruncation
+                ? { diagnosticTruncation: error.diagnosticTruncation }
+                : {}),
               ...(error.diagnostics.length > 0 ? { diagnostics: error.diagnostics } : {}),
             })
         )
@@ -266,7 +330,9 @@ export function runRepoAdd(
     }
 
     yield* markManagedRepository(managedRepoPath, identity.id).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const now = new Date().toISOString();
     const updatedRecord = {
@@ -287,7 +353,9 @@ export function runRepoAdd(
     };
 
     yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(
-      Effect.mapError((error) => new RepoAddError({ message: error.message }))
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     const data: RepoImportResult = {
@@ -308,6 +376,6 @@ export function runRepoAdd(
     return {
       command: "repo add",
       data,
-    } satisfies CommandOutput;
+    } satisfies CommandOutput<"repo add">;
   }).pipe(Effect.scoped);
 }

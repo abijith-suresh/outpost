@@ -137,7 +137,10 @@ describe("run", () => {
       const exitCode = await runCli(["repo", "remove"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo remove <id> [--json]");
+      expect(errorSpy).toHaveBeenNthCalledWith(
+        1,
+        "Usage: outpost repo remove <id> [--dry-run] [--json]"
+      );
     });
 
     it("returns an error when repo remove is run before init", async () => {
@@ -336,32 +339,6 @@ describe("run", () => {
       expect(errorMessage).toContain('"REF-123"');
     });
 
-    it("rejects --dry-run flag before side effects", async () => {
-      const tempHome = createTempDir("outpost-test-");
-      process.env.OUTPOST_HOME = tempHome;
-
-      await runCli(["init"]);
-
-      const alpha = await createManagedRepoFixture({ defaultBranch: "main" });
-      await runCli(["repo", "add", alpha.tempRepo]);
-
-      const registry = readRegistry(tempHome);
-      const repo = registry.repos[0];
-      const managedRepoPath = repo.managedRepoPath;
-
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-      const exitCode = await runCli(["repo", "remove", repo.id, "--dry-run"]);
-
-      expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo remove <id> [--json]");
-
-      const afterRegistry = readRegistry(tempHome);
-      expect(afterRegistry.repos).toHaveLength(1);
-      expect(afterRegistry.repos[0].id).toBe(repo.id);
-      expect(existsSync(managedRepoPath)).toBe(true);
-    });
-
     it("rejects extra positional arguments on repo remove", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
@@ -379,7 +356,7 @@ describe("run", () => {
       const exitCode = await runCli(["repo", "remove", repo.id, "unexpected"]);
 
       expect(exitCode).toBe(1);
-      expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo remove <id> [--json]");
+      expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo remove <id> [--dry-run] [--json]");
     });
 
     it("lists all referencing workspaces in the error message", async () => {

@@ -1,14 +1,16 @@
 import { Effect, Schema } from "effect";
-import type * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, commandString, gitCommand } from "./child-process.js";
 import type { RepoRecord } from "./config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { getCanonicalPortablePathKey } from "./path-safety.js";
 import { getFileManagedPathSegments, getManagedRepoPath } from "./remote-identity.js";
 import { resolveManagedPath } from "./workspace-manifest.js";
 
 export class ManagedRepoError extends Schema.TaggedError<ManagedRepoError>()("ManagedRepoError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -26,7 +28,11 @@ export function validateManagedRepoPath(reposRoot: string, repo: RepoRecord) {
     }
     const resolved = yield* resolveManagedPath(reposRoot, relative);
     return resolved;
-  }).pipe(Effect.mapError((error) => new ManagedRepoError({ message: error.message })));
+  }).pipe(
+    Effect.mapError(
+      (error) => new ManagedRepoError({ message: error.message, ...reasonDetails("invalid-state") })
+    )
+  );
 }
 
 /** A marker or a verifiable legacy mirror layout proves ownership, never a name alone. */
@@ -40,6 +46,14 @@ export function verifyManagedRepository(
 > {
   return Effect.gen(function* () {
     const managedPath = yield* validateManagedRepoPath(reposRoot, repo);
+    const fs = yield* FileSystem.FileSystem;
+    if (!(yield* fs.exists(managedPath)))
+      return yield* Effect.fail(
+        new ManagedRepoError({
+          ...reasonDetails("repo-missing"),
+          message: `Managed repository is missing at ${managedPath}`,
+        })
+      );
     const git = (...args: string[]) => gitCommand("--git-dir", managedPath, ...args);
     const bare = yield* commandString(git("rev-parse", "--is-bare-repository"));
     if (bare.trim() !== "true") {
@@ -110,6 +124,7 @@ export function verifyManagedRepository(
       (error) =>
         new ManagedRepoError({
           message: `Cannot establish managed repository ownership: ${error.message}`,
+          ...domainDetails(error),
         })
     )
   );

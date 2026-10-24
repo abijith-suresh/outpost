@@ -7,6 +7,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { commandExitCode, gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
+import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import {
   getCanonicalPortablePathKey,
   getPortablePathKey,
@@ -14,21 +15,25 @@ import {
   semanticIdentifierSchema,
   validatePathSegment,
   validateSemanticIdentifier,
+  validateWorktreeGuidancePath,
 } from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export class ManifestError extends Schema.TaggedError<ManifestError>()("ManifestError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
 export class ManifestNotFoundError extends Schema.TaggedError<ManifestNotFoundError>()(
   "ManifestNotFoundError",
   {
+    ...ErrorDetailFields,
     message: Schema.String,
   }
 ) {}
 
 export class LockError extends Schema.TaggedError<LockError>()("LockError", {
+  ...ErrorDetailFields,
   message: Schema.String,
 }) {}
 
@@ -64,13 +69,15 @@ function validateTicketIdentifier(ticket: string) {
 
 function validateManifestTicket(ticket: string) {
   return validateTicketIdentifier(ticket).pipe(
-    Effect.mapError((error) => new ManifestError({ message: error.message }))
+    Effect.mapError(
+      (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+    )
   );
 }
 
 function validateLockTicket(ticket: string) {
   return validateTicketIdentifier(ticket).pipe(
-    Effect.mapError((error) => new LockError({ message: error.message }))
+    Effect.mapError((error) => new LockError({ message: error.message, ...domainDetails(error) }))
   );
 }
 
@@ -116,7 +123,11 @@ function resolveCanonicalPath(
     while (true) {
       const exists = yield* fs
         .exists(existingAncestor)
-        .pipe(Effect.mapError((error) => new ManifestError({ message: error.message })));
+        .pipe(
+          Effect.mapError(
+            (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+          )
+        );
 
       if (exists) {
         break;
@@ -200,7 +211,9 @@ export function resolveWorkspacePath(
 ): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const resolvedPath = yield* resolvePathWithinRoot(worktreesRoot, workspacePath).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message }))
+      Effect.mapError(
+        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     return yield* ensureCanonicalPathWithinRoot(worktreesRoot, resolvedPath);
@@ -213,7 +226,9 @@ export function resolveManagedPath(
 ): Effect.Effect<string, ManifestError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const resolvedPath = yield* resolvePathWithinRoot(reposRoot, managedPath).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message }))
+      Effect.mapError(
+        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     return yield* ensureCanonicalPathWithinRoot(reposRoot, resolvedPath);
@@ -227,7 +242,9 @@ export function resolveWorktreePath(
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const resolved = yield* resolvePathWithinRoot(workspaceDir, worktreePath).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message }))
+      Effect.mapError(
+        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const relativePath = path.relative(workspaceDir, resolved);
 
@@ -330,7 +347,9 @@ export function readManifest(
     }
 
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message }))
+      Effect.mapError(
+        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      )
     );
 
     if (path.isAbsolute(manifest.workspacePath)) {
@@ -371,7 +390,9 @@ export function readManifest(
       repoIds.add(repo.id);
 
       yield* validatePathSegment("worktreePath", repo.worktreePath).pipe(
-        Effect.mapError((error) => new ManifestError({ message: error.message }))
+        Effect.mapError(
+          (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+        )
       );
 
       if (path.isAbsolute(repo.managedPath)) {
@@ -393,6 +414,12 @@ export function readManifest(
       const resolvedManagedPath = yield* resolveManagedPath(config.reposRoot, repo.managedPath);
 
       const resolvedWorktreePath = yield* resolveWorktreePath(workspaceDir, repo.worktreePath);
+
+      yield* validateWorktreeGuidancePath(workspaceDir, resolvedWorktreePath).pipe(
+        Effect.mapError(
+          (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
       resolvedRepos.push({
         originalIndex: i,
@@ -495,7 +522,9 @@ export function writeManifest(
     }
 
     const config = yield* loadConfig(outpostHome).pipe(
-      Effect.mapError((error) => new ManifestError({ message: error.message }))
+      Effect.mapError(
+        (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      )
     );
     const workspaceDir = yield* resolveWorkspacePath(
       config.worktreesRoot,
@@ -598,7 +627,11 @@ export function verifyWorktreeOwnership(
     const gitFilePath = path.join(worktreePath, ".git");
     const gitFileExists = yield* fs
       .exists(gitFilePath)
-      .pipe(Effect.mapError((error) => new ManifestError({ message: error.message })));
+      .pipe(
+        Effect.mapError(
+          (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+        )
+      );
 
     if (!gitFileExists) {
       return false;
@@ -821,6 +854,7 @@ export function acquireTicketLock(
           // detect the held-lock case on the reason, not the message text.
           if (error._tag === "PlatformError" && error.reason._tag === "AlreadyExists") {
             return new LockError({
+              ...reasonDetails("lock-held"),
               message: `Ticket ${ticket} is locked by another operation. Wait for it to complete. After a crash, run outpost doctor and inspect the recorded owner and artifacts before manually removing the lock.`,
             });
           }
