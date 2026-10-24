@@ -13,10 +13,11 @@ Read [commands](references/commands.md) for syntax and
 
 ## Choose the next operation
 
-- Inspect `outpost doctor --json`, `outpost repo list --json` and
-  `outpost workspace list --json` before changing existing state.
-- Run `outpost init --json` if the home is not initialized. `OUTPOST_HOME` selects
-  the home; otherwise it is `~/.outpost`.
+- Start with `outpost doctor --json`. `OUTPOST_HOME` selects the home; otherwise
+  it is `~/.outpost`.
+- If the home is not initialized, run `outpost init --json` before list commands.
+  Then inspect `outpost repo list --json` and `outpost workspace list --json`
+  before changing existing repositories or workspaces.
 - Import a local checkout with `outpost repo add <path> --json` only when repository
   network access is intended. `outpost repo fetch --all --json` explicitly updates
   managed repositories. Both can access the remote. Create never fetches.
@@ -25,7 +26,7 @@ Read [commands](references/commands.md) for syntax and
   Use repeated `--repo` options for multiple repositories, then create with the
   same arguments without `--dry-run`. Non-interactive create requires all inputs.
 - Read the generated workspace `AGENTS.md` to find child worktrees. Run Git and
-  application commands inside the relevant worktree and read its own guidance.
+  application commands inside the relevant worktree. Read its own `AGENTS.md` if present.
   Navigate using `ticketDirectory`, the absolute workspace root, and returned
   worktree paths. `workspacePath` is relative metadata, not a path from your cwd.
   Verify the current branch before committing. The workspace root is not a repo.
@@ -35,7 +36,9 @@ Read [commands](references/commands.md) for syntax and
 - Remove a repository with `outpost repo remove <id> --dry-run --json`, followed
   by removal only after workspaces and Git links no longer reference it. Repository
   removal deletes the mirror that stores its local branches and commits. Keep the
-  mirror or save needed work elsewhere first, for example with a local Git bundle.
+  mirror or save needed work elsewhere first. For a local Git bundle, follow
+  [branch preservation](references/recovery.md#save-local-branches-before-repository-removal)
+  and verify the saved commit before cleanup.
   Push only if the user explicitly authorizes that network action.
 
 ## Interpret the result before retrying

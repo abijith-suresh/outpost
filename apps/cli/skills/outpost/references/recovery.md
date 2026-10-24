@@ -38,6 +38,26 @@ clipped long lines, omitted lines and capture truncation. `omittedLineCount` cou
 whole omitted lines from captured text; output beyond the byte capture limit is
 unknown. Never interpret absence of a line in truncated output as success.
 
+## Save local branches before repository removal
+
+Keep the bundle and restored checkout outside the managed mirror and workspace.
+A bundle containing only a saved branch may have no `HEAD`; select that branch
+explicitly when restoring. For example, replace these placeholders with the
+managed mirror, the branch to save, an absolute bundle path and a new directory:
+
+```sh
+git -C <mirror> rev-parse refs/heads/<saved-branch>
+git -C <mirror> bundle create <absolute-bundle-path> refs/heads/<saved-branch>
+git -C <mirror> bundle verify <absolute-bundle-path>
+git clone --branch <saved-branch> <absolute-bundle-path> <restore-directory>
+git -C <restore-directory> rev-parse HEAD
+```
+
+Record the first commit ID and confirm the restored `HEAD` matches it. Inspect
+needed files in the restored checkout before deleting the mirror. Repeat for any
+other branches that must survive. These bundle operations stay local; pushing
+still requires explicit user authorization.
+
 ## Crash inspection
 
 `outpost doctor --json` reports held home/ticket locks, operation intent records,
