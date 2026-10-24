@@ -204,7 +204,7 @@ export function runWorkspaceRemove(
                   return yield* Effect.fail(
                     new WorkspaceRemoveError({
                       ...reasonDetails("approval-needed"),
-                      message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Delete AGENTS.md manually or approve its removal.`,
+                      message: `AGENTS.md at ${agentsFilePath} has been ${ownership === "modified" ? "modified" : "replaced"} and removal was declined. Preserve the guidance. Retry only with explicit interactive consent, or after deliberately moving it outside the workspace.`,
                     })
                   );
                 }
@@ -215,8 +215,8 @@ export function runWorkspaceRemove(
                     ...reasonDetails("approval-needed"),
                     message:
                       ownership === "modified"
-                        ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Delete it manually and rerun, or retry in interactive mode.`
-                        : `AGENTS.md at ${agentsFilePath} is not managed by outpost. Delete it manually and rerun, or retry in interactive mode.`,
+                        ? `AGENTS.md at ${agentsFilePath} has been modified since generation. Preserve the guidance. Retry only with explicit interactive consent, or after deliberately moving it outside the workspace.`
+                        : `AGENTS.md at ${agentsFilePath} is not managed by outpost. Preserve the guidance. Retry only with explicit interactive consent, or after deliberately moving it outside the workspace.`,
                   })
                 );
               }
