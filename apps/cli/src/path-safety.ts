@@ -9,7 +9,7 @@ export class PathSafetyError extends Schema.TaggedError<PathSafetyError>()("Path
   message: Schema.String,
 }) {}
 
-function containsAsciiControlCharacter(value: string): boolean {
+export function containsAsciiControlCharacter(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0);
 
@@ -138,5 +138,42 @@ export function validateWorktreeGuidancePath(workspaceDirectory: string, worktre
           message: `Worktree collides with reserved generated path AGENTS.md: ${worktreePath}`,
         })
       );
+  });
+}
+
+/** New workspace folders must work on Windows as well as POSIX. Legacy paths remain readable. */
+export function validatePortableFilename(label: string, value: string) {
+  return validatePathSegment(label, value).pipe(
+    Effect.andThen(
+      !value ||
+        /[<>:"|?*]/.test(value) ||
+        containsAsciiControlCharacter(value) ||
+        /[ .]$/.test(value) ||
+        /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(value)
+        ? Effect.fail(
+            new PathSafetyError({
+              ...reasonDetails("invalid-arguments"),
+              message: `${label} must be a portable Windows filename: ${value}`,
+            })
+          )
+        : Effect.void
+    )
+  );
+}
+
+/** Resolve existing ancestors too, so a missing child cannot hide a junction or symlink. */
+export function resolveCanonicalPath(value: string) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const suffix: string[] = [];
+    let ancestor = path.resolve(value);
+    while (!(yield* fs.exists(ancestor))) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) break;
+      suffix.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
+    return path.resolve(yield* fs.realPath(ancestor), ...suffix);
   });
 }

@@ -28,6 +28,46 @@ function joinPath(path: readonly string[]): string {
   return path.join(" ");
 }
 
+const CREATE_OPTIONS: readonly CommandOption[] = [
+  {
+    name: "--ticket",
+    valueName: "id",
+    description: "Ticket identifier",
+    required: true,
+  },
+  {
+    name: "--type",
+    valueName: "branch-type",
+    description: "Branch type prefix (e.g. feat, fix)",
+    required: true,
+  },
+  {
+    name: "--repo",
+    valueName: "id",
+    description: "Repository identifier (repeatable; optional with --tag)",
+    required: false,
+    repeatable: true,
+  },
+  {
+    name: "--tag",
+    valueName: "tag",
+    description: "Require every selected tag (repeatable); filters explicit IDs when combined",
+    required: false,
+    repeatable: true,
+  },
+  {
+    name: "--base",
+    valueName: "branch",
+    description: "Base branch (defaults to repo HEAD)",
+    required: false,
+  },
+  {
+    name: "--dry-run",
+    description: "Validate without creating",
+    required: false,
+  },
+];
+
 export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
     path: ["help"],
@@ -106,42 +146,83 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
     path: ["create"],
     description: "Create worktrees for imported repositories",
-    options: [
-      {
-        name: "--ticket",
-        valueName: "id",
-        description: "Ticket identifier",
-        required: true,
-      },
-      {
-        name: "--type",
-        valueName: "branch-type",
-        description: "Branch type prefix (e.g. feat, fix)",
-        required: true,
-      },
-      {
-        name: "--repo",
-        valueName: "id",
-        description: "Repository identifier (repeatable)",
-        required: true,
-        repeatable: true,
-      },
-      {
-        name: "--base",
-        valueName: "branch",
-        description: "Base branch (defaults to repo HEAD)",
-        required: false,
-      },
-      {
-        name: "--dry-run",
-        description: "Validate without creating",
-        required: false,
-      },
-    ],
+    options: CREATE_OPTIONS,
     mutation: true,
     interactive: true,
     json: true,
     dryRun: true,
+  },
+  {
+    path: ["guidance", "preview"],
+    description: "Preview factual workspace AGENTS.md using current settings without writing files",
+    options: CREATE_OPTIONS.filter((option) => option.name !== "--dry-run"),
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["config", "show"],
+    description: "Show validated configuration and future workspace defaults",
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["config", "set"],
+    description: "Set worktreesRoot for future workspaces without moving existing workspaces",
+    arguments: [
+      { name: "key", description: "worktreesRoot", required: true },
+      { name: "value", description: "Absolute native directory path", required: true },
+    ],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["guidance", "set"],
+    description: "Read optional global extra instructions from a UTF-8 file for future workspaces",
+    arguments: [{ name: "file", description: "UTF-8 file, at most 65536 bytes", required: true }],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["guidance", "clear"],
+    description: "Clear extra instructions for future workspaces",
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
+    path: ["repo", "tag"],
+    description:
+      "Add or remove flat repository tags without changing existing workspace membership",
+    arguments: [{ name: "id", description: "Repository identifier", required: true }],
+    options: [
+      {
+        name: "--add",
+        valueName: "tag",
+        description: "Tag to add",
+        required: false,
+        repeatable: true,
+      },
+      {
+        name: "--remove",
+        valueName: "tag",
+        description: "Tag to remove",
+        required: false,
+        repeatable: true,
+      },
+    ],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: false,
   },
   {
     path: ["doctor"],
@@ -200,6 +281,15 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
     path: ["repo", "list"],
     description: "List imported repositories",
+    options: [
+      {
+        name: "--tag",
+        valueName: "tag",
+        description: "Require every selected tag (repeatable)",
+        required: false,
+        repeatable: true,
+      },
+    ],
     mutation: false,
     interactive: false,
     json: true,
@@ -429,7 +519,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "1.0.0";
+export const CONTRACT_VERSION = "1.1.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -481,15 +571,21 @@ export function parseCommandInput(
       !(interactive && spec.path.join(" ") === "create") &&
       !(option.name in options)
   );
-  if (missing.length)
+  const selectionMissing =
+    !interactive &&
+    ["create", "guidance preview"].includes(spec.path.join(" ")) &&
+    !("--repo" in options) &&
+    !("--tag" in options);
+  if (missing.length || selectionMissing)
     throw new Error(
-      missing
-        .map((option) =>
+      [
+        ...missing.map((option) =>
           option.repeatable
             ? `At least one ${option.name} is required.`
             : `${option.name} is required.`
-        )
-        .join("\n")
+        ),
+        ...(selectionMissing ? ["At least one --repo or --tag is required."] : []),
+      ].join("\n")
     );
   return { arguments: commandArguments, options };
 }
@@ -533,6 +629,14 @@ export function commandInputSchema(spec: CommandSpec) {
         required: (spec.options ?? [])
           .filter((option) => option.required)
           .map((option) => option.name),
+        ...(["create", "guidance preview"].includes(spec.path.join(" "))
+          ? {
+              anyOf: [
+                { properties: { "--repo": {} }, required: ["--repo"] },
+                { properties: { "--tag": {} }, required: ["--tag"] },
+              ],
+            }
+          : {}),
       },
     },
   };
@@ -554,7 +658,11 @@ export function commandPolicy(spec: CommandSpec) {
             ? ["exported-guidance"]
             : name === "init"
               ? ["configuration", "directories"]
-              : ["managed-repositories", "registry"],
+              : name === "config set" || name === "guidance set" || name === "guidance clear"
+                ? ["configuration"]
+                : name === "repo tag"
+                  ? ["configuration", "registry"]
+                  : ["managed-repositories", "registry"],
     dryRun: spec.dryRun ? { mutations: false, locks: false, advisory: true } : null,
   };
 }

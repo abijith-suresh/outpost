@@ -337,6 +337,7 @@ export function runRepoAdd(
     );
     const now = new Date().toISOString();
     const updatedRecord = {
+      ...(existingRecord?.tags ? { tags: existingRecord.tags } : {}),
       id: identity.id,
       importedAt: existingRecord?.importedAt ?? now,
       lastFetchedAt: now,

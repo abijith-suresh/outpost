@@ -49,6 +49,19 @@
                   "lastFetchedAt": {
                     "type": "string"
                   },
+                  "tags": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "status": {
                     "type": "string",
                     "enum": ["ok", "missing"]
@@ -103,6 +116,8 @@
             "code": {
               "type": "string",
               "enum": [
+                "CONFIG_FAILED",
+                "REPO_TAG_FAILED",
                 "GUIDANCE_FAILED",
                 "INVALID_ARGUMENT",
                 "UNKNOWN_COMMAND",

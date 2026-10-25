@@ -303,18 +303,18 @@ describe("migrateConfig", () => {
 
   it("rejects future version config with clear error", async () => {
     const raw = {
-      version: 2,
+      version: CURRENT_CONFIG_VERSION + 1,
       outpostHome: "/tmp/outpost",
       reposRoot: "/tmp/outpost/repos",
       worktreesRoot: "/tmp/outpost/worktrees",
     };
 
     await expect(Effect.runPromise(migrateConfig(raw))).rejects.toThrow(
-      `Config version 2 is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`
+      `Config version ${CURRENT_CONFIG_VERSION + 1} is newer than the supported version ${CURRENT_CONFIG_VERSION}. Please upgrade outpost.`
     );
   });
 
-  it("sets version to current when version field is missing", async () => {
+  it("treats missing version as legacy without upgrading state", async () => {
     const raw = {
       outpostHome: "/tmp/outpost",
       reposRoot: "/tmp/outpost/repos",
@@ -325,7 +325,7 @@ describe("migrateConfig", () => {
 
     expect(result).toEqual({
       ...raw,
-      version: CURRENT_CONFIG_VERSION,
+      version: 1,
     });
   });
 

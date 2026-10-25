@@ -125,7 +125,7 @@ Side effects: exported-guidance.
 
 ```text
 Usage:
-  outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run] [--json]
+  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run] [--json]
 
 Create worktrees for imported repositories
 
@@ -137,7 +137,8 @@ Create worktrees for imported repositories
 Options:
   --ticket <id>  Ticket identifier (required)
   --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
-  --repo <id>  Repository identifier (repeatable) (required) (repeatable)
+  --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)
+  --tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
   --base <branch>  Base branch (defaults to repo HEAD)
   --dry-run  Validate without creating
   --json  Output as JSON
@@ -145,6 +146,131 @@ Options:
 
 Network: none. Retry: inspect-before-retry.
 Side effects: local-branches, worktrees, workspace-metadata.
+
+## guidance preview
+
+```text
+Usage:
+  outpost guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--json]
+
+Preview factual workspace AGENTS.md using current settings without writing files
+
+  mutation: false
+  json output: yes
+
+Options:
+  --ticket <id>  Ticket identifier (required)
+  --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
+  --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)
+  --tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
+  --base <branch>  Base branch (defaults to repo HEAD)
+  --json  Output as JSON
+```
+
+Network: none. Retry: safe.
+Side effects: none.
+
+## config show
+
+```text
+Usage:
+  outpost config show [--json]
+
+Show validated configuration and future workspace defaults
+
+  mutation: false
+  json output: yes
+
+Options:
+  --json  Output as JSON
+```
+
+Network: none. Retry: safe.
+Side effects: none.
+
+## config set
+
+```text
+Usage:
+  outpost config set <key> <value> [--json]
+
+Set worktreesRoot for future workspaces without moving existing workspaces
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <key>  worktreesRoot (required)
+  <value>  Absolute native directory path (required)
+
+Options:
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: configuration.
+
+## guidance set
+
+```text
+Usage:
+  outpost guidance set <file> [--json]
+
+Read optional global extra instructions from a UTF-8 file for future workspaces
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <file>  UTF-8 file, at most 65536 bytes (required)
+
+Options:
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: configuration.
+
+## guidance clear
+
+```text
+Usage:
+  outpost guidance clear [--json]
+
+Clear extra instructions for future workspaces
+
+  mutation: true
+  json output: yes
+
+Options:
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: configuration.
+
+## repo tag
+
+```text
+Usage:
+  outpost repo tag <id> [--add <tag> ...] [--remove <tag> ...] [--json]
+
+Add or remove flat repository tags without changing existing workspace membership
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <id>  Repository identifier (required)
+
+Options:
+  --add <tag>  Tag to add (repeatable)
+  --remove <tag>  Tag to remove (repeatable)
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: configuration, registry.
 
 ## doctor
 
@@ -227,7 +353,7 @@ Side effects: managed-repositories, registry.
 
 ```text
 Usage:
-  outpost repo list [--json]
+  outpost repo list [--tag <tag> ...] [--json]
 
 List imported repositories
 
@@ -235,6 +361,7 @@ List imported repositories
   json output: yes
 
 Options:
+  --tag <tag>  Require every selected tag (repeatable) (repeatable)
   --json  Output as JSON
 ```
 

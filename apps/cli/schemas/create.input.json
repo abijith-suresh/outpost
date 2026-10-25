@@ -37,6 +37,13 @@
           },
           "minItems": 1
         },
+        "--tag": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
         "--base": {
           "type": "array",
           "items": {
@@ -49,7 +56,21 @@
           "const": true
         }
       },
-      "required": ["--ticket", "--type", "--repo"]
+      "required": ["--ticket", "--type"],
+      "anyOf": [
+        {
+          "properties": {
+            "--repo": {}
+          },
+          "required": ["--repo"]
+        },
+        {
+          "properties": {
+            "--tag": {}
+          },
+          "required": ["--tag"]
+        }
+      ]
     }
   }
 }

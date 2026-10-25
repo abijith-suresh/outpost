@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "schemas": [
     {
       "command": "help",
@@ -65,6 +65,66 @@
       "command": "create",
       "kind": "output",
       "path": "create.output.json"
+    },
+    {
+      "command": "guidance preview",
+      "kind": "input",
+      "path": "guidance-preview.input.json"
+    },
+    {
+      "command": "guidance preview",
+      "kind": "output",
+      "path": "guidance-preview.output.json"
+    },
+    {
+      "command": "config show",
+      "kind": "input",
+      "path": "config-show.input.json"
+    },
+    {
+      "command": "config show",
+      "kind": "output",
+      "path": "config-show.output.json"
+    },
+    {
+      "command": "config set",
+      "kind": "input",
+      "path": "config-set.input.json"
+    },
+    {
+      "command": "config set",
+      "kind": "output",
+      "path": "config-set.output.json"
+    },
+    {
+      "command": "guidance set",
+      "kind": "input",
+      "path": "guidance-set.input.json"
+    },
+    {
+      "command": "guidance set",
+      "kind": "output",
+      "path": "guidance-set.output.json"
+    },
+    {
+      "command": "guidance clear",
+      "kind": "input",
+      "path": "guidance-clear.input.json"
+    },
+    {
+      "command": "guidance clear",
+      "kind": "output",
+      "path": "guidance-clear.output.json"
+    },
+    {
+      "command": "repo tag",
+      "kind": "input",
+      "path": "repo-tag.input.json"
+    },
+    {
+      "command": "repo tag",
+      "kind": "output",
+      "path": "repo-tag.output.json"
     },
     {
       "command": "doctor",

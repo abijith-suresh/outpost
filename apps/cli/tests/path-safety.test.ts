@@ -8,11 +8,11 @@ import {
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../src/path-safety.ts";
-import { path } from "./helpers.ts";
+import { os, path } from "./helpers.ts";
 
 describe("path safety", () => {
   it("resolves paths contained by the root", async () => {
-    const root = path.join(path.sep, "tmp", "outpost", "worktrees");
+    const root = path.resolve(os.tmpdir(), "outpost", "worktrees");
 
     const resolved = await Effect.runPromise(
       resolvePathWithinRoot(root, "TICKET-123", "manifest.json").pipe(
@@ -24,7 +24,7 @@ describe("path safety", () => {
   });
 
   it("rejects paths that escape the root", async () => {
-    const root = path.join(path.sep, "tmp", "outpost", "worktrees");
+    const root = path.resolve(os.tmpdir(), "outpost", "worktrees");
 
     const exit = await Effect.runPromise(
       Effect.exit(resolvePathWithinRoot(root, "..", "repos", "repos.json")).pipe(

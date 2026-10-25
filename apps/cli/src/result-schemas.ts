@@ -24,6 +24,7 @@ const repoFields = {
   sourceRepoPath: Schema.String,
   importedAt: Schema.String,
   lastFetchedAt: Schema.String,
+  tags: Schema.optional(strings),
 };
 const repo = Schema.Struct({ ...repoFields, status: Schema.Literals(["ok", "missing"]) });
 export const WorkspaceWorktreeSchema = Schema.Struct({
@@ -63,6 +64,25 @@ const removal = Schema.Struct({
   approvalRequired: optionalBoolean,
 });
 export const ResultSchemas = {
+  "config show": Schema.Struct({
+    version: Schema.Literals([1, 2]),
+    storedVersion: Schema.Literals([1, 2]),
+    outpostHome: Schema.String,
+    reposRoot: Schema.String,
+    worktreesRoot: Schema.String,
+    legacyWorktreesRoot: optionalString,
+    trustedWorktreesRoots: Schema.optional(strings),
+    extraInstructions: optionalString,
+  }),
+  "config set": Schema.Struct({
+    key: Schema.String,
+    value: Schema.String,
+    futureWorkspacesOnly: Schema.Boolean,
+  }),
+  "guidance set": Schema.Struct({ bytes: Schema.Natural, futureWorkspacesOnly: Schema.Boolean }),
+  "guidance clear": Schema.Struct({ bytes: Schema.Natural, futureWorkspacesOnly: Schema.Boolean }),
+  "guidance preview": Schema.Struct({ ticketDirectory: Schema.String, content: Schema.String }),
+  "repo tag": Schema.Struct({ id: Schema.String, tags: strings }),
   docs: Schema.Struct({
     topic: Schema.String,
     path: Schema.String,

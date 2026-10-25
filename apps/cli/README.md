@@ -32,7 +32,14 @@ Commands:
   skill show [--json] Read the bundled portable Outpost skill
   skill path [--json] Locate installed skill, reference, man and schema assets
   skill export <directory> [--json] Copy the portable skill without overwriting
-  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run] [--json]
+  config show [--json] Inspect settings and recorded workspace roots
+  config set worktreesRoot <absolute-path> [--json]
+                       Set the root for future workspaces
+  guidance set <file> [--json] Set extra instructions from a UTF-8 text file
+  guidance clear [--json] Clear extra instructions for future workspaces
+  guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--json]
+                       Preview factual workspace AGENTS.md without writing
+  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
@@ -40,7 +47,9 @@ Commands:
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
-  repo list [--json]   List imported repositories
+  repo list [--tag <tag> ...] [--json] List imported repositories
+  repo tag <id> [--add <tag> ...] [--remove <tag> ...] [--json]
+                       Edit optional flat repository tags
   repo remove <id> [--dry-run] [--json]
                          Remove an imported repository
   repo show <id> [--json]
@@ -61,11 +70,32 @@ Use `outpost help <command>` or `outpost <command> --help` for command-level hel
 
 ### Create
 
-`outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]`
+`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]`
 
 Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Use `--base` to branch from a specific branch (defaults to the repo's HEAD). `--dry-run` validates inputs without creating anything.
 
-If run interactively (terminal, no `--json`), missing `--ticket`, `--type`, or `--repo` values are prompted. In non-interactive mode (piped, `--json`), all three must be provided explicitly.
+Select explicit repository IDs, tags, or both. Repeated tags require every tag to match. When combined with explicit IDs, tags filter only those IDs. Tags contain 1–64 lowercase letters, numbers, dots, underscores or hyphens, starting with a letter or number. Creation records the selected concrete repository IDs; changing tags later never changes a workspace. An empty selection fails before creating worktrees.
+
+If run interactively (terminal, no `--json`), missing ticket, type or repository selection is prompted. Non-interactive use requires a ticket, type and explicit repository IDs or tags.
+
+### Configuration, tags and guidance
+
+```bash
+outpost config show --json
+outpost config set worktreesRoot /absolute/path/to/workspaces --json
+outpost repo tag <id> --add backend --add payments --json
+outpost repo list --tag backend --json
+outpost create --ticket PROJ-124 --type feat --tag backend --dry-run --json
+outpost guidance set ./extra-instructions.txt --json
+outpost guidance preview --ticket PROJ-124 --type feat --tag backend --json
+outpost guidance clear --json
+```
+
+`worktreesRoot` must be an absolute local-platform path. On Windows PowerShell, use `outpost.cmd` and quote paths with spaces, for example `outpost.cmd config set worktreesRoot 'C:\Workspaces\Team work' --json`. Changing it only changes where future workspaces are created. It never moves existing worktrees. Existing manifests remain tied to their original roots, including workspaces created before settings commands existed. The home and repository-storage roots cannot be changed through this command.
+
+Extra instructions are optional plaintext appended to the generated factual orientation, under its existing SHA256 ownership marker. They are read from a UTF-8 file of at most 65,536 bytes, without NUL characters, so multiline text does not depend on shell quoting. Preview uses the create preflight and returns the proposed full `AGENTS.md`; it writes no files and acquires no mutation lock. Setting or clearing instructions affects future generation only. Existing generated, modified and foreign guidance retains its normal protection.
+
+The first settings, tag or guidance mutation upgrades configuration to version 2 and installs an incompatible version 2 registry before saving extended settings or tags. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new manifests declare their version and root. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
 
 ### Workspace remove
 
@@ -131,6 +161,7 @@ Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branche
 - **Dirty worktree protection:** workspace removal checks `git status --porcelain` and refuses worktrees with uncommitted changes.
 - **Ownership verification:** worktree `.git` files must point to the expected bare repository.
 - **Mutation locks:** init, repository add/fetch/remove, workspace create, and workspace remove take one exclusive home mutation lock before reading state for mutation. An overlapping mutation fails with a clear retry message. Create and remove then take the ticket lock, in that order. Dry-run does not take locks.
+- **Settings safety:** configuration, tag and guidance mutations use the same home lock. Root changes preserve existing workspace locations. Unsupported state versions fail closed; settings do not overwrite existing guidance or change workspace membership.
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
 - **Rollback:** failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.

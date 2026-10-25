@@ -10,7 +10,7 @@ import type { OutpostConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import { type PathSafetyError, resolvePathWithinRoot } from "./path-safety.js";
 import type { Manifest } from "./workspace-manifest.js";
-import { resolveWorkspacePath, resolveWorktreePath } from "./workspace-manifest.js";
+import { resolveManifestWorkspacePath, resolveWorktreePath } from "./workspace-manifest.js";
 
 export type AgentsOwnership = "missing" | "generated" | "modified" | "foreign";
 
@@ -91,7 +91,7 @@ function resolveAgentsMarkdownWorkspaceDir(
   manifest: Manifest,
   config: OutpostConfig
 ): Effect.Effect<string, AgentsError, FileSystem.FileSystem | Path.Path> {
-  return resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath).pipe(
+  return resolveManifestWorkspacePath(config, manifest).pipe(
     Effect.mapError((error) => new AgentsError({ message: error.message }))
   );
 }
@@ -156,6 +156,12 @@ export function renderAgentsMarkdown(
     body += "\n";
     body += repoBlocks.join("\n\n");
     body += "\n";
+
+    if (config.extraInstructions) {
+      body += "\n## Additional Instructions\n\n";
+      body += config.extraInstructions;
+      if (!body.endsWith("\n")) body += "\n";
+    }
 
     const bodyHash = computeSha256(body);
     const marker = `${AGENTS_MARKER_PREFIX}${bodyHash} -->`;

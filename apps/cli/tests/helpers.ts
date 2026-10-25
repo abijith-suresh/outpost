@@ -201,7 +201,8 @@ export function readRegistry(tempHome: string): {
   repos: RepoRecord[];
 } {
   const registryPath = path.join(tempHome, "repos.json");
-  return JSON.parse(readFileSync(registryPath, "utf8"));
+  const raw = JSON.parse(readFileSync(registryPath, "utf8"));
+  return raw.version === 2 ? { ...raw, repos: raw.repositories } : raw;
 }
 
 const tempDirsKey = "__outpost_temp_dirs__";

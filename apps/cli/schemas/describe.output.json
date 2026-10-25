@@ -401,6 +401,8 @@
             "code": {
               "type": "string",
               "enum": [
+                "CONFIG_FAILED",
+                "REPO_TAG_FAILED",
                 "GUIDANCE_FAILED",
                 "INVALID_ARGUMENT",
                 "UNKNOWN_COMMAND",

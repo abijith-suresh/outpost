@@ -51,6 +51,7 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
   }
 
   switch (output.command) {
+    case "guidance preview":
     case "docs":
     case "skill show":
       return Console.log(output.data.content);
@@ -288,6 +289,7 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`imported at: ${String(output.data.importedAt)}`),
         Console.log(`last fetched at: ${String(output.data.lastFetchedAt)}`),
+        ...(output.data.tags ? [Console.log(`tags: ${output.data.tags.join(", ")}`)] : []),
       ]).pipe(Effect.asVoid);
     case "workspace show":
       return Effect.all([

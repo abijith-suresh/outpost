@@ -81,11 +81,7 @@ describe("agent command contract", () => {
       retry: "inspect-before-retry",
       dryRunPolicy: { locks: false, mutations: false },
     });
-    expect(create.data.inputSchema.properties.options.required).toEqual([
-      "--ticket",
-      "--type",
-      "--repo",
-    ]);
+    expect(create.data.inputSchema.properties.options.required).toEqual(["--ticket", "--type"]);
     const result = create.data.outputSchema.anyOf.find(
       (variant: { properties: { ok: { enum: boolean[] } } }) => variant.properties.ok.enum[0]
     );

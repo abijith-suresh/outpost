@@ -1,5 +1,23 @@
 # Recovery decisions
 
+## Settings migration
+
+Settings, tags and extra guidance upgrade the home to version 2. Existing
+workspaces keep their original roots and guidance; no worktree is moved.
+The config version and incompatible repository-registry format prevent older
+writers from discarding extended state, including processes that read old config
+before taking the mutation lock.
+
+An interrupted upgrade may leave version 2 defaults before the requested setting
+commits. Inspect `outpost doctor --json`, `outpost config show --json` and the
+operation journal. Retrying the requested setting with the newer tool repairs
+forward after the lock owner has finished. Do not restore stale config/registry
+backups over newer workspaces or delete a lock merely because a process looks old.
+If config is missing beside a version 2 registry, init refuses to invent roots;
+restore the original config only after inspecting the existing workspaces.
+
+## Operation failures
+
 Read the `reason`, `retryable`, `action` and diagnostics in a JSON error. The
 command-level `code` identifies the command that failed. Text is explanatory and
 may change; do not match it to decide whether to retry.
