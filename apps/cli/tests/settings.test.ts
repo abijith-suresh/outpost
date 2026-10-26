@@ -30,6 +30,16 @@ import {
 
 setupAfterEach();
 
+// Fixture inspection must use the same command-scoped Windows capability as
+// Outpost. Encoded random names can push internal pack files beyond MAX_PATH.
+function fixtureGit(args: string[], options: { encoding: "utf8" } = { encoding: "utf8" }) {
+  return execFileSync(
+    "git",
+    process.platform === "win32" ? ["-c", "core.longpaths=true", ...args] : args,
+    options
+  );
+}
+
 async function cli(...args: string[]) {
   const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -123,7 +133,7 @@ describe("configuration, tags and future workspace guidance", () => {
       const configPath = path.join(home, "config.json");
       const configBytes = readFileSync(configPath, "utf8");
       const sourceConfig = readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8");
-      const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
+      const initialCommit = fixtureGit(["-C", repo.tempRepo, "rev-parse", "HEAD"], {
         encoding: "utf8",
       }).trim();
       await cliSuccess("repo", "add", repo.tempRepo);
@@ -136,7 +146,7 @@ describe("configuration, tags and future workspace guidance", () => {
       await cliSuccess("repo", "fetch", "--all");
       let adminSentinel: string | undefined;
       if (gitDirBytes === 205) {
-        execFileSync("git", [
+        fixtureGit([
           "--git-dir",
           record.managedRepoPath,
           "config",
@@ -155,13 +165,9 @@ describe("configuration, tags and future workspace guidance", () => {
       const localConfigBytes = readFileSync(localConfigPath, "utf8");
       if (gitDirBytes === 220 && process.platform === "win32") {
         const registryBefore = readFileSync(path.join(home, "repos.json"), "utf8");
-        const refsBefore = execFileSync(
-          "git",
-          ["-c", "core.longpaths=true", "--git-dir", record.managedRepoPath, "show-ref"],
-          {
-            encoding: "utf8",
-          }
-        );
+        const refsBefore = fixtureGit(["--git-dir", record.managedRepoPath, "show-ref"], {
+          encoding: "utf8",
+        });
         const result = await cli("create", ...createArgs("LONG-1", record.id));
         expectCliCode(result, 1);
         expect(result.envelope.error).toMatchObject({
@@ -175,13 +181,9 @@ describe("configuration, tags and future workspace guidance", () => {
         expect(readFileSync(path.join(home, "repos.json"), "utf8")).toBe(registryBefore);
         expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
         expect(
-          execFileSync(
-            "git",
-            ["-c", "core.longpaths=true", "--git-dir", record.managedRepoPath, "show-ref"],
-            {
-              encoding: "utf8",
-            }
-          )
+          fixtureGit(["--git-dir", record.managedRepoPath, "show-ref"], {
+            encoding: "utf8",
+          })
         ).toBe(refsBefore);
         expect(existsSync(path.join(home, "worktrees", "LONG-1"))).toBe(false);
         expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
@@ -201,19 +203,10 @@ describe("configuration, tags and future workspace guidance", () => {
           );
           // The mirror stays bare; its linked checkout has separate worktree
           // configuration. Exercise startup reading that file at 259 units.
-          execFileSync("git", [
-            "-c",
-            "core.longpaths=true",
-            "-C",
-            worktreePath,
-            "config",
-            "--worktree",
-            "core.bare",
-            "false",
-          ]);
+          fixtureGit(["-C", worktreePath, "config", "--worktree", "core.bare", "false"]);
         }
         expect(
-          execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
+          fixtureGit(["-C", worktreePath, "rev-parse", "HEAD"], {
             encoding: "utf8",
           }).trim()
         ).toBe(initialCommit);
@@ -225,11 +218,9 @@ describe("configuration, tags and future workspace guidance", () => {
         expect(existsSync(workspacePath)).toBe(false);
         expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
         expect(
-          execFileSync(
-            "git",
-            ["--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1"],
-            { encoding: "utf8" }
-          ).trim()
+          fixtureGit(["--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1"], {
+            encoding: "utf8",
+          }).trim()
         ).toBe(initialCommit);
         expect(readFileSync(configPath, "utf8")).toBe(configBytes);
         expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
@@ -319,7 +310,7 @@ describe("configuration, tags and future workspace guidance", () => {
     const originalManaged = oldRecord.managedRepoPath;
     const otherRecord = registry.repos.find((record: { id: string }) => record.id === otherId);
     // A fetch of the first member would visibly rewrite these unsafe legacy settings.
-    execFileSync("git", [
+    fixtureGit([
       "--git-dir",
       otherRecord.managedRepoPath,
       "config",
@@ -327,7 +318,7 @@ describe("configuration, tags and future workspace guidance", () => {
       "remote.origin.fetch",
       "+refs/*:refs/*",
     ]);
-    execFileSync("git", [
+    fixtureGit([
       "--git-dir",
       otherRecord.managedRepoPath,
       "config",
@@ -370,7 +361,7 @@ describe("configuration, tags and future workspace guidance", () => {
       path.join(home, "worktrees", "PRESERVE-1", otherRecord.name, "README.md"),
     ];
     const before = preservedPaths.map((file) => readFileSync(file, "utf8"));
-    const branchBefore = execFileSync("git", ["--git-dir", originalManaged, "show-ref"], {
+    const branchBefore = fixtureGit(["--git-dir", originalManaged, "show-ref"], {
       encoding: "utf8",
     });
     expect(
@@ -408,9 +399,9 @@ describe("configuration, tags and future workspace guidance", () => {
       expect(
         existsSync(path.join(otherRecord.managedRepoPath, "refs", "heads", "feat", "REFUSED-1"))
       ).toBe(false);
-      expect(
-        execFileSync("git", ["--git-dir", originalManaged, "show-ref"], { encoding: "utf8" })
-      ).toBe(branchBefore);
+      expect(fixtureGit(["--git-dir", originalManaged, "show-ref"], { encoding: "utf8" })).toBe(
+        branchBefore
+      );
     } else {
       // Windows enforcement is covered with native processes in the Windows CI leg.
       // POSIX still proves the legacy metadata remains readable without migrating it.
@@ -469,7 +460,7 @@ describe("configuration, tags and future workspace guidance", () => {
 
   it("keeps legacy and newer workspace roots stable across repeated root changes, inspection and removal", async () => {
     const { home, repo, id } = await fixture();
-    const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
+    const initialCommit = fixtureGit(["-C", repo.tempRepo, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim();
     expectCliSuccess(await cli("create", ...createArgs("OLD-1", id)));
@@ -509,7 +500,7 @@ describe("configuration, tags and future workspace guidance", () => {
     expect(existsSync(path.join(rootA, "NEW-1"))).toBe(true);
     const managed = readRegistry(home).repos[0].managedRepoPath;
     expect(
-      execFileSync("git", ["--git-dir", managed, "rev-parse", "refs/heads/feat/OLD-1"], {
+      fixtureGit(["--git-dir", managed, "rev-parse", "refs/heads/feat/OLD-1"], {
         encoding: "utf8",
       }).trim()
     ).toBe(initialCommit);
