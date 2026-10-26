@@ -14,7 +14,7 @@ import {
   verifyManagedRepository,
 } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
-import { validateSemanticIdentifier } from "../path-safety.js";
+import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import { getManagedRepoPath, resolveRemoteIdentity } from "../remote-identity.js";
 import { DiagnosticTruncationSchema } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
@@ -246,6 +246,14 @@ export function runRepoAdd(
         (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
       )
     );
+    if (registry.retainedRepositories?.some((repo) => repo.id === identity.id)) {
+      return yield* Effect.fail(
+        new RepoAddError({
+          ...reasonDetails("invalid-state"),
+          message: `Repository ${identity.id} has retained storage. Inspect it with outpost repo show <id> --retained and use outpost repo restore <id>. Import will not adopt or overwrite it.`,
+        })
+      );
+    }
     const existingRecord = registry.repos.find((repo) => repo.id === identity.id);
     const managedRepoPath = existingRecord?.managedRepoPath ?? derivedManagedRepoPath;
     yield* validateManagedRepoPath(
@@ -270,6 +278,19 @@ export function runRepoAdd(
         (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
       )
     );
+    const plannedKey = yield* getCanonicalPortablePathKey(managedRepoPath);
+    for (const reserved of [...registry.repos, ...(registry.retainedRepositories ?? [])]) {
+      if (
+        reserved.id !== identity.id &&
+        (yield* getCanonicalPortablePathKey(reserved.managedRepoPath)) === plannedKey
+      )
+        return yield* Effect.fail(
+          new RepoAddError({
+            ...reasonDetails("invalid-state"),
+            message: `Managed path is reserved by repository ${reserved.id}: ${managedRepoPath}. Inspect active and retained repositories before retrying.`,
+          })
+        );
+    }
     const managedRepoExists = yield* fs
       .exists(managedRepoPath)
       .pipe(

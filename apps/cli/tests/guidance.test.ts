@@ -78,7 +78,7 @@ describe("bundled offline guidance", () => {
     expect(readdirSync(external)).toEqual([]);
   });
 
-  it("warns that repository cleanup deletes branch storage in preview and execution", async () => {
+  it("reports retained branch storage in unregister preview and execution", async () => {
     const home = createTempDir();
     process.env.OUTPOST_HOME = home;
     const run = capture();
@@ -106,14 +106,12 @@ describe("bundled offline guidance", () => {
       })
     ).toThrow();
     const preview = await run(["repo", "remove", repo.id, "--dry-run"]);
-    expect(preview.data.warnings).toContainEqual(expect.stringContaining("local branches"));
-    expect(preview.data.warnings).toContainEqual(
-      expect.stringContaining("Save needed branches and commits outside")
-    );
+    expect(preview.data.warnings).toContainEqual(expect.stringContaining("all branches"));
+    expect(preview.data.warnings).toContainEqual(expect.stringContaining("retained"));
     expect(existsSync(repo.managedRepoPath)).toBe(true);
     const removed = await run(["repo", "remove", repo.id]);
     expect(removed.data.warnings).toEqual(preview.data.warnings);
-    expect(existsSync(repo.managedRepoPath)).toBe(false);
+    expect(existsSync(repo.managedRepoPath)).toBe(true);
   });
 
   it("describes counts as finite nonnegative safe integers", async () => {

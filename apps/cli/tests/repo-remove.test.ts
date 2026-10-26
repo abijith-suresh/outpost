@@ -19,7 +19,7 @@ setupAfterEach();
 
 describe("run", () => {
   describe("repo remove", () => {
-    it("removes a repo from the registry and deletes the managed repo", async () => {
+    it("unregisters a repo while retaining its managed storage", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
@@ -56,12 +56,10 @@ describe("run", () => {
       expect(infoSpy).toHaveBeenNthCalledWith(5, `remote url: ${remoteUrl}`);
       expect(infoSpy).toHaveBeenNthCalledWith(6, `source repo path: ${sourceRepoPath}`);
 
-      const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-        repos: Array<unknown>;
-      };
+      const nextRegistry = readRegistry(tempHome);
 
       expect(nextRegistry.repos).toEqual([]);
-      expect(existsSync(managedRepoPath)).toBe(false);
+      expect(existsSync(managedRepoPath)).toBe(true);
     });
 
     it("prints repo remove output as json", async () => {
@@ -263,7 +261,7 @@ describe("run", () => {
 
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledWith("outpost repo remove");
-      expect(existsSync(repo.managedRepoPath)).toBe(false);
+      expect(existsSync(repo.managedRepoPath)).toBe(true);
     });
 
     it("blocks removal when a workspace manifest is uninspectable", async () => {

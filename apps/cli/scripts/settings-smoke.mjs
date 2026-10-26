@@ -1,6 +1,14 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 // Installed-artifact acceptance: only disposable local Git repositories. No
@@ -178,4 +186,98 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   );
   assert.ok(existsSync(newer.worktrees[0].path), "old cleanup touched the new root");
   call(["workspace", "remove", "NEW-1"]);
+
+  // An innocuous unregister must never discard branch-only work. Exercise the
+  // actual installed CLI, then recover offline using only its saved identity.
+  assert.throws(() => git(["cat-file", "-e", `${oldHead}^{commit}`]), "source has workspace SHA");
+  assert.throws(
+    () => git(["--git-dir", remote, "cat-file", "-e", `${oldHead}^{commit}`]),
+    "remote has workspace SHA"
+  );
+  writeFileSync(join(source, "source-only.txt"), "keep source-only work too\n");
+  git(["add", "source-only.txt"]);
+  git(["commit", "-m", "source-only work"]);
+  const sourceOnlyHead = git(["rev-parse", "HEAD"]);
+  const refs = git(["--git-dir", repo.managedRepoPath, "show-ref"]);
+  const mirrorConfig = readFileSync(join(repo.managedRepoPath, "config"));
+  const sourceConfig = readFileSync(join(source, ".git", "config"));
+  const registryPath = join(home, "repos.json");
+  const registryBefore = readFileSync(registryPath);
+  const configBefore = readFileSync(configPath);
+  const activeRecord = call(["repo", "show", repo.id]);
+  const removalPlan = call(["repo", "remove", repo.id, "--dry-run"]);
+  assert.equal(removalPlan.action, "unregistered");
+  assert.equal(removalPlan.storage, "retained");
+  assert.deepEqual(readFileSync(registryPath), registryBefore, "preview changed registration");
+  assert.deepEqual(readFileSync(configPath), configBefore, "preview changed configuration");
+  const removed = call(["repo", "remove", repo.id]);
+  assert.equal(removed.action, "unregistered");
+  assert.equal(removed.storage, "retained");
+  assert.equal(call(["repo", "list"]).repos.length, 0);
+  const retainedList = call(["repo", "list", "--retained"]).repos;
+  assert.equal(retainedList.length, 1);
+  assert.equal(retainedList[0].id, repo.id);
+  const retained = call(["repo", "show", repo.id, "--retained"]);
+  assert.equal(retained.inspection.status, "ok");
+  assert.ok(
+    retained.inspection.refs.some(
+      (ref) => ref.name === "refs/heads/feat/OLD-1" && ref.objectId === oldHead
+    ),
+    "retained inspection lost exact branch-only SHA"
+  );
+  const retainedBytes = readFileSync(registryPath);
+  refuse(["repo", "add", source]);
+  refuse(["repo", "remove", repo.id]);
+  assert.deepEqual(readFileSync(registryPath), retainedBytes);
+  assert.equal(git(["--git-dir", repo.managedRepoPath, "show-ref"]), refs);
+  assert.deepEqual(readFileSync(join(repo.managedRepoPath, "config")), mirrorConfig);
+  assert.deepEqual(readFileSync(join(source, ".git", "config")), sourceConfig);
+  assert.equal(git(["rev-parse", "HEAD"]), sourceOnlyHead);
+
+  // A same-path foreign directory is never adopted as the retained repository.
+  const savedStorage = `${repo.managedRepoPath}.saved`;
+  renameSync(repo.managedRepoPath, savedStorage);
+  mkdirSync(repo.managedRepoPath);
+  const foreignSentinel = join(repo.managedRepoPath, "keep.txt");
+  writeFileSync(foreignSentinel, "foreign storage\n");
+  assert.equal(call(["repo", "show", repo.id, "--retained"]).inspection.status, "unavailable");
+  refuse(["repo", "restore", repo.id]);
+  assert.equal(readFileSync(foreignSentinel, "utf8"), "foreign storage\n");
+  assert.deepEqual(readFileSync(registryPath), retainedBytes);
+  rmSync(repo.managedRepoPath, { recursive: true });
+  renameSync(savedStorage, repo.managedRepoPath);
+
+  // Settings writers must preserve the versioned retained set. Neither source
+  // nor remote is available at its registered path when restoration runs.
+  call(["guidance", "clear"]);
+  assert.equal(call(["repo", "list", "--retained"]).repos[0].id, repo.id);
+  const offlineSource = `${source} offline`;
+  renameSync(source, offlineSource);
+  renameSync(remote, `${remote} offline`);
+  const beforeRestore = readFileSync(registryPath);
+  call(["repo", "restore", repo.id, "--dry-run"]);
+  assert.deepEqual(readFileSync(registryPath), beforeRestore);
+  call(["repo", "restore", repo.id]);
+  assert.equal(call(["repo", "list", "--retained"]).repos.length, 0);
+  const restored = call(["repo", "show", repo.id]);
+  for (const key of [
+    "id",
+    "name",
+    "managedRepoPath",
+    "remoteName",
+    "remoteUrl",
+    "sourceRepoPath",
+    "importedAt",
+    "lastFetchedAt",
+    "tags",
+  ]) {
+    assert.deepEqual(restored[key], activeRecord[key], `restore changed ${key}`);
+  }
+  assert.equal(git(["--git-dir", repo.managedRepoPath, "show-ref"], offlineSource), refs);
+  assert.equal(git(["rev-parse", "HEAD"], offlineSource), sourceOnlyHead);
+  assert.deepEqual(readFileSync(join(offlineSource, ".git", "config")), sourceConfig);
+  assert.deepEqual(readFileSync(join(repo.managedRepoPath, "config")), mirrorConfig);
+  process.stdout.write(
+    "Installed unregister/restore preserved exact branch-only and source-only SHAs\n"
+  );
 }

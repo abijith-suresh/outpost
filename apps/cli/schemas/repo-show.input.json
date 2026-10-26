@@ -22,7 +22,11 @@
     "options": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "--retained": {
+          "const": true
+        }
+      },
       "required": []
     }
   }

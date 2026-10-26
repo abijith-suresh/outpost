@@ -21,6 +21,7 @@ import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
 import { runRepoRemove } from "./commands/repo-remove.js";
+import { runRepoRestore } from "./commands/repo-restore.js";
 import { runRepoShow } from "./commands/repo-show.js";
 import {
   runConfigSet,
@@ -142,6 +143,7 @@ function resolveCommand(
     "repo fetch": "REPO_FETCH_FAILED",
     "repo show": "REPO_SHOW_FAILED",
     "repo remove": "REPO_REMOVE_FAILED",
+    "repo restore": "REPO_RESTORE_FAILED",
     "workspace show": "WORKSPACE_SHOW_FAILED",
     "workspace remove": "WORKSPACE_REMOVE_FAILED",
   };
@@ -274,6 +276,10 @@ function resolveCommand(
     case "repo remove":
       return runRepoRemove(positionalArgs[2], positionalArgs.slice(3)).pipe(
         Effect.mapError((error) => cliError("REPO_REMOVE_FAILED", error.message, undefined, error))
+      );
+    case "repo restore":
+      return runRepoRestore(positionalArgs[2], positionalArgs.slice(3)).pipe(
+        Effect.mapError((error) => cliError("REPO_RESTORE_FAILED", error.message, undefined, error))
       );
     case "workspace show":
       return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(

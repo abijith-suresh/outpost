@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "2.0.0",
   "schemas": [
     {
       "command": "help",
@@ -195,6 +195,16 @@
       "command": "repo show",
       "kind": "output",
       "path": "repo-show.output.json"
+    },
+    {
+      "command": "repo restore",
+      "kind": "input",
+      "path": "repo-restore.input.json"
+    },
+    {
+      "command": "repo restore",
+      "kind": "output",
+      "path": "repo-restore.output.json"
     },
     {
       "command": "workspace list",

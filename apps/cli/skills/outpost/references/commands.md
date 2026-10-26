@@ -353,14 +353,15 @@ Side effects: managed-repositories, registry.
 
 ```text
 Usage:
-  outpost repo list [--tag <tag> ...] [--json]
+  outpost repo list [--retained] [--tag <tag> ...] [--json]
 
-List imported repositories
+List active repositories or explicitly retained registrations
 
   mutation: false
   json output: yes
 
 Options:
+  --retained  List retained storage instead of active registrations
   --tag <tag>  Require every selected tag (repeatable) (repeatable)
   --json  Output as JSON
 ```
@@ -374,7 +375,7 @@ Side effects: none.
 Usage:
   outpost repo remove <id> [--dry-run] [--json]
 
-Remove an imported repository
+Unregister a repository while retaining its owned storage and all commits
 
   mutation: true
   json output: yes
@@ -389,15 +390,15 @@ Options:
 ```
 
 Network: none. Retry: inspect-before-retry.
-Side effects: managed-repositories, registry.
+Side effects: configuration, registry.
 
 ## repo show
 
 ```text
 Usage:
-  outpost repo show <id> [--json]
+  outpost repo show <id> [--retained] [--json]
 
-Show one imported repository by id
+Show an active repository, or inspect retained storage and local refs
 
   mutation: false
   json output: yes
@@ -406,11 +407,35 @@ Arguments:
   <id>  Repository identifier (required)
 
 Options:
+  --retained  Inspect a retained registration instead of an active repository
   --json  Output as JSON
 ```
 
 Network: none. Retry: safe.
 Side effects: none.
+
+## repo restore
+
+```text
+Usage:
+  outpost repo restore <id> [--dry-run] [--json]
+
+Restore a retained registration after validating owned storage, without fetching
+
+  mutation: true
+  json output: yes
+  dry-run: yes
+
+Arguments:
+  <id>  Retained repository identifier (required)
+
+Options:
+  --dry-run  Validate recovery without locks or writes
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: registry.
 
 ## workspace list
 

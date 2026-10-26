@@ -271,11 +271,22 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
         Console.log(`managed repo path: ${String(output.data.managedRepoPath)}`),
         Console.log(`remote url: ${String(output.data.remoteUrl)}`),
         Console.log(`source repo path: ${String(output.data.sourceRepoPath)}`),
+        Console.log(`action: ${output.data.action}`),
+        Console.log(`storage: ${output.data.storage}`),
+        Console.log(`restore: ${output.data.recoveryCommand}`),
         ...(Array.isArray(output.data.warnings)
           ? output.data.warnings.map((warning: unknown) =>
               Console.warn(`Warning: ${String(warning)}`)
             )
           : []),
+      ]).pipe(Effect.asVoid);
+    case "repo restore":
+      return Effect.all([
+        Console.log("outpost repo restore"),
+        ...(output.data.dryRun ? [Console.log("dry run: true")] : []),
+        Console.log(`id: ${output.data.id}`),
+        Console.log(`managed repo path: ${output.data.managedRepoPath}`),
+        Console.log("action: restored registration; owned storage unchanged"),
       ]).pipe(Effect.asVoid);
     case "repo show":
       return Effect.all([
@@ -290,6 +301,18 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
         Console.log(`imported at: ${String(output.data.importedAt)}`),
         Console.log(`last fetched at: ${String(output.data.lastFetchedAt)}`),
         ...(output.data.tags ? [Console.log(`tags: ${output.data.tags.join(", ")}`)] : []),
+        ...(output.data.retainedAt ? [Console.log(`retained at: ${output.data.retainedAt}`)] : []),
+        ...(output.data.inspection
+          ? [
+              Console.log(`ref inspection: ${output.data.inspection.status}`),
+              ...output.data.inspection.refs.map((ref) =>
+                Console.log(`ref: ${ref.name} ${ref.objectId}`)
+              ),
+              ...output.data.inspection.diagnostics.map((diagnostic) =>
+                Console.log(`inspection: ${diagnostic}`)
+              ),
+            ]
+          : []),
       ]).pipe(Effect.asVoid);
     case "workspace show":
       return Effect.all([

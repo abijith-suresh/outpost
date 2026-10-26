@@ -166,7 +166,10 @@ describe("run", () => {
     const exitCode = await runCli(["repo", "show"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo show <id> [--json]");
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Usage: outpost repo show <id> [--retained] [--json]"
+    );
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -176,7 +179,10 @@ describe("run", () => {
     const exitCode = await runCli(["repo", "show", "alpha", "beta"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenNthCalledWith(1, "Usage: outpost repo show <id> [--json]");
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "Usage: outpost repo show <id> [--retained] [--json]"
+    );
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 

@@ -60,6 +60,11 @@ export const RepoRecordSchema = Schema.Struct({
 });
 
 export type RepoRecord = Schema.Schema.Type<typeof RepoRecordSchema>;
+export const RetainedRepoRecordSchema = Schema.Struct({
+  ...RepoRecordSchema.fields,
+  retainedAt: Schema.String,
+});
+export type RetainedRepoRecord = Schema.Schema.Type<typeof RetainedRepoRecordSchema>;
 
 export type RepoHealthStatus = "ok" | "missing";
 
@@ -68,8 +73,9 @@ export type RepoRecordWithStatus = RepoRecord & {
 };
 
 export const RepoRegistrySchema = Schema.Struct({
-  version: Schema.optional(Schema.Literal(2)),
+  version: Schema.optional(Schema.Literals([2, 3])),
   repos: Schema.Array(RepoRecordSchema),
+  retainedRepositories: Schema.optional(Schema.Array(RetainedRepoRecordSchema)),
 });
 
 export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
@@ -80,6 +86,11 @@ export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
 const StoredRepoRegistrySchema = Schema.Union([
   Schema.Struct({ repos: Schema.Array(RepoRecordSchema) }),
   Schema.Struct({ version: Schema.Literal(2), repositories: Schema.Array(RepoRecordSchema) }),
+  Schema.Struct({
+    version: Schema.Literal(3),
+    repositories: Schema.Array(RepoRecordSchema),
+    retainedRepositories: Schema.Array(RetainedRepoRecordSchema),
+  }),
 ]);
 
 export function getRepoHealthDiagnostics(repos: ReadonlyArray<RepoRecord>): Effect.Effect<
@@ -185,8 +196,15 @@ function validateRepoRegistryUniqueness(
     const ids = new Set<string>();
     const managedRepoPaths = new Set<string>();
 
-    for (const repo of registry.repos) {
-      if (repo.tags !== undefined && registry.version !== 2)
+    if ((registry.version === 3) !== (registry.retainedRepositories !== undefined))
+      return yield* Effect.fail(
+        new ConfigError({
+          message:
+            "Retained repositories require registry version 3 with a retainedRepositories array.",
+        })
+      );
+    for (const repo of [...registry.repos, ...(registry.retainedRepositories ?? [])]) {
+      if (repo.tags !== undefined && registry.version !== 2 && registry.version !== 3)
         return yield* Effect.fail(
           new ConfigError({ message: "Repository tags require registry version 2." })
         );
@@ -262,7 +280,13 @@ export function loadRepoRegistry(
     );
 
     const registry: RepoRegistry =
-      "repositories" in stored ? { version: 2, repos: stored.repositories } : stored;
+      "repositories" in stored
+        ? {
+            version: stored.version,
+            repos: stored.repositories,
+            ...(stored.version === 3 ? { retainedRepositories: stored.retainedRepositories } : {}),
+          }
+        : stored;
     return yield* validateRepoRegistryUniqueness(registry);
   });
 }
@@ -286,9 +310,15 @@ export function writeRepoRegistry(
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
     const stored =
-      validatedRegistry.version === 2
-        ? { version: 2, repositories: validatedRegistry.repos }
-        : { repos: validatedRegistry.repos };
+      validatedRegistry.version === 3
+        ? {
+            version: 3,
+            repositories: validatedRegistry.repos,
+            retainedRepositories: validatedRegistry.retainedRepositories,
+          }
+        : validatedRegistry.version === 2
+          ? { version: 2, repositories: validatedRegistry.repos }
+          : { repos: validatedRegistry.repos };
     yield* writeJsonFileAtomic(registryFilePath, stored).pipe(
       Effect.mapError(
         (error) =>
@@ -469,7 +499,7 @@ export function prepareExtendedState(outpostHome: string, config: OutpostConfig)
     // First block newly started old processes, retaining all original defaults.
     if (config.version === 1) yield* writeConfig(outpostHome, upgraded);
     // Then block an old process that cached v1 config before taking the lock.
-    if (registry.version !== 2)
+    if (registry.version === undefined)
       yield* writeRepoRegistry(outpostHome, { version: 2, repos: registry.repos });
     return upgraded;
   });

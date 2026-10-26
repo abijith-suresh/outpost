@@ -280,8 +280,13 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     path: ["repo", "list"],
-    description: "List imported repositories",
+    description: "List active repositories or explicitly retained registrations",
     options: [
+      {
+        name: "--retained",
+        description: "List retained storage instead of active registrations",
+        required: false,
+      },
       {
         name: "--tag",
         valueName: "tag",
@@ -297,7 +302,7 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     path: ["repo", "remove"],
-    description: "Remove an imported repository",
+    description: "Unregister a repository while retaining its owned storage and all commits",
     arguments: [
       {
         name: "id",
@@ -319,7 +324,14 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     path: ["repo", "show"],
-    description: "Show one imported repository by id",
+    description: "Show an active repository, or inspect retained storage and local refs",
+    options: [
+      {
+        name: "--retained",
+        description: "Inspect a retained registration instead of an active repository",
+        required: false,
+      },
+    ],
     arguments: [
       {
         name: "id",
@@ -331,6 +343,22 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     interactive: false,
     json: true,
     dryRun: false,
+  },
+  {
+    path: ["repo", "restore"],
+    description: "Restore a retained registration after validating owned storage, without fetching",
+    arguments: [{ name: "id", description: "Retained repository identifier", required: true }],
+    options: [
+      {
+        name: "--dry-run",
+        description: "Validate recovery without locks or writes",
+        required: false,
+      },
+    ],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: true,
   },
   {
     path: ["workspace", "list"],
@@ -519,7 +547,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "1.1.0";
+export const CONTRACT_VERSION = "2.0.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -660,9 +688,11 @@ export function commandPolicy(spec: CommandSpec) {
               ? ["configuration", "directories"]
               : name === "config set" || name === "guidance set" || name === "guidance clear"
                 ? ["configuration"]
-                : name === "repo tag"
+                : name === "repo tag" || name === "repo remove"
                   ? ["configuration", "registry"]
-                  : ["managed-repositories", "registry"],
+                  : name === "repo restore"
+                    ? ["registry"]
+                    : ["managed-repositories", "registry"],
     dryRun: spec.dryRun ? { mutations: false, locks: false, advisory: true } : null,
   };
 }
