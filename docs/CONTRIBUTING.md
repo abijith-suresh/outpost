@@ -106,6 +106,12 @@ This runs, in order:
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
+Generated CLI schemas, command reference, man page and schema-integrity source
+are pinned to LF in `.gitattributes`. Their exact bytes are checked during build
+and used for installed schema integrity. Keep these attributes when working on
+Windows with Git checkout line-ending conversion enabled; normalizing only the
+drift comparison would leave installed checksums inconsistent.
+
 ### Build
 
 ```bash
