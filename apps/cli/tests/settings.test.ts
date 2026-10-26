@@ -121,7 +121,13 @@ describe("configuration, tags and future workspace guidance", () => {
   it.each([205, 220])(
     "clones real pack files beyond 260 characters at a %i-byte Git directory and validates the full plan",
     async (gitDirBytes) => {
-      const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+      // The exact admin-boundary case needs a fixed 26-character member name.
+      // Keep the 220-byte case's random encoded name; random uppercase bytes
+      // must not make the 205-byte fixture's minimum layout exceed its target.
+      const repo = await createManagedRepoFixture({
+        defaultBranch: "main",
+        ...(gitDirBytes === 205 ? { repoName: "outpost-create-repo-fixed0" } : {}),
+      });
       const outer = realpathSync.native(createTempDir());
       const baseline = localManagedRepoPath(path.join(outer, "h"), repo.tempRemote);
       const padding = gitDirBytes - Buffer.byteLength(baseline, "utf8");
