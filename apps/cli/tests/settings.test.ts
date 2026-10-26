@@ -33,15 +33,41 @@ async function cli(...args: string[]) {
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
   log.mockClear();
   error.mockClear();
-  const code = await runCli([...args, "--json"]);
-  return { code, envelope: JSON.parse(String((code ? error : log).mock.calls.at(-1)?.[0])) };
+  const command = ["outpost", ...args, "--json"];
+  const code = await runCli(command.slice(1));
+  const stdout = log.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+  const stderr = error.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+  const diagnostics = JSON.stringify({ command, code, stdout, stderr }, null, 2);
+  let envelope: ReturnType<typeof JSON.parse>;
+  try {
+    // Partial results use stdout even though the command exits nonzero.
+    envelope = JSON.parse(stderr || stdout);
+  } catch (cause) {
+    throw new Error(`CLI did not return one JSON envelope:\n${diagnostics}`, { cause });
+  }
+  return {
+    code,
+    envelope,
+    diagnostics: JSON.stringify({ command, code, envelope, stdout, stderr }, null, 2),
+  };
+}
+function expectCliCode(result: Awaited<ReturnType<typeof cli>>, code: number) {
+  expect(result.code, result.diagnostics).toBe(code);
+}
+function expectCliSuccess(result: Awaited<ReturnType<typeof cli>>) {
+  expect(result.code, result.diagnostics).toBe(0);
+  expect(result.envelope.ok, result.diagnostics).toBe(true);
+  return result;
+}
+async function cliSuccess(...args: string[]) {
+  return expectCliSuccess(await cli(...args));
 }
 async function fixture() {
   const home = createTempDir();
   process.env.OUTPOST_HOME = home;
-  expect((await cli("init")).code).toBe(0);
+  expectCliSuccess(await cli("init"));
   const repo = await createManagedRepoFixture({ defaultBranch: "main" });
-  expect((await cli("repo", "add", repo.tempRepo)).code).toBe(0);
+  expectCliSuccess(await cli("repo", "add", repo.tempRepo));
   return { home, repo, id: localRepoId(repo.tempRemote) };
 }
 const createArgs = (ticket: string, id: string) => [
@@ -56,38 +82,38 @@ const createArgs = (ticket: string, id: string) => [
 describe("configuration, tags and future workspace guidance", () => {
   it("keeps legacy and newer workspace roots stable across repeated root changes, inspection and removal", async () => {
     const { home, repo, id } = await fixture();
-    expect((await cli("create", ...createArgs("OLD-1", id))).code).toBe(0);
+    expectCliSuccess(await cli("create", ...createArgs("OLD-1", id)));
     const manifestPath = path.join(home, "workspaces", "OLD-1.json");
     const manifestBytes = readFileSync(manifestPath, "utf8");
     expect(JSON.parse(manifestBytes).version).toBeUndefined();
     const oldPath = path.join(home, "worktrees", "OLD-1");
     const agentsBytes = readFileSync(path.join(oldPath, "AGENTS.md"), "utf8");
     const rootA = path.join(createTempDir(), "space café", "worktrees");
-    expect((await cli("config", "set", "worktreesRoot", rootA)).code).toBe(0);
+    expectCliSuccess(await cli("config", "set", "worktreesRoot", rootA));
     expect(existsSync(rootA)).toBe(false);
-    expect((await cli("create", ...createArgs("NEW-1", id))).code).toBe(0);
+    expectCliSuccess(await cli("create", ...createArgs("NEW-1", id)));
     const rootB = path.join(createTempDir(), "future");
-    expect((await cli("config", "set", "worktreesRoot", rootB)).code).toBe(0);
+    expectCliSuccess(await cli("config", "set", "worktreesRoot", rootB));
     expect(readFileSync(manifestPath, "utf8")).toBe(manifestBytes);
     expect(readFileSync(path.join(oldPath, "AGENTS.md"), "utf8")).toBe(agentsBytes);
-    const old = await cli("workspace", "show", "OLD-1");
+    const old = await cliSuccess("workspace", "show", "OLD-1");
     expect(old.envelope.data).toMatchObject({ status: "ready", ticketDirectory: oldPath });
-    expect((await cli("workspace", "show", "NEW-1")).envelope.data).toMatchObject({
+    expect((await cliSuccess("workspace", "show", "NEW-1")).envelope.data).toMatchObject({
       status: "ready",
       ticketDirectory: path.join(rootA, "NEW-1"),
     });
     expect(
-      (await cli("workspace", "list")).envelope.data.workspaces.map(
+      (await cliSuccess("workspace", "list")).envelope.data.workspaces.map(
         (entry: { status: string }) => entry.status
       )
     ).toEqual(["ready", "ready"]);
-    expect((await cli("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
+    expect((await cliSuccess("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
     const worktree = path.join(oldPath, path.basename(repo.tempRepo));
     writeFileSync(path.join(worktree, "uncommitted.txt"), "keep me");
-    expect((await cli("workspace", "remove", "OLD-1")).code).toBe(1);
+    expectCliCode(await cli("workspace", "remove", "OLD-1"), 1);
     expect(existsSync(manifestPath)).toBe(true);
     rmSync(path.join(worktree, "uncommitted.txt"));
-    expect((await cli("workspace", "remove", "OLD-1")).code).toBe(0);
+    expectCliSuccess(await cli("workspace", "remove", "OLD-1"));
     expect(existsSync(oldPath)).toBe(false);
     expect(existsSync(path.join(rootA, "NEW-1"))).toBe(true);
     const managed = readRegistry(home).repos[0].managedRepoPath;
@@ -103,28 +129,30 @@ describe("configuration, tags and future workspace guidance", () => {
     const leftover = path.join(home, "worktrees", "FAILED-1");
     mkdirSync(leftover);
     writeFileSync(path.join(leftover, "keep.txt"), "unowned data");
-    expect((await cli("config", "set", "worktreesRoot", createTempDir())).code).toBe(0);
-    expect((await cli("workspace", "list")).envelope.data.workspaces).toEqual([
+    expectCliSuccess(await cli("config", "set", "worktreesRoot", createTempDir()));
+    expect((await cliSuccess("workspace", "list")).envelope.data.workspaces).toEqual([
       expect.objectContaining({
         ticket: "FAILED-1",
         ticketDirectory: leftover,
         status: "unmanaged",
       }),
     ]);
-    expect((await cli("workspace", "show", "FAILED-1")).envelope.data.status).toBe("unmanaged");
-    expect((await cli("workspace", "remove", "FAILED-1")).code).toBe(1);
+    expect((await cliSuccess("workspace", "show", "FAILED-1")).envelope.data.status).toBe(
+      "unmanaged"
+    );
+    expectCliCode(await cli("workspace", "remove", "FAILED-1"), 1);
     expect(readFileSync(path.join(leftover, "keep.txt"), "utf8")).toBe("unowned data");
   });
 
   it("reports unowned same-ticket directories at another root and preserves them on removal", async () => {
     const { home, id } = await fixture();
-    expect((await cli("create", ...createArgs("SAME-1", id))).code).toBe(0);
+    expectCliSuccess(await cli("create", ...createArgs("SAME-1", id)));
     const nextRoot = createTempDir();
-    expect((await cli("config", "set", "worktreesRoot", nextRoot)).code).toBe(0);
+    expectCliSuccess(await cli("config", "set", "worktreesRoot", nextRoot));
     const leftover = path.join(nextRoot, "SAME-1");
     mkdirSync(leftover);
     writeFileSync(path.join(leftover, "sentinel.txt"), "unowned data");
-    const entries = (await cli("workspace", "list")).envelope.data.workspaces;
+    const entries = (await cliSuccess("workspace", "list")).envelope.data.workspaces;
     expect(entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -139,69 +167,69 @@ describe("configuration, tags and future workspace guidance", () => {
         }),
       ])
     );
-    expect((await cli("workspace", "remove", "SAME-1")).code).toBe(0);
+    expectCliSuccess(await cli("workspace", "remove", "SAME-1"));
     expect(readFileSync(path.join(leftover, "sentinel.txt"), "utf8")).toBe("unowned data");
   });
 
   it("filters tag intersections, keeps explicit IDs, freezes membership and preserves tags on fetch/reimport", async () => {
     const { home, repo, id } = await fixture();
     const beta = await createManagedRepoFixture({ defaultBranch: "main" });
-    await cli("repo", "add", beta.tempRepo);
+    await cliSuccess("repo", "add", beta.tempRepo);
     const betaId = localRepoId(beta.tempRemote);
     expect(
-      (await cli("repo", "tag", id, "--add", "frontend", "--add", "shared")).envelope.data.tags
+      (await cliSuccess("repo", "tag", id, "--add", "frontend", "--add", "shared")).envelope.data
+        .tags
     ).toEqual(["frontend", "shared"]);
-    await cli("repo", "tag", betaId, "--add", "shared");
-    const filtered = await cli("repo", "list", "--tag", "shared", "--tag", "frontend");
+    await cliSuccess("repo", "tag", betaId, "--add", "shared");
+    const filtered = await cliSuccess("repo", "list", "--tag", "shared", "--tag", "frontend");
     expect(filtered.envelope.data.repos.map((repo: { id: string }) => repo.id)).toEqual([id]);
-    expect(
-      (
-        await cli(
-          "create",
-          "--ticket",
-          "TAG-1",
-          "--type",
-          "feat",
-          "--tag",
-          "shared",
-          "--tag",
-          "frontend"
-        )
-      ).code
-    ).toBe(0);
+    expectCliSuccess(
+      await cli(
+        "create",
+        "--ticket",
+        "TAG-1",
+        "--type",
+        "feat",
+        "--tag",
+        "shared",
+        "--tag",
+        "frontend"
+      )
+    );
     const manifestPath = path.join(home, "workspaces", "TAG-1.json");
     const before = readFileSync(manifestPath, "utf8");
     expect(JSON.parse(before).repositories.map((repo: { id: string }) => repo.id)).toEqual([id]);
-    await cli("repo", "tag", id, "--remove", "shared");
-    await cli("repo", "tag", betaId, "--add", "frontend");
+    await cliSuccess("repo", "tag", id, "--remove", "shared");
+    await cliSuccess("repo", "tag", betaId, "--add", "frontend");
     expect(readFileSync(manifestPath, "utf8")).toBe(before);
-    expect(
-      (await cli("create", ...createArgs("EXPLICIT-1", id), "--tag", "shared", "--dry-run")).code
-    ).toBe(1);
-    expect(
-      (await cli("create", "--ticket", "EMPTY-1", "--type", "feat", "--tag", "unknown")).code
-    ).toBe(1);
-    expect((await cli("repo", "fetch", "--all")).code).toBe(0);
-    expect((await cli("repo", "add", repo.tempRepo)).code).toBe(0);
+    expectCliCode(
+      await cli("create", ...createArgs("EXPLICIT-1", id), "--tag", "shared", "--dry-run"),
+      1
+    );
+    expectCliCode(
+      await cli("create", "--ticket", "EMPTY-1", "--type", "feat", "--tag", "unknown"),
+      1
+    );
+    expectCliSuccess(await cli("repo", "fetch", "--all"));
+    expectCliSuccess(await cli("repo", "add", repo.tempRepo));
     expect(readRegistry(home).repos.find((repo) => repo.id === id)?.tags).toEqual(["frontend"]);
-    expect((await cli("repo", "tag", id, "--add", "Bad/Tag")).code).toBe(1);
+    expectCliCode(await cli("repo", "tag", id, "--add", "Bad/Tag"), 1);
   });
 
   it("previews the exact factual guidance without creating files and changes only future workspaces", async () => {
     const { home, id } = await fixture();
     const instructions = path.join(createTempDir(), "instructions.txt");
     writeFileSync(instructions, "Use the team conventions.\nDo not run a release.\n");
-    expect((await cli("guidance", "set", instructions)).code).toBe(0);
+    expectCliSuccess(await cli("guidance", "set", instructions));
     const before = readdirSync(home).sort();
-    const preview = await cli("guidance", "preview", ...createArgs("GUIDE-1", id));
-    expect(preview.code).toBe(0);
+    const preview = await cliSuccess("guidance", "preview", ...createArgs("GUIDE-1", id));
     expect(preview.envelope.data.content).toContain(`id: ${JSON.stringify(id)}`);
     expect(preview.envelope.data.content).toContain(
       "## Additional Instructions\n\nUse the team conventions."
     );
     expect(readdirSync(home).sort()).toEqual(before);
     expect(existsSync(path.join(home, "worktrees", "GUIDE-1"))).toBe(false);
-    expect((await cli("create", ...createArgs("GUIDE-1", id))).code).toBe(0);
+    expectCliSuccess(await cli("create", ...createArgs("GUIDE-1", id)));
     const agentsPath = path.join(home, "worktrees", "GUIDE-1", "AGENTS.md");
     expect(readFileSync(agentsPath, "utf8")).toBe(preview.envelope.data.content);
     expect(
@@ -211,10 +239,10 @@ describe("configuration, tags and future workspace guidance", () => {
         )
       ).ownership
     ).toBe("generated");
-    expect((await cli("guidance", "clear")).code).toBe(0);
+    expectCliSuccess(await cli("guidance", "clear"));
     expect(readFileSync(agentsPath, "utf8")).toBe(preview.envelope.data.content);
     expect(
-      (await cli("guidance", "preview", ...createArgs("GUIDE-2", id))).envelope.data.content
+      (await cliSuccess("guidance", "preview", ...createArgs("GUIDE-2", id))).envelope.data.content
     ).not.toContain("## Additional Instructions");
   });
 
@@ -228,7 +256,7 @@ describe("configuration, tags and future workspace guidance", () => {
       Buffer.alloc(65537, 65),
     ]) {
       writeFileSync(file, bytes);
-      expect((await cli("guidance", "set", file)).code).toBe(1);
+      expectCliCode(await cli("guidance", "set", file), 1);
       expect(readFileSync(path.join(home, "config.json"), "utf8")).toBe(configBefore);
     }
   });
@@ -248,7 +276,7 @@ describe("configuration, tags and future workspace guidance", () => {
       "relative",
       "C:relative",
     ]) {
-      expect((await cli("config", "set", "worktreesRoot", target)).code).toBe(1);
+      expectCliCode(await cli("config", "set", "worktreesRoot", target), 1);
       expect(readFileSync(path.join(home, "config.json"), "utf8")).toBe(before);
     }
   });
@@ -262,15 +290,16 @@ describe("configuration, tags and future workspace guidance", () => {
       process.platform === "win32" ? "junction" : "dir"
     );
     const before = readFileSync(path.join(home, "config.json"), "utf8");
-    expect(
-      (await cli("config", "set", "worktreesRoot", path.join(linkPath, "missing", "nested"))).code
-    ).toBe(1);
+    expectCliCode(
+      await cli("config", "set", "worktreesRoot", path.join(linkPath, "missing", "nested")),
+      1
+    );
     expect(readFileSync(path.join(home, "config.json"), "utf8")).toBe(before);
   });
 
   it("refuses future/unknown schemas and untrusted manifest roots without destructive writes", async () => {
     const { home, id } = await fixture();
-    await cli("create", ...createArgs("SCHEMA-1", id));
+    await cliSuccess("create", ...createArgs("SCHEMA-1", id));
     const configPath = path.join(home, "config.json");
     const registryPath = path.join(home, "repos.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
@@ -283,13 +312,13 @@ describe("configuration, tags and future workspace guidance", () => {
     ]) {
       const bytes = JSON.stringify(changed);
       writeFileSync(configPath, bytes);
-      expect((await cli("repo", "tag", id, "--add", "safe")).code).toBe(1);
+      expectCliCode(await cli("repo", "tag", id, "--add", "safe"), 1);
       expect(readFileSync(configPath, "utf8")).toBe(bytes);
       expect(readFileSync(registryPath, "utf8")).toBe(registry);
     }
     writeFileSync(configPath, JSON.stringify(config));
     writeFileSync(registryPath, JSON.stringify({ ...JSON.parse(registry), version: 3 }));
-    expect((await cli("repo", "tag", id, "--add", "safe")).code).toBe(1);
+    expectCliCode(await cli("repo", "tag", id, "--add", "safe"), 1);
     writeFileSync(registryPath, registry);
     const manifestPath = path.join(home, "workspaces", "SCHEMA-1.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -300,7 +329,7 @@ describe("configuration, tags and future workspace guidance", () => {
     ]) {
       const bytes = JSON.stringify(changed);
       writeFileSync(manifestPath, bytes);
-      expect((await cli("workspace", "remove", "SCHEMA-1")).code).toBe(1);
+      expectCliCode(await cli("workspace", "remove", "SCHEMA-1"), 1);
       expect(readFileSync(manifestPath, "utf8")).toBe(bytes);
       expect(existsSync(path.join(home, "worktrees", "SCHEMA-1", "AGENTS.md"))).toBe(true);
     }
@@ -316,7 +345,7 @@ describe("configuration, tags and future workspace guidance", () => {
       ["guidance", "clear"],
     ]) {
       const result = await cli(...args);
-      expect(result.code).toBe(1);
+      expectCliCode(result, 1);
       expect(result.envelope.error.reason).toBe("lock-held");
       expect(readFileSync(path.join(home, "config.json"), "utf8")).toBe(before);
     }
@@ -330,15 +359,13 @@ describe("configuration, tags and future workspace guidance", () => {
       const configPath = path.join(home, "config.json");
       const registryPath = path.join(home, "repos.json");
       const original = JSON.parse(readFileSync(configPath, "utf8"));
-      expect(
-        (
-          await cli(
-            ...(setting === "root"
-              ? ["config", "set", "worktreesRoot", createTempDir()]
-              : ["guidance", "clear"])
-          )
-        ).code
-      ).toBe(0);
+      expectCliSuccess(
+        await cli(
+          ...(setting === "root"
+            ? ["config", "set", "worktreesRoot", createTempDir()]
+            : ["guidance", "clear"])
+        )
+      );
       const raw = JSON.parse(readFileSync(registryPath, "utf8"));
       expect(raw).toMatchObject({ version: 2, repositories: expect.any(Array) });
       expect(raw).not.toHaveProperty("repos");
@@ -390,15 +417,13 @@ describe("configuration, tags and future workspace guidance", () => {
       });
       expect(readFileSync(registryPath, "utf8")).toBe(registryBytes);
       expect(existsSync(path.join(home, ".mutation.lock"))).toBe(false);
-      expect(
-        (
-          await cli(
-            ...(setting === "root"
-              ? ["config", "set", "worktreesRoot", root]
-              : ["guidance", "set", instructionsPath])
-          )
-        ).code
-      ).toBe(0);
+      expectCliSuccess(
+        await cli(
+          ...(setting === "root"
+            ? ["config", "set", "worktreesRoot", root]
+            : ["guidance", "set", instructionsPath])
+        )
+      );
       expect(JSON.parse(readFileSync(registryPath, "utf8"))).toMatchObject({
         version: 2,
         repositories: expect.any(Array),
@@ -411,12 +436,12 @@ describe("configuration, tags and future workspace guidance", () => {
 
   it("refuses init with migrated registry but missing configuration instead of resetting root identity", async () => {
     const { home } = await fixture();
-    await cli("config", "set", "worktreesRoot", createTempDir());
+    await cliSuccess("config", "set", "worktreesRoot", createTempDir());
     const registryPath = path.join(home, "repos.json");
     const before = readFileSync(registryPath, "utf8");
     rmSync(path.join(home, "config.json"));
     const result = await cli("init");
-    expect(result.code).toBe(1);
+    expectCliCode(result, 1);
     expect(result.envelope.error.message).toContain("version 2 registry remains");
     expect(existsSync(path.join(home, "config.json"))).toBe(false);
     expect(readFileSync(registryPath, "utf8")).toBe(before);
@@ -425,7 +450,7 @@ describe("configuration, tags and future workspace guidance", () => {
   it("rejects new Windows-invalid folder names before branch/worktree mutation", async () => {
     const { home, id } = await fixture();
     for (const ticket of ["CON", "nul.txt", "LPT1", "COM¹", "bad:name", "tail.", "tail "]) {
-      expect((await cli("create", ...createArgs(ticket, id))).code).toBe(1);
+      expectCliCode(await cli("create", ...createArgs(ticket, id)), 1);
     }
     expect(readdirSync(path.join(home, "workspaces"))).toEqual([]);
   });
