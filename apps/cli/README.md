@@ -155,7 +155,15 @@ Repository mutations validate registry paths against both `reposRoot` and, for l
 
 Git commands drain both output streams and request termination after 120 seconds by default. Set `OUTPOST_GIT_TIMEOUT_MS` to a positive number of milliseconds for slower remotes. Diagnostics retain at most 256 KiB per stream, append lines without expanding them into function arguments, and mark truncation; commands requiring stdout fail rather than consume truncated or failed output.
 
-On Windows, Outpost passes `-c core.longpaths=true` to its Git commands so managed paths can exceed Git's default path limit. This does not change system, global or repository Git configuration. Other programs and manually run Git commands retain their own path limits. Root setters return canonical paths, which can expand Windows short-name aliases such as `RUNNER~1`; existing worktrees are never moved.
+On Windows, Outpost passes `-c core.longpaths=true` to its Git commands. Internal pack and administrative files may exceed 260 characters. Git still has startup and working-directory limits, so Outpost checks canonical full paths before clone, fetch, branch/worktree changes, removal, or a root-setting migration:
+
+- Managed Git directories and each checkout's `.git` path must fit within 220 UTF-8 bytes.
+- The invoking directory, source checkout, local file-remote directory, workspace checkout and derived worktree administrative directory must fit within 259 UTF-16 code units. The administrative-directory ceiling is a conservative supported limit.
+- Root setting reserves space for the smallest ticket/repository layout. Creation checks the actual selected names and the administrative name Git may choose, including collision suffixes. A root accepted for short names may refuse a longer ticket or repository name.
+
+These budgets follow Git for Windows' explicit `GIT_DIR` guard and fixed cwd buffers. Unicode can consume several UTF-8 bytes per character. Junctions and short-name aliases such as `RUNNER~1` are resolved before counting. The full spelling passed to Git must also fit, so neither a short alias to a deep target nor a long alias to a short target bypasses the budget. A refusal reports the affected path, count and budget. Choose a shorter user-owned Outpost home for new imports or `worktreesRoot` for future workspaces, and run Git operations from a shorter directory. Keep the original home to inspect existing work. Metadata inspection and history remain available, and changing the future root never moves old worktrees.
+
+Outpost does not create path aliases, move existing roots, or change system, global or repository Git configuration. Other programs, hooks, submodules and manually run Git commands retain their own limits. See [the path-budget derivation](../../docs/ARCHITECTURE.md#windows-git-path-budgets) for the supported boundary.
 
 Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branches in `refs/heads` and their commits survive fetch and repository re-import. Older mirrors migrate on their next fetch without deleting or rewriting local refs. Create prefers a fetched remote base, with a local branch fallback for existing mirrors and workspace branches.
 

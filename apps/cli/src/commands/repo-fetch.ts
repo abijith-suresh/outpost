@@ -10,6 +10,11 @@ import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-detail
 import { verifyManagedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import type { CommandOutput, DiagnosticTruncation } from "../types.js";
+import {
+  validateWindowsInvocationCwd,
+  validateWindowsLocalTransport,
+  validateWindowsManagedGitDir,
+} from "../windows-git-path.js";
 import { fetchBareRepository, type RepoMirrorDiagnostic } from "./repo-mirror.js";
 
 export class RepoFetchError extends Schema.TaggedError<RepoFetchError>()("RepoFetchError", {
@@ -140,6 +145,11 @@ export function runRepoFetch(
       return yield* Effect.fail(usageError());
     }
 
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const outpostHome = yield* resolveOutpostHome();
 
     const config = yield* loadConfig(outpostHome).pipe(
@@ -158,6 +168,19 @@ export function runRepoFetch(
         (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
       )
     );
+    // Refuse an unsupported target before any repository's refspec or refs change.
+    for (const repo of registry.repos) {
+      yield* validateWindowsManagedGitDir(repo.managedRepoPath).pipe(
+        Effect.mapError(
+          (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+        )
+      );
+      yield* validateWindowsLocalTransport(repo.remoteUrl, repo.sourceRepoPath).pipe(
+        Effect.mapError(
+          (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
+        )
+      );
+    }
     yield* mutation
       .record({
         action: "fetch-repositories",

@@ -27,6 +27,7 @@ import {
   validateWorktreeGuidancePath,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsInvocationCwd, validateWindowsWorktreePlan } from "../windows-git-path.js";
 import type { GeneratedAgentsFile } from "../workspace-agents.js";
 import { deleteAgentsIfSnapshotMatches, generateAgentsMarkdown } from "../workspace-agents.js";
 import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
@@ -840,6 +841,11 @@ export function runCreate(
       yield* validateCreateArgs(parsedArgs);
     }
 
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
     yield* validateBranchName(branchName);
 
@@ -889,6 +895,15 @@ export function runCreate(
       )
     );
 
+    for (const repo of selectedRepos)
+      yield* validateWindowsWorktreePlan(
+        repo.managedRepoPath,
+        `${ticketDirectory}/${repo.name}`
+      ).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     for (const repo of selectedRepos) {
       yield* validateWorktreeGuidancePath(ticketDirectory, `${ticketDirectory}/${repo.name}`).pipe(
         Effect.mapError((error) => usageError(error.message))

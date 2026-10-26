@@ -19,6 +19,12 @@ import { getManagedRepoPath, resolveRemoteIdentity } from "../remote-identity.js
 import { DiagnosticTruncationSchema } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
 import {
+  validateWindowsGitPath,
+  validateWindowsInvocationCwd,
+  validateWindowsLocalTransport,
+  validateWindowsManagedGitDir,
+} from "../windows-git-path.js";
+import {
   cloneBareRepository,
   fetchBareRepository,
   RepoMirrorDiagnosticSchema,
@@ -137,6 +143,11 @@ export function runRepoAdd(
 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const outpostHome = yield* resolveOutpostHome();
     const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
@@ -149,6 +160,11 @@ export function runRepoAdd(
       )
     );
     const sourceRepoPath = path.resolve(inputPath);
+    yield* validateWindowsGitPath(sourceRepoPath, "cwd").pipe(
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const exists = yield* fs
       .exists(sourceRepoPath)
       .pipe(
@@ -215,6 +231,11 @@ export function runRepoAdd(
         (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
       )
     );
+    yield* validateWindowsLocalTransport(identity.transportUrl, sourceRepoPath).pipe(
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const derivedManagedRepoPath = yield* getManagedRepoPath(config.reposRoot, identity).pipe(
       Effect.mapError(
         (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
@@ -240,6 +261,11 @@ export function runRepoAdd(
         lastFetchedAt: "",
       }
     ).pipe(
+      Effect.mapError(
+        (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
+      )
+    );
+    yield* validateWindowsManagedGitDir(managedRepoPath).pipe(
       Effect.mapError(
         (error) => new RepoAddError({ message: error.message, ...domainDetails(error) })
       )

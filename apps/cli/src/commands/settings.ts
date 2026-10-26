@@ -21,6 +21,7 @@ import {
   resolveCanonicalPath,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsCheckout } from "../windows-git-path.js";
 import { renderAgentsMarkdown } from "../workspace-agents.js";
 import { runCreate } from "./create.js";
 
@@ -90,6 +91,9 @@ export function runConfigSet(key: string, value: string) {
           "worktreesRoot must not nest within or contain a previous workspace root."
         );
     }
+    // Ticket/member names are chosen later. Reserve the smallest valid layout;
+    // creation rechecks the exact paths and derived Git administrative directory.
+    yield* validateWindowsCheckout(path.join(root, "a", "a"));
     const next = {
       ...config,
       worktreesRoot: root,

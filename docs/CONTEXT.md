@@ -37,6 +37,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 - **No native binary dependencies** — uses system `git` CLI only
 - **TypeScript strict mode** with ES modules
 - **Native Windows PowerShell support** without WSL; platform-specific tests and installed-package checks must distinguish CI evidence from checks on the owner's laptop.
+- **Bounded Windows Git paths.** Command-scoped long-path support covers Git's internal files, while repository paths, checkout working directories and worktree administrative paths must fit conservative, source-derived Git for Windows budgets. Validate canonical full paths before mutation, count bytes or UTF-16 units according to the relevant Git/Windows API, and report an actionable shorter-root choice when unsupported. Never move existing state, create aliases or change global settings to make a path fit. Existing workspaces and history remain inspectable even when a requested mutation is unsupported.
 
 ## UX Principles
 
@@ -54,6 +55,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 5. All commands that inspect state support `--json` for scripting.
 6. An agent can change the future worktree root and still inspect and safely remove old workspaces at their original locations. Unsupported metadata versions fail closed before mutation.
 7. Guidance preview retains the generated facts, and repository tag selection freezes concrete IDs without changing old workspaces.
+8. Native Windows acceptance includes successful operations on real internal Git files beyond 260 characters and pre-mutation refusal of unsupported repository, checkout and derived administrative paths. Boundary, Unicode, space and junction cases preserve source commits, refs, manifests, guidance, configuration, registry and unrelated files.
 
 ## Delivery phases
 

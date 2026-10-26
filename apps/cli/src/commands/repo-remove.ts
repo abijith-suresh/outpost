@@ -17,6 +17,7 @@ import { validateManagedRepoPath, verifyManagedRepository } from "../managed-rep
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsInvocationCwd, validateWindowsManagedGitDir } from "../windows-git-path.js";
 import {
   listManifestTickets,
   readManifest,
@@ -55,6 +56,11 @@ export function runRepoRemove(
     );
 
     const fs = yield* FileSystem.FileSystem;
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const outpostHome = yield* resolveOutpostHome();
 
     const config = yield* loadConfig(outpostHome).pipe(
@@ -87,6 +93,11 @@ export function runRepoRemove(
       );
     }
 
+    yield* validateWindowsManagedGitDir(existingRepo.managedRepoPath).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const tickets = yield* listManifestTickets(outpostHome).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })

@@ -177,7 +177,7 @@ GitHub Actions run on every pull request and push to `main`:
   matrix job builds the CLI, runs focused settings/path regressions, packs and
   installs the actual tarball, then exercises installed commands and offline
   schemas from an unrelated directory. Windows uses the npm-generated `.cmd`
-  shim through native PowerShell, with spaces and Unicode in fixture paths.
+  shim through native PowerShell, with spaces and Unicode in fixture paths. Native acceptance includes real internal Git files longer than 260 characters, canonical path-budget boundaries, junction resolution and pre-mutation preservation for unsupported paths. A passing Linux run does not replace this native installed-artifact check.
   This matrix does not claim the entire POSIX process-shutdown suite is portable
   or that the owner's managed laptop has been tested.
 - `Website build (Node 24)` remains local because website compilation is an

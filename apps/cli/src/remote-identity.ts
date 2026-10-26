@@ -227,6 +227,15 @@ function parseLocalRemotePath(
   });
 }
 
+/** Classify transport syntax without requiring the original checkout or remote to exist. */
+export function resolveLocalRemoteTransportPath(remoteUrl: string, sourceRepoPath: string) {
+  return parseNetworkRemote(remoteUrl).pipe(
+    Effect.flatMap((network) =>
+      network ? Effect.succeed(undefined) : parseLocalRemotePath(remoteUrl, sourceRepoPath)
+    )
+  );
+}
+
 function buildLocalIdentity(
   remoteUrl: string,
   sourceRepoPath: string

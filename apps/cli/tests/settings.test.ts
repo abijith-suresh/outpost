@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdirSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { NodePath, NodeServices } from "@effect/platform-node";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -17,6 +17,7 @@ import {
   createManagedRepoFixture,
   createTempDir,
   existsSync,
+  localManagedRepoPath,
   localRepoId,
   mkdirSync,
   path,
@@ -107,41 +108,274 @@ describe("configuration, tags and future workspace guidance", () => {
     expect(globalSetting()).toEqual(globalBefore);
   });
 
-  it("runs the lifecycle in a managed Git path longer than 260 characters without changing configuration", async () => {
-    const outer = createTempDir();
-    const home = path.join(outer, "long-managed-root-".repeat(5), "nested-space-café-".repeat(4));
-    mkdirSync(home, { recursive: true });
+  it("clones real pack files beyond 260 characters within the supported Git directory budget", async () => {
+    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+    const outer = realpathSync.native(createTempDir());
+    const baseline = localManagedRepoPath(path.join(outer, "h"), repo.tempRemote);
+    const padding = 220 - Buffer.byteLength(baseline, "utf8");
+    expect(padding).toBeGreaterThanOrEqual(0);
+    const home = path.join(outer, `h${"x".repeat(padding)}`);
+    mkdirSync(home);
     process.env.OUTPOST_HOME = home;
     await cliSuccess("init");
     const configPath = path.join(home, "config.json");
     const configBytes = readFileSync(configPath, "utf8");
-    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+    const sourceConfig = readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8");
     const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim();
     await cliSuccess("repo", "add", repo.tempRepo);
     const record = readRegistry(home).repos[0];
-    expect(record.managedRepoPath.length).toBeGreaterThan(260);
-    const git = (...args: string[]) =>
-      Effect.runPromise(
-        commandString(gitCommand(...args)).pipe(Effect.provide(NodeServices.layer))
-      );
+    expect(Buffer.byteLength(record.managedRepoPath, "utf8")).toBe(220);
+    const packDirectory = path.join(record.managedRepoPath, "objects", "pack");
+    const packs = readdirSync(packDirectory).filter((name) => name.endsWith(".pack"));
+    expect(packs.length).toBeGreaterThan(0);
+    for (const pack of packs) expect(path.join(packDirectory, pack).length).toBeGreaterThan(260);
     const localConfigPath = path.join(record.managedRepoPath, "config");
     const localConfigBytes = readFileSync(localConfigPath, "utf8");
     const created = await cliSuccess("create", ...createArgs("LONG-1", record.id));
     const workspacePath = created.envelope.data.ticketDirectory;
     const worktreePath = created.envelope.data.worktrees[0].path;
-    expect((await git("-C", worktreePath, "rev-parse", "HEAD")).trim()).toBe(initialCommit);
+    expect(
+      execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()
+    ).toBe(initialCommit);
     expect((await cliSuccess("workspace", "show", "LONG-1")).envelope.data.status).toBe("ready");
     expect((await cliSuccess("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
     await cliSuccess("workspace", "remove", "LONG-1");
     expect(existsSync(workspacePath)).toBe(false);
     expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
     expect(
-      (await git("--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1")).trim()
+      execFileSync(
+        "git",
+        ["--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1"],
+        { encoding: "utf8" }
+      ).trim()
     ).toBe(initialCommit);
     expect(readFileSync(configPath, "utf8")).toBe(configBytes);
     expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
+    expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
+    const beyondHome = `${home}b`;
+    mkdirSync(beyondHome);
+    process.env.OUTPOST_HOME = beyondHome;
+    await cliSuccess("init");
+    const beforeRefusal = ["config.json", "repos.json"].map((file) =>
+      readFileSync(path.join(beyondHome, file), "utf8")
+    );
+    const beyond = await cli("repo", "add", repo.tempRepo);
+    if (process.platform === "win32") {
+      expectCliCode(beyond, 1);
+      expect(beyond.envelope.error.message).toContain("221 UTF-8 bytes; maximum 220");
+      expect(
+        ["config.json", "repos.json"].map((file) =>
+          readFileSync(path.join(beyondHome, file), "utf8")
+        )
+      ).toEqual(beforeRefusal);
+      expect(existsSync(localManagedRepoPath(beyondHome, repo.tempRemote))).toBe(false);
+    } else expectCliSuccess(beyond);
+  });
+
+  it("refuses unsupported canonical roots before import or config migration, preserving source and metadata", async () => {
+    const outer = realpathSync.native(createTempDir());
+    const home = path.join(outer, "long-managed-root-".repeat(5), "nested-space-café-".repeat(4));
+    mkdirSync(home, { recursive: true });
+    process.env.OUTPOST_HOME = home;
+    await cliSuccess("init");
+    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+    const paths = [
+      path.join(home, "config.json"),
+      path.join(home, "repos.json"),
+      path.join(repo.tempRepo, ".git", "config"),
+      path.join(repo.tempRepo, ".git", "HEAD"),
+    ];
+    const bytes = paths.map((file) => readFileSync(file, "utf8"));
+    const sentinel = path.join(home, "repos", "sentinel.txt");
+    writeFileSync(sentinel, "preserve unowned data");
+    const added = await cli("repo", "add", repo.tempRepo);
+    if (process.platform === "win32") {
+      expectCliCode(added, 1);
+      expect(added.envelope.error).toMatchObject({ reason: "invalid-arguments", retryable: false });
+      expect(added.envelope.error.message).toContain("UTF-8 bytes; maximum 220");
+      expect(added.envelope.error.action).toContain("shorter user-owned");
+      expect(paths.map((file) => readFileSync(file, "utf8"))).toEqual(bytes);
+      expect(existsSync(localManagedRepoPath(home, repo.tempRemote))).toBe(false);
+    } else expectCliSuccess(added);
+    expect(readFileSync(sentinel, "utf8")).toBe("preserve unowned data");
+
+    const shortHome = createTempDir();
+    process.env.OUTPOST_HOME = shortHome;
+    await cliSuccess("init");
+    const configPath = path.join(shortHome, "config.json");
+    const registryPath = path.join(shortHome, "repos.json");
+    const before = [configPath, registryPath].map((file) => readFileSync(file, "utf8"));
+    const deepTarget = path.join(outer, "canonical café ", "deep-".repeat(40));
+    mkdirSync(deepTarget, { recursive: true });
+    const junction = path.join(outer, "j");
+    symlinkSync(deepTarget, junction, process.platform === "win32" ? "junction" : "dir");
+    const set = await cli("config", "set", "worktreesRoot", path.join(junction, "missing"));
+    if (process.platform === "win32") {
+      expectCliCode(set, 1);
+      expect(set.envelope.error.message).toContain(realpathSync.native(deepTarget));
+      expect([configPath, registryPath].map((file) => readFileSync(file, "utf8"))).toEqual(before);
+      expect(JSON.parse(before[0]).version).toBe(1);
+      expect(existsSync(path.join(deepTarget, "missing"))).toBe(false);
+    } else expectCliSuccess(set);
+  });
+
+  it("keeps unsupported existing history visible and refuses all affected mutations before changing any member", async () => {
+    const { home, repo, id } = await fixture();
+    const other = await createManagedRepoFixture({ defaultBranch: "main" });
+    await cliSuccess("repo", "add", other.tempRepo);
+    const otherId = localRepoId(other.tempRemote);
+    await cliSuccess("create", ...createArgs("PRESERVE-1", otherId), "--repo", id);
+    const registryPath = path.join(home, "repos.json");
+    const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+    const oldRecord = registry.repos.find((record: { id: string }) => record.id === id);
+    const originalManaged = oldRecord.managedRepoPath;
+    const otherRecord = registry.repos.find((record: { id: string }) => record.id === otherId);
+    // A fetch of the first member would visibly rewrite these unsafe legacy settings.
+    execFileSync("git", [
+      "--git-dir",
+      otherRecord.managedRepoPath,
+      "config",
+      "--replace-all",
+      "remote.origin.fetch",
+      "+refs/*:refs/*",
+    ]);
+    execFileSync("git", [
+      "--git-dir",
+      otherRecord.managedRepoPath,
+      "config",
+      "remote.origin.mirror",
+      "true",
+    ]);
+
+    const deepManaged = path.join(home, "repos", "deep-".repeat(35), "space café", "repo.git");
+    cpSync(originalManaged, deepManaged, { recursive: true });
+    oldRecord.managedRepoPath = deepManaged;
+    // Put the unsupported member last to exercise fetch-all's complete preflight.
+    registry.repos = [
+      ...registry.repos.filter((record: { id: string }) => record.id !== id),
+      oldRecord,
+    ];
+    writeFileSync(registryPath, JSON.stringify(registry));
+    const manifestPath = path.join(home, "workspaces", "PRESERVE-1.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const affectedMember = manifest.repositories.find((member: { id: string }) => member.id === id);
+    affectedMember.managedPath = path.relative(path.join(home, "repos"), deepManaged);
+    expect(manifest.repositories.at(-1).id).toBe(id);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    const agentsPath = path.join(home, "worktrees", "PRESERVE-1", "AGENTS.md");
+    const sentinel = path.join(deepManaged, "sentinel.txt");
+    writeFileSync(sentinel, "preserve branch history and user data");
+    const preservedPaths = [
+      path.join(home, "config.json"),
+      registryPath,
+      manifestPath,
+      agentsPath,
+      sentinel,
+      path.join(deepManaged, "config"),
+      path.join(deepManaged, "packed-refs"),
+      path.join(deepManaged, "refs", "heads", "feat", "PRESERVE-1"),
+      path.join(originalManaged, "config"),
+      path.join(repo.tempRepo, ".git", "config"),
+      path.join(otherRecord.managedRepoPath, "config"),
+      path.join(otherRecord.managedRepoPath, "refs", "heads", "feat", "PRESERVE-1"),
+      path.join(home, "worktrees", "PRESERVE-1", otherRecord.name, ".git"),
+      path.join(home, "worktrees", "PRESERVE-1", otherRecord.name, "README.md"),
+    ];
+    const before = preservedPaths.map((file) => readFileSync(file, "utf8"));
+    const branchBefore = execFileSync("git", ["--git-dir", originalManaged, "show-ref"], {
+      encoding: "utf8",
+    });
+    expect(
+      (await cliSuccess("repo", "list")).envelope.data.repos.some(
+        (record: { id: string }) => record.id === id
+      )
+    ).toBe(true);
+    expect(
+      (await cliSuccess("workspace", "list")).envelope.data.workspaces.some(
+        (workspace: { ticket: string }) => workspace.ticket === "PRESERVE-1"
+      )
+    ).toBe(true);
+    expect((await cliSuccess("workspace", "show", "PRESERVE-1")).envelope.data.ticket).toBe(
+      "PRESERVE-1"
+    );
+    if (process.platform === "win32") {
+      for (const args of [
+        ["repo", "add", repo.tempRepo],
+        ["repo", "fetch", "--all"],
+        ["create", ...createArgs("REFUSED-1", otherId), "--repo", id],
+        ["repo", "remove", id],
+        ["workspace", "remove", "PRESERVE-1"],
+      ]) {
+        const result = await cli(...args);
+        expectCliCode(result, 1);
+        expect(result.envelope.error).toMatchObject({
+          reason: "invalid-arguments",
+          retryable: false,
+        });
+        expect(result.envelope.error.message).toContain("maximum 220");
+        expect(preservedPaths.map((file) => readFileSync(file, "utf8"))).toEqual(before);
+      }
+      expect(existsSync(path.join(home, "worktrees", "REFUSED-1"))).toBe(false);
+      expect(existsSync(path.join(home, "workspaces", "REFUSED-1.json"))).toBe(false);
+      expect(
+        existsSync(path.join(otherRecord.managedRepoPath, "refs", "heads", "feat", "REFUSED-1"))
+      ).toBe(false);
+      expect(
+        execFileSync("git", ["--git-dir", originalManaged, "show-ref"], { encoding: "utf8" })
+      ).toBe(branchBefore);
+    } else {
+      // Windows enforcement is covered with native processes in the Windows CI leg.
+      // POSIX still proves the legacy metadata remains readable without migrating it.
+      expect(preservedPaths.map((file) => readFileSync(file, "utf8"))).toEqual(before);
+    }
+    // Repair the future default without reinterpreting the unsupported old records.
+    await cliSuccess("config", "set", "worktreesRoot", createTempDir());
+    expect(preservedPaths.slice(2).map((file) => readFileSync(file, "utf8"))).toEqual(
+      before.slice(2)
+    );
+    expect(
+      (await cliSuccess("workspace", "show", "PRESERVE-1")).envelope.data.ticketDirectory
+    ).toBe(path.join(home, "worktrees", "PRESERVE-1"));
+    expect(
+      (await cliSuccess("repo", "list")).envelope.data.repos.some(
+        (record: { id: string }) => record.id === id
+      )
+    ).toBe(true);
+  });
+
+  it("refuses mutating Git from an unsupported canonical cwd while metadata remains available", async () => {
+    const { home } = await fixture();
+    const originalCwd = process.cwd();
+    const outer = realpathSync.native(createTempDir());
+    const prefix = path.join(outer, "cwd café ");
+    const tooLongCwd = `${prefix}${"x".repeat(260 - prefix.length)}`;
+    mkdirSync(tooLongCwd);
+    const files = [path.join(home, "config.json"), path.join(home, "repos.json")];
+    const before = files.map((file) => readFileSync(file, "utf8"));
+    try {
+      process.chdir(tooLongCwd);
+      await cliSuccess("config", "show");
+      const result = await cli("repo", "fetch", "--all");
+      if (process.platform === "win32") {
+        expectCliCode(result, 1);
+        expect(result.envelope.error.message).toContain("260 UTF-16 code units; maximum 259");
+        expect(result.envelope.error.action).toContain("current directory");
+        expect(files.map((file) => readFileSync(file, "utf8"))).toEqual(before);
+      } else expectCliSuccess(result);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("fetches a local remote after its original source checkout is removed", async () => {
+    const { home, repo, id } = await fixture();
+    rmSync(repo.tempRepo, { recursive: true });
+    await cliSuccess("repo", "fetch", "--all");
+    expect(readRegistry(home).repos.find((record) => record.id === id)?.sourceRepoPath).toBe(
+      repo.tempRepo
+    );
   });
 
   it("keeps legacy and newer workspace roots stable across repeated root changes, inspection and removal", async () => {

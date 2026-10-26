@@ -15,6 +15,10 @@ import {
   validateSemanticIdentifier,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import {
+  validateWindowsExistingWorktree,
+  validateWindowsInvocationCwd,
+} from "../windows-git-path.js";
 import { classifyAgentsOwnership, deleteAgentsIfSnapshotMatches } from "../workspace-agents.js";
 import {
   acquireTicketLock,
@@ -103,6 +107,11 @@ export function runWorkspaceRemove(
     );
 
     const fs = yield* FileSystem.FileSystem;
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const outpostHome = yield* resolveOutpostHome();
     const mutation = dryRun
       ? undefined
@@ -175,6 +184,19 @@ export function runWorkspaceRemove(
             const workspaceDir = yield* resolveManifestWorkspacePath(config, manifest).pipe(
               Effect.mapError(toMapError)
             );
+
+            // Validate every member before prompting or mutating any worktree/guidance.
+            for (const repo of manifest.repositories) {
+              const managed = yield* resolveManagedPath(config.reposRoot, repo.managedPath).pipe(
+                Effect.mapError(toMapError)
+              );
+              const checkout = yield* resolveWorktreePath(workspaceDir, repo.worktreePath).pipe(
+                Effect.mapError(toMapError)
+              );
+              yield* validateWindowsExistingWorktree(managed, checkout).pipe(
+                Effect.mapError(toMapError)
+              );
+            }
 
             // --- AGENTS.md classification ---
             const agentsFilePath = yield* resolvePathWithinRoot(workspaceDir, "AGENTS.md").pipe(

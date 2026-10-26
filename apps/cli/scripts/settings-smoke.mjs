@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Installed-artifact acceptance: only disposable local Git repositories. No
@@ -44,11 +44,12 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   };
   const refuse = (args) => {
     const result = runInstalled([...args, "--json"], env);
-    assert.equal(result.status, 1, args.join(" "));
+    assert.equal(result.status, 1, `${args.join(" ")}\n${result.stderr}\n${result.stdout}`);
     assert.equal(result.stdout, "");
     const output = JSON.parse(result.stderr);
     validateInstalled(output.command, output);
     assert.equal(output.ok, false);
+    return output;
   };
   call(["init"]);
   call(["repo", "add", source]);
@@ -72,6 +73,38 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   delete legacyManifest.worktreesRoot;
   writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
   const legacyBytes = readFileSync(manifestPath);
+  if (process.platform === "win32") {
+    // Exercise the installed .cmd shim and native canonicalization before the
+    // first v2 migration. A rejected root must preserve the v1 state bytewise.
+    const canonicalFixture = realpathSync.native(fixture);
+    const unsupportedRoot = join(canonicalFixture, "unsupported café ".repeat(9), "future");
+    mkdirSync(unsupportedRoot, { recursive: true });
+    const sentinel = join(unsupportedRoot, "keep.txt");
+    writeFileSync(sentinel, "unowned root sentinel\n");
+    const configPath = join(home, "config.json");
+    const registryPath = join(home, "repos.json");
+    const configBefore = readFileSync(configPath);
+    const registryBefore = readFileSync(registryPath);
+    const refsBefore = git(["--git-dir", repo.managedRepoPath, "show-ref"]);
+    const sourceConfigBefore = readFileSync(join(source, ".git", "config"));
+    const refused = refuse(["config", "set", "worktreesRoot", unsupportedRoot]);
+    assert.equal(refused.error.reason, "invalid-arguments");
+    assert.equal(refused.error.retryable, false);
+    assert.match(refused.error.message, /UTF-8 bytes; maximum 220/);
+    assert.match(refused.error.action, /shorter user-owned/);
+    assert.deepEqual(readFileSync(configPath), configBefore);
+    assert.deepEqual(readFileSync(registryPath), registryBefore);
+    assert.deepEqual(readFileSync(manifestPath), legacyBytes);
+    assert.deepEqual(readFileSync(agentsPath), agentsBefore);
+    assert.deepEqual(readFileSync(join(source, ".git", "config")), sourceConfigBefore);
+    assert.equal(git(["--git-dir", repo.managedRepoPath, "show-ref"]), refsBefore);
+    assert.equal(git(["rev-parse", "HEAD"], oldWorktree), oldHead);
+    assert.equal(readFileSync(sentinel, "utf8"), "unowned root sentinel\n");
+    assert.equal(call(["workspace", "show", "OLD-1"]).status, "ready");
+    process.stdout.write(
+      "Installed Windows path refusal preserved legacy state and branch-only work\n"
+    );
+  }
   const nextRoot = call(["config", "set", "worktreesRoot", requestedRoot]).value;
   assert.deepEqual(readFileSync(manifestPath), legacyBytes, "root change rewrote legacy state");
   assert.deepEqual(readFileSync(agentsPath), agentsBefore, "root change overwrote guidance");
