@@ -120,8 +120,10 @@ The checked Git adapter adds command-scoped `-c core.longpaths=true` on Windows.
 | --- | --- | --- |
 | Managed bare Git directory | 220 UTF-8 bytes | Git's explicit `GIT_DIR` startup guard rejects `strlen(GIT_DIR) > PATH_MAX - 40`; the MinGW default `PATH_MAX` is 260. Clone exports its canonical Git directory to internal children. |
 | Checkout `.git` path | 220 UTF-8 bytes | Worktree add supplies this path as its checkout child's `GIT_DIR`, before Git resolves the back-pointer to the administrative directory. |
-| Invocation cwd, source checkout, local file-remote directory and workspace checkout | 259 UTF-16 code units | `mingw_getcwd` uses `wchar_t[MAX_PATH]` and refuses a result at least 260 units long, including room for its terminating NUL. |
+| Invocation cwd, source checkout, local file-remote directory and workspace checkout | 258 UTF-16 code units | Win32 process creation needs a trailing separator and NUL within `MAX_PATH`. Git's separate `mingw_getcwd` buffer admits 259 units, but native Node spawning already fails at that length. |
 | Derived worktree administrative directory | 259 UTF-16 code units | Outpost conservatively keeps Git directories within the cwd-safe ceiling. This is a supported directory bound, not a claim that every internal file operation has a 259-unit limit. |
+
+[Microsoft's SetCurrentDirectory documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setcurrentdirectory) describes the trailing-separator and NUL reservation for process creation. Native Node CI rejected a direct 259-unit cwd before Git started. The process ceiling reserves both units rather than relying on short-name substitution.
 
 The derivation uses [Git for Windows setup.c](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/setup.c), [worktree.c](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/builtin/worktree.c), [mingw_getcwd](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/compat/mingw.c), and [MinGW limits.h](https://github.com/mingw-w64/mingw-w64/blob/master/mingw-w64-headers/crt/limits.h). The contract is deliberately bounded; it does not claim arbitrary deep-root support through `core.longpaths`.
 

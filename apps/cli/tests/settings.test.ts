@@ -352,15 +352,18 @@ describe("configuration, tags and future workspace guidance", () => {
     const prefix = path.join(outer, "cwd café ");
     const tooLongCwd = `${prefix}${"x".repeat(260 - prefix.length)}`;
     mkdirSync(tooLongCwd);
+    const alias = path.join(outer, "cwd-alias");
+    symlinkSync(tooLongCwd, alias, process.platform === "win32" ? "junction" : "dir");
     const files = [path.join(home, "config.json"), path.join(home, "repos.json")];
     const before = files.map((file) => readFileSync(file, "utf8"));
     try {
-      process.chdir(tooLongCwd);
+      process.chdir(alias);
+      expect(realpathSync.native(process.cwd())).toBe(tooLongCwd);
       await cliSuccess("config", "show");
       const result = await cli("repo", "fetch", "--all");
       if (process.platform === "win32") {
         expectCliCode(result, 1);
-        expect(result.envelope.error.message).toContain("260 UTF-16 code units; maximum 259");
+        expect(result.envelope.error.message).toContain("260 UTF-16 code units; maximum 258");
         expect(result.envelope.error.action).toContain("current directory");
         expect(files.map((file) => readFileSync(file, "utf8"))).toEqual(before);
       } else expectCliSuccess(result);

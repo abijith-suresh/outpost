@@ -13,7 +13,9 @@ export const WINDOWS_GIT_DIR_BYTES = 220;
 // Its sole direct caller, strbuf_getcwd(), grows the UTF-8 output buffer on ERANGE.
 // Apply the same cwd-safe ceiling conservatively to worktree admin directories;
 // this does not assert a MAX_PATH limit on every internal file operation.
-export const WINDOWS_GIT_CWD_UNITS = 259;
+// Win32 process creation additionally reserves a trailing separator, then NUL.
+export const WINDOWS_GIT_CWD_UNITS = 258;
+export const WINDOWS_GIT_ADMIN_UNITS = 259;
 
 export class WindowsGitPathError extends Schema.TaggedError<WindowsGitPathError>()(
   "WindowsGitPathError",
@@ -29,7 +31,11 @@ export type WindowsGitPathKind = "gitdir" | "cwd" | "administrative-directory";
 export function validateWindowsGitPathLength(value: string, kind: WindowsGitPathKind) {
   const bytes = kind === "gitdir";
   const count = bytes ? Buffer.byteLength(value, "utf8") : value.length;
-  const budget = bytes ? WINDOWS_GIT_DIR_BYTES : WINDOWS_GIT_CWD_UNITS;
+  const budget = bytes
+    ? WINDOWS_GIT_DIR_BYTES
+    : kind === "cwd"
+      ? WINDOWS_GIT_CWD_UNITS
+      : WINDOWS_GIT_ADMIN_UNITS;
   const unit = bytes ? "UTF-8 bytes" : "UTF-16 code units";
   return count <= budget
     ? Effect.void

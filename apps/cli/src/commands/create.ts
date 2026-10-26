@@ -5,7 +5,7 @@ import * as Path from "effect/Path";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
-import { commandExitCode, commandString, gitCommand } from "../child-process.js";
+import { commandExitCode, commandResult, commandString, gitCommand } from "../child-process.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";
 import {
@@ -509,18 +509,22 @@ function createBranch(
 function createWorktree(
   plan: CreatePlan
 ): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
-  return commandExitCode(
+  return commandResult(
     gitCommand("--git-dir", plan.managedRepoPath, "worktree", "add", plan.worktreePath, plan.branch)
   ).pipe(
     Effect.mapError(
-      (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      (error) =>
+        new CreateError({
+          message: `Failed to create worktree for repo ${plan.repoId}: ${error.message}`,
+          ...domainDetails(error),
+        })
     ),
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
+    Effect.flatMap((result) =>
+      result.exitCode === 0
         ? Effect.void
         : Effect.fail(
             new CreateError({
-              message: `Failed to create worktree for repo ${plan.repoId}.`,
+              message: `Failed to create worktree for repo ${plan.repoId} (exit status ${result.exitCode}): ${result.stderr.text}${result.stderr.truncated ? " [stderr truncated]" : ""}`,
             })
           )
     )

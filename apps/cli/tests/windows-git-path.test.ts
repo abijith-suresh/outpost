@@ -47,13 +47,18 @@ describe("bounded Windows Git paths", () => {
       "222 UTF-8 bytes"
     );
     for (const kind of ["cwd", "administrative-directory"] as const) {
+      const maximum = kind === "cwd" ? 258 : 259;
       expect(
-        Exit.isSuccess(await run(validateWindowsGitPathLength(`${"😀".repeat(129)}a`, kind)))
+        Exit.isSuccess(
+          await run(
+            validateWindowsGitPathLength(`${"😀".repeat(129)}${maximum % 2 ? "a" : ""}`, kind)
+          )
+        )
       ).toBe(true);
       rejection(
         await run(validateWindowsGitPathLength("😀".repeat(130), kind)),
         "260 UTF-16 code units",
-        "maximum 259"
+        `maximum ${maximum}`
       );
     }
   });
@@ -84,12 +89,12 @@ describe("bounded Windows Git paths", () => {
     );
   });
 
-  it("checks real Unicode/space current directories at and beyond the native 259-unit budget", async () => {
+  it("checks real Unicode/space current directories at and beyond the native process budget", async () => {
     const outer = realpathSync.native(createTempDir());
     const prefix = path.join(outer, "界 café ");
-    const near = `${prefix}${"a".repeat(259 - prefix.length)}`;
+    const near = `${prefix}${"a".repeat(258 - prefix.length)}`;
     mkdirSync(near);
-    expect(realpathSync.native(near).length).toBe(259);
+    expect(realpathSync.native(near).length).toBe(258);
     expect(Exit.isSuccess(await provided(validateWindowsGitPath(near, "cwd", "win32")))).toBe(true);
     const bare = path.join(outer, "bare.git");
     execFileSync("git", ["init", "--bare", bare]);
@@ -104,13 +109,13 @@ describe("bounded Windows Git paths", () => {
     mkdirSync(beyond);
     rejection(
       await provided(validateWindowsGitPath(beyond, "cwd", "win32")),
-      "260 UTF-16 code units",
-      "maximum 259"
+      "259 UTF-16 code units",
+      "maximum 258"
     );
     rejection(
       await provided(validateWindowsLocalTransport(pathToFileURL(beyond).href, outer, "win32")),
-      "260 UTF-16 code units",
-      "maximum 259"
+      "259 UTF-16 code units",
+      "maximum 258"
     );
     expect(
       Exit.isSuccess(
