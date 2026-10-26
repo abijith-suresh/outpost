@@ -6,7 +6,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { commandExitCode, commandResult, gitCommand } from "../child-process.js";
-import { loadConfig, resolveOutpostHome } from "../config.js";
+import { knownWorktreesRoots, loadConfig, resolveOutpostHome } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import {
@@ -15,6 +15,10 @@ import {
   validateSemanticIdentifier,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import {
+  validateWindowsExistingWorktree,
+  validateWindowsInvocationCwd,
+} from "../windows-git-path.js";
 import { classifyAgentsOwnership, deleteAgentsIfSnapshotMatches } from "../workspace-agents.js";
 import {
   acquireTicketLock,
@@ -23,7 +27,7 @@ import {
   readManifest,
   releaseTicketLock,
   resolveManagedPath,
-  resolveWorkspacePath,
+  resolveManifestWorkspacePath,
   resolveWorktreePath,
   verifyWorktreeOwnership,
 } from "../workspace-manifest.js";
@@ -103,13 +107,12 @@ export function runWorkspaceRemove(
     );
 
     const fs = yield* FileSystem.FileSystem;
-    const outpostHome = yield* resolveOutpostHome();
-    const config = yield* loadConfig(outpostHome).pipe(
+    yield* validateWindowsInvocationCwd().pipe(
       Effect.mapError(
         (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
       )
     );
-
+    const outpostHome = yield* resolveOutpostHome();
     const mutation = dryRun
       ? undefined
       : yield* acquireHomeMutationLock(outpostHome, "workspace remove").pipe(
@@ -117,6 +120,12 @@ export function runWorkspaceRemove(
             (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
           )
         );
+    const config = yield* loadConfig(outpostHome).pipe(
+      Effect.mapError(
+        (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
+
     const hasManifest = yield* manifestExists(outpostHome, ticket).pipe(
       Effect.mapError(
         (error) => new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
@@ -124,27 +133,27 @@ export function runWorkspaceRemove(
     );
 
     if (!hasManifest) {
-      const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
-        Effect.result
-      );
+      for (const root of knownWorktreesRoots(config)) {
+        const ticketDirResult = yield* resolvePathWithinRoot(root, ticket).pipe(Effect.result);
 
-      if (Result.isSuccess(ticketDirResult)) {
-        const ticketDir = ticketDirResult.success;
-        const dirExists = yield* fs
-          .exists(ticketDir)
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
-            )
-          );
+        if (Result.isSuccess(ticketDirResult)) {
+          const ticketDir = ticketDirResult.success;
+          const dirExists = yield* fs
+            .exists(ticketDir)
+            .pipe(
+              Effect.mapError(
+                (error) =>
+                  new WorkspaceRemoveError({ message: error.message, ...domainDetails(error) })
+              )
+            );
 
-        if (dirExists) {
-          return yield* Effect.fail(
-            new WorkspaceRemoveError({
-              message: `No manifest found for ticket ${ticket}. The workspace directory exists at ${ticketDir} but is unmanaged. Managed removal requires a manifest.`,
-            })
-          );
+          if (dirExists) {
+            return yield* Effect.fail(
+              new WorkspaceRemoveError({
+                message: `No manifest found for ticket ${ticket}. The workspace directory exists at ${ticketDir} but is unmanaged. Managed removal requires a manifest.`,
+              })
+            );
+          }
         }
       }
 
@@ -172,10 +181,22 @@ export function runWorkspaceRemove(
               Effect.mapError(toMapError)
             );
 
-            const workspaceDir = yield* resolveWorkspacePath(
-              config.worktreesRoot,
-              manifest.workspacePath
-            ).pipe(Effect.mapError(toMapError));
+            const workspaceDir = yield* resolveManifestWorkspacePath(config, manifest).pipe(
+              Effect.mapError(toMapError)
+            );
+
+            // Validate every member before prompting or mutating any worktree/guidance.
+            for (const repo of manifest.repositories) {
+              const managed = yield* resolveManagedPath(config.reposRoot, repo.managedPath).pipe(
+                Effect.mapError(toMapError)
+              );
+              const checkout = yield* resolveWorktreePath(workspaceDir, repo.worktreePath).pipe(
+                Effect.mapError(toMapError)
+              );
+              yield* validateWindowsExistingWorktree(managed, checkout).pipe(
+                Effect.mapError(toMapError)
+              );
+            }
 
             // --- AGENTS.md classification ---
             const agentsFilePath = yield* resolvePathWithinRoot(workspaceDir, "AGENTS.md").pipe(

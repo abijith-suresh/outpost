@@ -34,7 +34,8 @@ export {
 };
 
 export function localRepoId(remotePath: string): string {
-  const realPath = realpathSync(remotePath);
+  const realPath =
+    process.platform === "win32" ? realpathSync.native(remotePath) : realpathSync(remotePath);
   const canonicalPath = realPath.endsWith(".git") ? realPath.slice(0, -4) : realPath;
   return pathToFileURL(canonicalPath).href;
 }
@@ -48,7 +49,9 @@ export function localManagedRepoPath(tempHome: string, remotePathOrId: string): 
 }
 
 export function localTransportUrl(remotePath: string): string {
-  return pathToFileURL(realpathSync(remotePath)).href;
+  return pathToFileURL(
+    process.platform === "win32" ? realpathSync.native(remotePath) : realpathSync(remotePath)
+  ).href;
 }
 
 export function makeRepoRecord(repo: {
@@ -201,7 +204,8 @@ export function readRegistry(tempHome: string): {
   repos: RepoRecord[];
 } {
   const registryPath = path.join(tempHome, "repos.json");
-  return JSON.parse(readFileSync(registryPath, "utf8"));
+  const raw = JSON.parse(readFileSync(registryPath, "utf8"));
+  return raw.version === 2 ? { ...raw, repos: raw.repositories } : raw;
 }
 
 const tempDirsKey = "__outpost_temp_dirs__";

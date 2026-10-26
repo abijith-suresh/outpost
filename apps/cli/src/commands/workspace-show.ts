@@ -4,7 +4,7 @@ import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { loadConfig, resolveOutpostHome } from "../config.js";
+import { knownWorktreesRoots, loadConfig, resolveOutpostHome } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import {
   resolvePathWithinRoot,
@@ -18,7 +18,7 @@ import {
   getManifestFilePath,
   readManifest,
   resolveManagedPath,
-  resolveWorkspacePath,
+  resolveManifestWorkspacePath,
   resolveWorktreePath,
   type WorkspaceStatus,
 } from "../workspace-manifest.js";
@@ -78,10 +78,9 @@ export function runWorkspaceShow(
       );
 
       let ticketDirectory: string | undefined;
-      const workspacePathResult = yield* resolveWorkspacePath(
-        config.worktreesRoot,
-        manifest.workspacePath
-      ).pipe(Effect.result);
+      const workspacePathResult = yield* resolveManifestWorkspacePath(config, manifest).pipe(
+        Effect.result
+      );
       if (Result.isSuccess(workspacePathResult)) {
         ticketDirectory = workspacePathResult.success;
       }
@@ -167,27 +166,27 @@ export function runWorkspaceShow(
       } satisfies CommandOutput<"workspace show">;
     }
 
-    const ticketDirResult = yield* resolvePathWithinRoot(config.worktreesRoot, ticket).pipe(
-      Effect.result
-    );
+    for (const root of knownWorktreesRoots(config)) {
+      const ticketDirResult = yield* resolvePathWithinRoot(root, ticket).pipe(Effect.result);
 
-    if (Result.isSuccess(ticketDirResult)) {
-      const ticketDir = ticketDirResult.success;
-      const exists = yield* fs.exists(ticketDir).pipe(Effect.catch(() => Effect.succeed(false)));
+      if (Result.isSuccess(ticketDirResult)) {
+        const ticketDir = ticketDirResult.success;
+        const exists = yield* fs.exists(ticketDir).pipe(Effect.catch(() => Effect.succeed(false)));
 
-      if (exists) {
-        return {
-          command: "workspace show",
-          data: {
-            ticket,
-            ticketDirectory: ticketDir,
-            status: "unmanaged",
-            diagnostics: [
-              "No workspace manifest exists; directory contents are not treated as managed worktrees.",
-            ],
-            worktrees: [],
-          },
-        } satisfies CommandOutput<"workspace show">;
+        if (exists) {
+          return {
+            command: "workspace show",
+            data: {
+              ticket,
+              ticketDirectory: ticketDir,
+              status: "unmanaged",
+              diagnostics: [
+                "No workspace manifest exists; directory contents are not treated as managed worktrees.",
+              ],
+              worktrees: [],
+            },
+          } satisfies CommandOutput<"workspace show">;
+        }
       }
     }
 

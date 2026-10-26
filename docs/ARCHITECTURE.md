@@ -65,7 +65,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 ```
 ~/.outpost/
   config.json           # OutpostConfig { version, outpostHome, reposRoot, worktreesRoot }
-  repos.json            # RepoRegistry { repos: Array<RepoRecord> }
+  repos.json            # legacy { repos } or v2 { version: 2, repositories }
   .mutation.lock        # Exclusive home mutation owner metadata
   operations/
     <uuid>.json         # Intent and progress for an incomplete mutation
@@ -87,7 +87,15 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 ### Configuration (`apps/cli/src/config.ts`)
 
-`OutpostConfig` stores the home paths and a schema version (currently `1`). The `doctor` command reports whether the config and registry are valid. Config migration (`migrateConfig`) handles version upgrades; unknown future versions produce a clear error.
+`OutpostConfig` reads legacy version 1 and version 2. Read-only commands do not migrate files. Configuration, repository-tag and extra-guidance mutations acquire the home mutation lock and install version 2 default configuration before extended state is written. The config marker makes newly started version 1 binaries refuse the home. The persisted version 2 repository registry uses `{ version: 2, repositories: [...] }`, adapted to the existing in-memory `repos` model. Its missing legacy `repos` field also makes an older process that cached v1 config before taking the lock refuse the registry before mutation. Unknown future versions and malformed version fields fail closed.
+
+Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
+
+Version 2 saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. New version 2 manifests pin their root; legacy manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
+
+`config show` exposes validated settings. `guidance set <file>` reads bounded UTF-8 plaintext into optional global `extraInstructions`; `guidance clear` removes it. `guidance preview` uses create preflight and the same factual `AGENTS.md` renderer without locks or writes. These settings affect future generation only. The command adapter and application operations remain in the CLI package, with Effect workflows and the existing filesystem/Git boundaries; there is no HTTP server or daemon in this phase.
+
+Repository records may contain optional flat `tags`. `repo tag <id> --add <tag> --remove <tag>` edits them under the home lock. `repo list --tag` and `create --tag` require every supplied tag to match. Explicit `--repo` IDs remain supported; when combined, tags filter that explicit set. The create plan freezes concrete repository IDs into the manifest. Later tag edits, fetches and reimports preserve that membership and retained tags.
 
 ## Repository Identity
 
@@ -101,6 +109,29 @@ The identity determines the managed mirror path under `repos/`. Path segments ar
 **Checked process execution** (`apps/cli/src/child-process.ts`): all Git helpers drain stdout and stderr concurrently with exit-status waiting, retaining at most 256 KiB per stream. String results require exit status zero and complete stdout. Exit-code probes explicitly accept nonzero results. The default 120-second timeout is configurable with `OUTPOST_GIT_TIMEOUT_MS`; checked execution applies an explicit termination policy to every standard command and pipeline member. POSIX commands run in separate process groups, with SIGTERM followed by SIGKILL after one second. This uses the existing Effect spawner's `forceKillAfter` option. The spawner may wait one additional second for the group after SIGKILL. Cleanup is included in timeout/interruption completion, rather than abandoned in the background. Diagnostic lines are appended individually so bounded output with many tiny lines cannot overflow the JavaScript argument stack.
 
 **Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create resolves bases from remote tracking refs first, then existing local branches. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
+
+The checked Git adapter adds command-scoped `-c core.longpaths=true` on Windows. Internal pack/admin files can exceed 260 characters without writing system, global or repository configuration. This option does not remove Git's repository startup or cwd limits.
+
+### Windows Git path budgets
+
+`windows-git-path.ts` applies conservative bounds to canonical full paths for named operations that mutate Git or select a future workspace root. Existing metadata is not rejected on load merely because its paths exceed these bounds. Read-only settings, repository and workspace inspection retain historical records.
+
+| Path | Supported maximum | Reason |
+| --- | --- | --- |
+| Managed bare Git directory | 220 UTF-8 bytes | Git's explicit `GIT_DIR` startup guard rejects `strlen(GIT_DIR) > PATH_MAX - 40`; the MinGW default `PATH_MAX` is 260. Clone exports its canonical Git directory to internal children. |
+| Checkout `.git` path | 220 UTF-8 bytes | Worktree add supplies this path as its checkout child's `GIT_DIR`, before Git resolves the back-pointer to the administrative directory. |
+| Invocation cwd, source checkout, local file-remote directory and workspace checkout | 258 UTF-16 code units | Win32 process creation needs a trailing separator and NUL within `MAX_PATH`. Git's separate `mingw_getcwd` buffer admits 259 units, but native Node spawning already fails at that length. |
+| Derived worktree administrative directory | 243 UTF-16 code units | Linked-worktree startup checks `/HEAD` and `/commondir`, and may read `/config.worktree` before `core.longpaths` is available. Reserve the longest of these, 16 units, and NUL: `243 + 16 + 1 = 260`. |
+
+[Microsoft's SetCurrentDirectory documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setcurrentdirectory) describes the trailing-separator and NUL reservation for process creation. Native Node CI rejected a direct 259-unit cwd before Git started. The process ceiling reserves both units rather than relying on short-name substitution.
+
+The derivation uses [Git for Windows setup.c](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/setup.c), [worktree.c](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/builtin/worktree.c), [mingw_getcwd](https://github.com/git-for-windows/git/blob/v2.56.0.windows.2/compat/mingw.c), and [MinGW limits.h](https://github.com/mingw-w64/mingw-w64/blob/master/mingw-w64-headers/crt/limits.h). Git for Windows' `are_long_paths_enabled` returns false before the configuration cache is initialized. `read_gitfile_gently`, `is_git_directory` and `read_and_verify_repository_format` inspect linked-worktree files before the reset builtin loads normal configuration. The 243-unit administrative bound includes `extensions.worktreeConfig=true`; 249 would cover `/commondir` but leave `/config.worktree` inaccessible. Native CI at an administrative directory of 257 units confirmed `gitfile does not point to a valid repository`. The contract is deliberately bounded; it does not claim arbitrary deep-root support through `core.longpaths`.
+
+Canonicalization uses the native Windows realpath operation on the deepest existing ancestor, then appends missing descendants. This resolves junctions and short-name aliases before counting. UTF-8 bytes are counted with `Buffer.byteLength`, while UTF-16 code units use JavaScript string length. Roots with spaces and Unicode follow the same checks. The raw path spelling passed to Git, including redundant separators or dot components, must also fit: the startup guard checks that spelling before resolving a junction, and cwd APIs may return it before canonicalization. A long alias to a short target therefore cannot bypass the budget either.
+
+Root setting reserves the smallest valid `<root>/a/a/.git` layout before configuration/registry migration. Create and guidance preview check the actual managed paths, checkout paths and derived administrative directory. Git sanitizes the repository basename for its administrative name and tries the unsuffixed name, then numeric suffixes. The preflight reserves enough digits for the current administrative-directory entry count plus one, read under the home lock during mutation. It resolves the administrative parent, then appends the reserved name without following a hypothetical occupied leaf, which might itself be a junction to a shorter target. Every selected repository is checked before branch or worktree mutation. Fetch checks all registered targets before changing any refspec or refs. Removal checks all affected paths before teardown. The invocation cwd is also checked because commands using `--git-dir` still inherit it. Local file remotes are checked before clone or fetch because Git runs `upload-pack` in that directory.
+
+Unsupported operations fail with the existing structured `invalid-arguments` reason and an actionable message identifying the canonical path, measured count, unit and budget. They preserve source data, refs, manifests, guidance, configuration, registry and unowned sentinels. Existing homes and roots are never moved or aliased; global Windows/Git settings are unchanged. A shorter future root can repair new workspace creation without hiding old metadata. Arbitrary config include targets, custom environment path overrides, hooks, submodules, external programs and noncooperating filesystem changes retain their own constraints. Existing containment, ownership, locks, output limits and timeouts continue to apply.
 
 **Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
 
@@ -175,7 +206,7 @@ The directory-creation ownership flag, generated guidance snapshot, and manifest
 
 ### Workspace List (`apps/cli/src/commands/workspace-list.ts`)
 
-Scans `workspaces/` for manifest files and `worktrees/` for directories without manifests (unmanaged workspaces). Derives a status for each:
+Scans `workspaces/` for manifest files and every recorded workspace root for directories without valid managed paths (unmanaged workspaces). Old-root residual directories stay visible after a default-root change. Derives a status for each:
 
 | Status      | Condition                                                             |
 | ----------- | --------------------------------------------------------------------- |
@@ -207,11 +238,11 @@ Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
 }
 ```
 
-All paths in the manifest are relative to their respective roots (`reposRoot` or `worktreesRoot`). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
+The example above is the legacy unversioned shape. New manifests add `version: 2` and an absolute `worktreesRoot` validated against the roots recorded in version 2 configuration. Repository paths remain relative to `reposRoot`; workspace paths remain relative to the manifest's saved root. Unversioned manifests use `legacyWorktreesRoot` (or the current root in version 1 configuration). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: schema version, trusted root, semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
 
 ## Mutation and ticket locks
 
-`apps/cli/src/mutation-lock.ts` provides a conservative exclusive home mutation lock. Init, repo add/fetch/remove, create, and workspace remove acquire it with create-if-absent semantics before reading mutable snapshots. Contention fails immediately with a retry message. Create and workspace remove then acquire their existing ticket locks. The global order is home lock, then ticket lock, with release in reverse order through scoped Effect finalizers. Read-only commands and create dry-run do not acquire these locks. These locks coordinate Outpost processes; they do not block external Git or filesystem tools.
+`apps/cli/src/mutation-lock.ts` provides a conservative exclusive home mutation lock. Init, repo add/fetch/remove/tag, config set, guidance set/clear, create, and workspace remove acquire it with create-if-absent semantics before reading mutable snapshots. Contention fails immediately with a retry message. Create and workspace remove then acquire their existing ticket locks. The global order is home lock, then ticket lock, with release in reverse order through scoped Effect finalizers. Read-only commands, guidance preview and create dry-run do not acquire these locks. These locks coordinate Outpost processes; they do not block external Git or filesystem tools.
 
 Home lock metadata includes a UUID, operation name, PID, hostname, timestamp, and operation-record path. Ticket locks also include PID, hostname, ticket, and timestamp; their filenames normalize case and trailing spaces/dots. Home lock release compares the recorded owner bytes before unlinking, and runs even if writing final operation status fails. Lock files are never reaped based on age or process checks.
 
@@ -225,7 +256,7 @@ Process cleanup is limited by the OS and the installed Effect spawner. POSIX gro
 
 ## Workspace AGENTS.md (`apps/cli/src/workspace-agents.ts`)
 
-When a workspace is created, Outpost generates an `AGENTS.md` file in the workspace directory using exclusive-create semantics (hard link from temp file — fails if the file already exists). The file contains workspace metadata (ticket, branch) and a per-repository block with the repo name, ID, worktree path, expected branch, and base branch.
+When a workspace is created, Outpost generates an `AGENTS.md` file in the workspace directory using exclusive-create semantics (hard link from temp file — fails if the file already exists). The file contains workspace metadata (ticket, branch) and a per-repository block with the repo name, ID, worktree path, expected branch, and base branch. Optional global extra instructions follow these facts as plaintext. The ownership hash covers both the generated facts and the extra instructions. Changing settings never regenerates an existing file.
 
 **Ownership marker:** the first line is `<!-- outpost:workspace-agents sha256=<64-char-hex> -->`. The SHA256 is computed over the body (all content after the marker).
 
@@ -246,6 +277,7 @@ Path and semantic identifier validation are separate contracts:
 
 - `validateSemanticIdentifier()` and `semanticIdentifierSchema()` — reject empty values and ASCII control characters (`U+0000` through `U+001F`, plus `U+007F`) without trimming, Unicode normalization, or applying identifier rules to filesystem paths and raw remote URLs
 - `validatePathSegment()` — rejects path separators and, by default, traversal segments
+- `validatePortableFilename()` — additionally rejects Windows device names, invalid filename characters and trailing dots/spaces for newly created ticket/repository directories; legacy paths retain their existing read validation
 - `resolvePathWithinRoot()` — resolves a path lexically and verifies that it remains within the root directory
 - `getCanonicalPortablePathKey()` — normalizes paths (lowercase, unified separators) for collision detection
 
@@ -267,6 +299,7 @@ Path and semantic identifier validation are separate contracts:
 | `apps/cli/src/commands/create.ts`                  | Create command with rollback                                                |
 | `apps/cli/src/commands/create-prompt.ts`           | Interactive prompting for create                                            |
 | `apps/cli/src/commands/init.ts`                    | Initialize Outpost home                                                     |
+| `apps/cli/src/commands/settings.ts`                | Validated future-root, tag and extra-guidance operations and preview         |
 | `apps/cli/src/commands/doctor.ts`                  | Environment status report                                                   |
 | `apps/cli/src/commands/repo-add.ts`                | Register a local repo                                                       |
 | `apps/cli/src/commands/repo-mirror.ts`             | Git clone/fetch mirror operations                                           |
@@ -289,6 +322,10 @@ and option values into arrays. Required create options can be filled by an
 interactive prompt; identifier, Git and ownership checks remain in the commands.
 `renderer.ts` owns text and JSON formatting, while `program.ts` selects and runs
 commands.
+
+Contract version `1.1.0` adds settings, tags and guidance commands and makes
+`--repo` optional when tag selection is supplied. The package version is unchanged;
+metadata version 2 separately protects stored state from older writers.
 
 `describe --json` reports an independently versioned `contractVersion` and the
 installed `cliVersion`. Each command includes normalized input and output JSON

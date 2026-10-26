@@ -106,6 +106,12 @@ This runs, in order:
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
+Generated CLI schemas, command reference, man page and schema-integrity source
+are pinned to LF in `.gitattributes`. Their exact bytes are checked during build
+and used for installed schema integrity. Keep these attributes when working on
+Windows with Git checkout line-ending conversion enabled; normalizing only the
+drift comparison would leave installed checksums inconsistent.
+
 ### Build
 
 ```bash
@@ -167,8 +173,15 @@ GitHub Actions run on every pull request and push to `main`:
 - `Changeset policy` remains local because it needs pull-request base/head
   metadata and the Outpost-specific release-path rules. It reads the same
   `.node-version` file.
-- `CLI build and smoke (Node 24)` remains local because building the published
-  CLI and testing its installed package are Outpost-specific checks.
+- `CLI build and smoke (Node 24, <OS>)` runs on Ubuntu and native Windows. Each
+  matrix job builds the CLI, runs focused settings/path regressions, packs and
+  installs the actual tarball, then exercises installed commands and offline
+  schemas from an unrelated directory. Windows uses the npm-generated `.cmd`
+  shim through native PowerShell, with spaces and Unicode in fixture paths. The
+  installed smoke also asserts the effective Node and npm versions against
+  `.node-version` and `packageManager`, after the pin installation step. Native acceptance includes real internal Git files longer than 260 characters, canonical path-budget boundaries, junction resolution and pre-mutation preservation for unsupported paths. A passing Linux run does not replace this native installed-artifact check.
+  This matrix does not claim the entire POSIX process-shutdown suite is portable
+  or that the owner's managed laptop has been tested.
 - `Website build (Node 24)` remains local because website compilation is an
   Outpost-specific application check; website verification runs through the
   central quality command. Pages deployment and release validation also read
@@ -189,6 +202,10 @@ respective `.github/workflows/` files. Dependency review remains enabled through
 the central caller; if its check is blocked, a repository owner must enable the
 dependency graph in repository settings. The central npm-quality workflow owns
 Node and npm setup from the caller repository's root contract.
+
+The Release workflow remains disabled while publication is paused. Quality,
+package installation and Changeset checks do not require publication. Do not
+enable the workflow as part of testing feature changes.
 
 Changesets release pull requests (`chore: version packages`) are validated
 through the same `pull_request` path as ordinary PRs; there is no separate

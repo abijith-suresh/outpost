@@ -6,7 +6,8 @@ import * as Stream from "effect/Stream";
 
 /** Git must inherit PATH/HOME while refusing interactive credential prompts. */
 export function gitCommand(...args: ReadonlyArray<string>): ChildProcess.Command {
-  return ChildProcess.make("git", [...args], {
+  const platformOptions = process.platform === "win32" ? ["-c", "core.longpaths=true"] : [];
+  return ChildProcess.make("git", [...platformOptions, ...args], {
     extendEnv: true,
     env: { GCM_INTERACTIVE: "never", GIT_TERMINAL_PROMPT: "0" },
   });

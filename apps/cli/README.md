@@ -32,7 +32,14 @@ Commands:
   skill show [--json] Read the bundled portable Outpost skill
   skill path [--json] Locate installed skill, reference, man and schema assets
   skill export <directory> [--json] Copy the portable skill without overwriting
-  create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run] [--json]
+  config show [--json] Inspect settings and recorded workspace roots
+  config set worktreesRoot <absolute-path> [--json]
+                       Set the root for future workspaces
+  guidance set <file> [--json] Set extra instructions from a UTF-8 text file
+  guidance clear [--json] Clear extra instructions for future workspaces
+  guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--json]
+                       Preview factual workspace AGENTS.md without writing
+  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
@@ -40,7 +47,9 @@ Commands:
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
-  repo list [--json]   List imported repositories
+  repo list [--tag <tag> ...] [--json] List imported repositories
+  repo tag <id> [--add <tag> ...] [--remove <tag> ...] [--json]
+                       Edit optional flat repository tags
   repo remove <id> [--dry-run] [--json]
                          Remove an imported repository
   repo show <id> [--json]
@@ -61,11 +70,32 @@ Use `outpost help <command>` or `outpost <command> --help` for command-level hel
 
 ### Create
 
-`outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]`
+`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]`
 
 Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Use `--base` to branch from a specific branch (defaults to the repo's HEAD). `--dry-run` validates inputs without creating anything.
 
-If run interactively (terminal, no `--json`), missing `--ticket`, `--type`, or `--repo` values are prompted. In non-interactive mode (piped, `--json`), all three must be provided explicitly.
+Select explicit repository IDs, tags, or both. Repeated tags require every tag to match. When combined with explicit IDs, tags filter only those IDs. Tags contain 1–64 lowercase letters, numbers, dots, underscores or hyphens, starting with a letter or number. Creation records the selected concrete repository IDs; changing tags later never changes a workspace. An empty selection fails before creating worktrees.
+
+If run interactively (terminal, no `--json`), missing ticket, type or repository selection is prompted. Non-interactive use requires a ticket, type and explicit repository IDs or tags.
+
+### Configuration, tags and guidance
+
+```bash
+outpost config show --json
+outpost config set worktreesRoot /absolute/path/to/workspaces --json
+outpost repo tag <id> --add backend --add payments --json
+outpost repo list --tag backend --json
+outpost create --ticket PROJ-124 --type feat --tag backend --dry-run --json
+outpost guidance set ./extra-instructions.txt --json
+outpost guidance preview --ticket PROJ-124 --type feat --tag backend --json
+outpost guidance clear --json
+```
+
+`worktreesRoot` must be an absolute local-platform path. On Windows PowerShell, use `outpost.cmd` and quote paths with spaces, for example `outpost.cmd config set worktreesRoot 'C:\Workspaces\Team work' --json`. Changing it only changes where future workspaces are created. It never moves existing worktrees. Existing manifests remain tied to their original roots, including workspaces created before settings commands existed. The home and repository-storage roots cannot be changed through this command.
+
+Extra instructions are optional plaintext appended to the generated factual orientation, under its existing SHA256 ownership marker. They are read from a UTF-8 file of at most 65,536 bytes, without NUL characters, so multiline text does not depend on shell quoting. Preview uses the create preflight and returns the proposed full `AGENTS.md`; it writes no files and acquires no mutation lock. Setting or clearing instructions affects future generation only. Existing generated, modified and foreign guidance retains its normal protection.
+
+The first settings, tag or guidance mutation upgrades configuration to version 2 and installs an incompatible version 2 registry before saving extended settings or tags. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new manifests declare their version and root. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
 
 ### Workspace remove
 
@@ -125,12 +155,23 @@ Repository mutations validate registry paths against both `reposRoot` and, for l
 
 Git commands drain both output streams and request termination after 120 seconds by default. Set `OUTPOST_GIT_TIMEOUT_MS` to a positive number of milliseconds for slower remotes. Diagnostics retain at most 256 KiB per stream, append lines without expanding them into function arguments, and mark truncation; commands requiring stdout fail rather than consume truncated or failed output.
 
+On Windows, Outpost passes `-c core.longpaths=true` to its Git commands. Internal pack and administrative files may exceed 260 characters. Git still has startup and working-directory limits, so Outpost checks canonical full paths before clone, fetch, branch/worktree changes, removal, or a root-setting migration:
+
+- Managed Git directories and each checkout's `.git` path must fit within 220 UTF-8 bytes.
+- The invoking directory, source checkout, local file-remote directory and workspace checkout must fit within 258 UTF-16 code units, reserving a trailing separator and NUL for Win32 process creation. Derived worktree administrative directories must fit within 243 UTF-16 units, leaving room for `/config.worktree` and NUL during Git startup before long-path configuration loads.
+- Root setting reserves space for the smallest ticket/repository layout. Creation checks the actual selected names and the administrative name Git may choose, including collision suffixes. A root accepted for short names may refuse a longer ticket or repository name.
+
+These budgets follow Git for Windows' explicit `GIT_DIR` guard and fixed cwd buffers. Unicode can consume several UTF-8 bytes per character. Junctions and short-name aliases such as `RUNNER~1` are resolved before counting. The full spelling passed to Git must also fit, so neither a short alias to a deep target nor a long alias to a short target bypasses the budget. A refusal reports the affected path, count and budget. Choose a shorter user-owned Outpost home for new imports or `worktreesRoot` for future workspaces, and run Git operations from a shorter directory. Keep the original home to inspect existing work. Metadata inspection and history remain available, and changing the future root never moves old worktrees.
+
+Outpost does not create path aliases, move existing roots, or change system, global or repository Git configuration. Other programs, hooks, submodules and manually run Git commands retain their own limits. See [the path-budget derivation](../../docs/ARCHITECTURE.md#windows-git-path-budgets) for the supported boundary.
+
 Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branches in `refs/heads` and their commits survive fetch and repository re-import. Older mirrors migrate on their next fetch without deleting or rewriting local refs. Create prefers a fetched remote base, with a local branch fallback for existing mirrors and workspace branches.
 
 - **Semantic identifier validation:** empty values and ASCII control characters are rejected in tickets, branch inputs, repository identities, remote names, and persisted state before filesystem or Git operations.
 - **Dirty worktree protection:** workspace removal checks `git status --porcelain` and refuses worktrees with uncommitted changes.
 - **Ownership verification:** worktree `.git` files must point to the expected bare repository.
 - **Mutation locks:** init, repository add/fetch/remove, workspace create, and workspace remove take one exclusive home mutation lock before reading state for mutation. An overlapping mutation fails with a clear retry message. Create and remove then take the ticket lock, in that order. Dry-run does not take locks.
+- **Settings safety:** configuration, tag and guidance mutations use the same home lock. Root changes preserve existing workspace locations. Unsupported state versions fail closed; settings do not overwrite existing guidance or change workspace membership.
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
 - **Rollback:** failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.

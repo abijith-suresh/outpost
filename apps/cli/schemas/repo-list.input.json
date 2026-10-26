@@ -13,7 +13,15 @@
     "options": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {},
+      "properties": {
+        "--tag": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
       "required": []
     }
   }

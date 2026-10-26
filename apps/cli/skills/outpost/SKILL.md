@@ -25,6 +25,18 @@ Read [commands](references/commands.md) for syntax and
   `outpost create --ticket <ticket> --type <type> --repo <id> --dry-run --json`.
   Use repeated `--repo` options for multiple repositories, then create with the
   same arguments without `--dry-run`. Non-interactive create requires all inputs.
+- Inspect settings with `outpost config show --json`. Set `worktreesRoot` only
+  for future workspaces; old workspaces keep their recorded paths. The first
+  settings/tag/guidance mutation upgrades metadata so older writers refuse it.
+  Keep the newer tool after migration; do not restore stale config over new state.
+- Use `repo tag <id> --add <tag> --remove <tag> --json` for optional flat tags.
+  `repo list --tag <tag>` and `create --tag <tag>` require every supplied tag.
+  Tags filter explicit `--repo` IDs when combined; workspace membership freezes
+  at creation and is unaffected by later tag edits.
+- Use `guidance set <file> --json` for optional global plaintext instructions,
+  `guidance clear --json` to clear them, and `guidance preview` with create's
+  selection arguments to inspect the full factual `AGENTS.md` without writes.
+  Settings affect future generation and never overwrite existing guidance.
 - Read the generated workspace `AGENTS.md` to find child worktrees. Run Git and
   application commands inside the relevant worktree. Read its own `AGENTS.md` if present.
   Navigate using `ticketDirectory`, the absolute workspace root, and returned

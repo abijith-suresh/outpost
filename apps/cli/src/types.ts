@@ -8,6 +8,8 @@ export type CommandOutput<K extends keyof CommandData = keyof CommandData> = {
 }[K];
 
 export const CLI_ERROR_CODES = [
+  "CONFIG_FAILED",
+  "REPO_TAG_FAILED",
   "GUIDANCE_FAILED",
   "INVALID_ARGUMENT",
   "UNKNOWN_COMMAND",

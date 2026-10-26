@@ -15,6 +15,10 @@ Coding agents are the primary operators of Outpost, coordinating one ticket acro
 - **Safety over convenience.** Outpost must not delete, overwrite, or adopt state it cannot prove it owns. Workspace removal refuses dirty worktrees and requires explicit interactive approval before deleting modified or foreign workspace guidance.
 - **Terse everyday operations.** Frequent workspace operations (create, list, remove) are short. Infrequent repository and configuration operations may remain explicit.
 - **Machine-readable output.** Most commands support `--json` for scripting and agent consumption.
+- **Supported settings and repository selection.** Agents and humans can inspect and validate settings through application operations. Repositories may have multiple optional flat tags, used to select concrete repository IDs when creating a workspace. Explicit repository-ID selection remains supported. Tag changes never change an existing workspace's membership.
+- **Stable workspace locations.** Changing the worktree root affects future workspaces. Existing workspaces keep their original roots and paths; changing settings never moves Git worktrees. Versioned metadata must preserve legacy interpretation and make older writers refuse newer state.
+- **Factual, customizable orientation.** Keep task names/tickets, automatic workspace folders and generated `AGENTS.md` with its ownership marker. Optional global extra instructions supplement the factual layout. Previewing guidance is read-only; setting instructions affects future generation and never overwrites an existing workspace's guidance.
+- **One application boundary.** CLI adapters and a later human management UI use the same validated operations and mutation locks. Normal CLI commands remain daemon-free. A later manager is explicitly started, serves bundled Solid/Vite assets, and opens a browser only on request.
 
 ## Non-Goals
 
@@ -32,6 +36,8 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 - **Zero implicit network access during workspace creation**
 - **No native binary dependencies** — uses system `git` CLI only
 - **TypeScript strict mode** with ES modules
+- **Native Windows PowerShell support** without WSL; platform-specific tests and installed-package checks must distinguish CI evidence from checks on the owner's laptop.
+- **Bounded Windows Git paths.** Command-scoped long-path support covers Git's internal files, while repository paths, process working directories and worktree administrative paths must fit conservative, source-derived Git for Windows and Win32 process budgets, including the trailing separator and NUL required for process creation and administrative files read before long-path configuration is available. Validate canonical full paths before mutation, count bytes or UTF-16 units according to the relevant Git/Windows API, and report an actionable shorter-root choice when unsupported. Never move existing state, create aliases or change global settings to make a path fit. Existing workspaces and history remain inspectable even when a requested mutation is unsupported.
 
 ## UX Principles
 
@@ -47,3 +53,12 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 3. Outpost refuses to remove worktrees with uncommitted changes and does not delete modified or foreign workspace guidance without explicit interactive approval.
 4. Concurrent `outpost create` calls for the same ticket are serialized via ticket locks.
 5. All commands that inspect state support `--json` for scripting.
+6. An agent can change the future worktree root and still inspect and safely remove old workspaces at their original locations. Unsupported metadata versions fail closed before mutation.
+7. Guidance preview retains the generated facts, and repository tag selection freezes concrete IDs without changing old workspaces.
+8. Native Windows acceptance includes successful operations on real internal Git files beyond 260 characters and pre-mutation refusal of unsupported repository, checkout and derived administrative paths. Boundary, Unicode, space and junction cases preserve source commits, refs, manifests, guidance, configuration, registry and unrelated files.
+
+## Delivery phases
+
+The first increment adds validated configuration, repository tags, guidance customization/preview, and safe versioned root handling. It retains the existing mirror-backed workflow and ownership checks.
+
+Later increments improve create/resume and existing-branch/worktree reuse, explicit local/cached-remote/fresh-remote bases with immutable SHAs, source-only commit preservation, and recovery. Forgetting a repository registration must be separate from deleting owned Git storage; an innocuous unregister action must never delete unique branch-only commits. A human manager follows those operations, with explicit start/stop behavior and measured resource use. Manual prerelease-only distribution preparation is a final separate phase. These goals do not authorize automatic publication or a storage rewrite.

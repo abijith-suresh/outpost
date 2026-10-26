@@ -103,7 +103,7 @@ Network: none. Retry: inspect-before-retry.
 .SS create
 .nf
 Usage:
-  outpost create \-\-ticket <id> \-\-type <branch\-type> \-\-repo <id> [\-\-repo <id> ...] [\-\-base <branch>] [\-\-dry\-run] [\-\-json]
+  outpost create \-\-ticket <id> \-\-type <branch\-type> [\-\-repo <id> ...] [\-\-tag <tag> ...] [\-\-base <branch>] [\-\-dry\-run] [\-\-json]
 
 Create worktrees for imported repositories
 
@@ -115,9 +115,111 @@ Create worktrees for imported repositories
 Options:
   \-\-ticket <id>  Ticket identifier (required)
   \-\-type <branch\-type>  Branch type prefix (e.g. feat, fix) (required)
-  \-\-repo <id>  Repository identifier (repeatable) (required) (repeatable)
+  \-\-repo <id>  Repository identifier (repeatable; optional with \-\-tag) (repeatable)
+  \-\-tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
   \-\-base <branch>  Base branch (defaults to repo HEAD)
   \-\-dry\-run  Validate without creating
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: inspect-before-retry.
+.SS guidance preview
+.nf
+Usage:
+  outpost guidance preview \-\-ticket <id> \-\-type <branch\-type> [\-\-repo <id> ...] [\-\-tag <tag> ...] [\-\-base <branch>] [\-\-json]
+
+Preview factual workspace AGENTS.md using current settings without writing files
+
+  mutation: false
+  json output: yes
+
+Options:
+  \-\-ticket <id>  Ticket identifier (required)
+  \-\-type <branch\-type>  Branch type prefix (e.g. feat, fix) (required)
+  \-\-repo <id>  Repository identifier (repeatable; optional with \-\-tag) (repeatable)
+  \-\-tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
+  \-\-base <branch>  Base branch (defaults to repo HEAD)
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: safe.
+.SS config show
+.nf
+Usage:
+  outpost config show [\-\-json]
+
+Show validated configuration and future workspace defaults
+
+  mutation: false
+  json output: yes
+
+Options:
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: safe.
+.SS config set
+.nf
+Usage:
+  outpost config set <key> <value> [\-\-json]
+
+Set worktreesRoot for future workspaces without moving existing workspaces
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <key>  worktreesRoot (required)
+  <value>  Absolute native directory path (required)
+
+Options:
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: inspect-before-retry.
+.SS guidance set
+.nf
+Usage:
+  outpost guidance set <file> [\-\-json]
+
+Read optional global extra instructions from a UTF\-8 file for future workspaces
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <file>  UTF\-8 file, at most 65536 bytes (required)
+
+Options:
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: inspect-before-retry.
+.SS guidance clear
+.nf
+Usage:
+  outpost guidance clear [\-\-json]
+
+Clear extra instructions for future workspaces
+
+  mutation: true
+  json output: yes
+
+Options:
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: inspect-before-retry.
+.SS repo tag
+.nf
+Usage:
+  outpost repo tag <id> [\-\-add <tag> ...] [\-\-remove <tag> ...] [\-\-json]
+
+Add or remove flat repository tags without changing existing workspace membership
+
+  mutation: true
+  json output: yes
+
+Arguments:
+  <id>  Repository identifier (required)
+
+Options:
+  \-\-add <tag>  Tag to add (repeatable)
+  \-\-remove <tag>  Tag to remove (repeatable)
   \-\-json  Output as JSON
 .fi
 Network: none. Retry: inspect-before-retry.
@@ -185,7 +287,7 @@ Network: explicit. Retry: inspect-before-retry.
 .SS repo list
 .nf
 Usage:
-  outpost repo list [\-\-json]
+  outpost repo list [\-\-tag <tag> ...] [\-\-json]
 
 List imported repositories
 
@@ -193,6 +295,7 @@ List imported repositories
   json output: yes
 
 Options:
+  \-\-tag <tag>  Require every selected tag (repeatable) (repeatable)
   \-\-json  Output as JSON
 .fi
 Network: none. Retry: safe.

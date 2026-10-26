@@ -450,6 +450,10 @@ describe("create rollback operation ownership", () => {
           expect(result.code).toBe(1);
           expect(result.stdout).toBe("");
           expect(JSON.parse(result.stderr).error.code).toBe("CREATE_FAILED");
+          if (artifact === "worktree") {
+            expect(JSON.parse(result.stderr).error.message).toContain("exit status");
+            expect(JSON.parse(result.stderr).error.message).toContain("already exists");
+          }
         }
         expect(watchdogTriggered).toBe(false);
         if (artifact === "branch") {

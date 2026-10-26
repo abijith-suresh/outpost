@@ -48,6 +48,24 @@ export function runInit(): Effect.Effect<
       });
     }
 
+    const registryExists = yield* fs.exists(repoRegistryFilePath);
+    if (registryExists) {
+      const retainedRegistry = yield* loadRepoRegistry(outpostHome).pipe(
+        Effect.mapError(
+          (error) =>
+            new InitError({
+              message: `Cannot resume initialization: ${error.message}. Existing registry preserved.`,
+            })
+        )
+      );
+      if (retainedRegistry.version === 2)
+        return yield* Effect.fail(
+          new InitError({
+            message: `Cannot initialize ${outpostHome}: a version 2 registry remains without its configuration. Run outpost doctor and restore the original config after inspecting existing workspace roots and guidance. Init will not reset migrated state.`,
+          })
+        );
+    }
+
     const config = yield* buildInitialConfig(outpostHome);
 
     yield* mutation
@@ -102,16 +120,7 @@ export function runInit(): Effect.Effect<
 
     // Config is the initialization marker. Install it only after the registry
     // is written, and never overwrite a registry retained from a failed init.
-    if (yield* fs.exists(repoRegistryFilePath)) {
-      yield* loadRepoRegistry(outpostHome).pipe(
-        Effect.mapError(
-          (error) =>
-            new InitError({
-              message: `Cannot resume initialization: ${error.message}. Existing registry preserved.`,
-            })
-        )
-      );
-    } else {
+    if (!registryExists) {
       yield* writeJsonFileAtomic(repoRegistryFilePath, emptyRepoRegistry).pipe(
         Effect.mapError(
           (error) =>

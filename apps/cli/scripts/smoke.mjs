@@ -7,12 +7,12 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { verifySettingsWorkflow } from "./settings-smoke.mjs";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const smokeRoot = mkdtempSync(join(tmpdir(), "outpost-smoke-"));
+const smokeRoot = mkdtempSync(join(tmpdir(), "outpost smoke-"));
 const packDir = join(smokeRoot, "pack");
 const installPrefix = join(smokeRoot, "global");
 const outpostHome = join(smokeRoot, "home");
@@ -68,10 +68,10 @@ function assertSuccess(result, label) {
 }
 
 function runNpm(args, options) {
-  return run(npmCommand, args, {
-    ...options,
-    shell: process.platform === "win32",
-  });
+  // npm supplies its own entry point. Direct Node execution preserves argv on
+  // Windows without cmd.exe interpreting paths or arguments as shell syntax.
+  assert.ok(process.env.npm_execpath, "Run this script through npm run test:smoke");
+  return run(process.execPath, [process.env.npm_execpath, ...args], options);
 }
 
 function getInstalledBinPath() {
@@ -81,13 +81,42 @@ function getInstalledBinPath() {
 }
 
 function runInstalled(args, env) {
-  return run(getInstalledBinPath(), args, {
-    env,
-    shell: process.platform === "win32",
-  });
+  const options = { env, cwd: smokeRoot };
+  if (process.platform !== "win32") return run(getInstalledBinPath(), args, options);
+  // Exercise the installed .cmd shim through native PowerShell, with literals
+  // encoded separately from the process command line (including spaces/Unicode).
+  const quote = (value) => `'${value.replaceAll("'", "''")}'`;
+  const script = [
+    "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
+    "$OutputEncoding = [Console]::OutputEncoding",
+    `& ${[getInstalledBinPath(), ...args].map(quote).join(" ")}`,
+    "exit $LASTEXITCODE",
+  ].join("\n");
+  return run(
+    "powershell.exe",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(script, "utf16le").toString("base64"),
+    ],
+    options
+  );
 }
 
 try {
+  const repositoryRoot = join(projectRoot, "..", "..");
+  const expectedNode = readFileSync(join(repositoryRoot, ".node-version"), "utf8").trim();
+  const { packageManager } = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
+  assert.match(packageManager, /^npm@\d+\.\d+\.\d+$/);
+  const npmVersionResult = runNpm(["--version"]);
+  assertSuccess(npmVersionResult, "read effective npm version");
+  const npmVersion = npmVersionResult.stdout.trim();
+  process.stdout.write(`Toolchain: Node ${process.versions.node}, npm ${npmVersion}\n`);
+  assert.equal(process.versions.node, expectedNode, "Use the repository's exact Node pin");
+  assert.equal(npmVersion, packageManager.slice(4), "Use the repository's exact npm pin");
+
   mkdirSync(packDir, { recursive: true });
 
   console.log("Building...");
@@ -304,7 +333,7 @@ try {
   assertSuccess(discovery, "installed describe");
   const contract = JSON.parse(discovery.stdout).data;
   assert.equal(contract.cliVersion, version);
-  assert.equal(contract.contractVersion, "1.0.0");
+  assert.equal(contract.contractVersion, "1.1.0");
   assert.equal(contract.network, "none");
   assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
   assert.ok(contract.outputSchema.anyOf.length >= 2);
@@ -339,7 +368,7 @@ try {
   assert.ok(createError.error.message.includes("Usage: outpost create"));
   assert.ok(createError.error.message.includes("--ticket is required."));
   assert.ok(createError.error.message.includes("--type is required."));
-  assert.ok(createError.error.message.includes("At least one --repo is required."));
+  assert.ok(createError.error.message.includes("At least one --repo or --tag is required."));
 
   console.log("Test: structured partial result exits 1");
   const commandEnv = { OUTPOST_HOME: outpostHome };
@@ -348,19 +377,20 @@ try {
   assert.equal(initResult.stderr, "");
 
   const now = new Date(0).toISOString();
+  const missingRemote = pathToFileURL(join(smokeRoot, "missing-repo")).href;
   writeFileSync(
     join(outpostHome, "repos.json"),
     `${JSON.stringify(
       {
         repos: [
           {
-            id: "file:///missing/repo",
+            id: missingRemote,
             importedAt: now,
             lastFetchedAt: now,
             managedRepoPath: join(outpostHome, "repos", "missing.git"),
             name: "repo",
             remoteName: "origin",
-            remoteUrl: "file:///missing/repo",
+            remoteUrl: missingRemote,
             sourceRepoPath: join(smokeRoot, "missing-source"),
           },
         ],
@@ -380,6 +410,9 @@ try {
   assert.equal(partialOutput.data.failedCount, 1);
   assert.equal(partialOutput.data.results[0].fetchStatus, "failed");
   validateInstalled("repo fetch", partialOutput);
+
+  console.log("Test: installed settings, tags, guidance and old-workspace preservation");
+  verifySettingsWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
   console.log("\nAll smoke tests passed.");
 } finally {

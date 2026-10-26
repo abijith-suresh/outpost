@@ -22,6 +22,13 @@ import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
 import { runRepoRemove } from "./commands/repo-remove.js";
 import { runRepoShow } from "./commands/repo-show.js";
+import {
+  runConfigSet,
+  runConfigShow,
+  runGuidancePreview,
+  runGuidanceSet,
+  runRepoTag,
+} from "./commands/settings.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
@@ -188,6 +195,35 @@ function resolveCommand(
       return runSkillExport(positionalArgs[2]).pipe(
         Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
       );
+    case "config show":
+      return runConfigShow().pipe(
+        Effect.mapError((error) => cliError("CONFIG_FAILED", error.message, undefined, error))
+      );
+    case "config set":
+      return runConfigSet(positionalArgs[2], positionalArgs[3]).pipe(
+        Effect.mapError((error) => cliError("CONFIG_FAILED", error.message, undefined, error))
+      );
+    case "guidance set":
+    case "guidance clear":
+      return runGuidanceSet(command === "guidance set" ? positionalArgs[2] : undefined).pipe(
+        Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
+      );
+    case "guidance preview":
+      return runGuidancePreview(positionalArgs.slice(2)).pipe(
+        Effect.mapError((error) => cliError("GUIDANCE_FAILED", error.message, undefined, error))
+      );
+    case "repo tag": {
+      const parsed = parseCommandInput(requireCommand(["repo", "tag"]), positionalArgs.slice(2));
+      const add = parsed.options["--add"];
+      const remove = parsed.options["--remove"];
+      return runRepoTag(
+        parsed.arguments.id[0],
+        Array.isArray(add) ? add : [],
+        Array.isArray(remove) ? remove : []
+      ).pipe(
+        Effect.mapError((error) => cliError("REPO_TAG_FAILED", error.message, undefined, error))
+      );
+    }
     case "doctor":
       if (positionalArgs.length > 1) {
         return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost doctor [--json]"));
@@ -224,10 +260,7 @@ function resolveCommand(
         )
       );
     case "repo list":
-      if (positionalArgs.length > 2) {
-        return Effect.fail(cliError("INVALID_ARGUMENT", "Usage: outpost repo list [--json]"));
-      }
-      return runRepoList().pipe(
+      return runRepoList(positionalArgs.slice(2)).pipe(
         Effect.mapError((error) => cliError("REPO_LIST_FAILED", error.message, undefined, error))
       );
     case "repo fetch":

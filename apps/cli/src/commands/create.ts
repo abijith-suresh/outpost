@@ -5,10 +5,16 @@ import * as Path from "effect/Path";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
-import { commandExitCode, commandString, gitCommand } from "../child-process.js";
+import { commandExitCode, commandResult, commandString, gitCommand } from "../child-process.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";
-import { loadConfig, loadRepoRegistry, resolveOutpostHome } from "../config.js";
+import {
+  loadConfig,
+  loadRepoRegistry,
+  matchesTags,
+  resolveOutpostHome,
+  validateTag,
+} from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { verifyManagedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
@@ -16,10 +22,12 @@ import {
   getCanonicalPortablePathKey,
   resolvePathWithinRoot,
   validatePathSegment,
+  validatePortableFilename,
   validateSemanticIdentifier,
   validateWorktreeGuidancePath,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsInvocationCwd, validateWindowsWorktreePlan } from "../windows-git-path.js";
 import type { GeneratedAgentsFile } from "../workspace-agents.js";
 import { deleteAgentsIfSnapshotMatches, generateAgentsMarkdown } from "../workspace-agents.js";
 import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
@@ -39,12 +47,13 @@ export class CreateError extends Schema.TaggedError<CreateError>()("CreateError"
 }) {}
 
 const createUsage =
-  "Usage: outpost create --ticket <id> --type <branch-type> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]";
+  "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]";
 
 type CreateArgs = {
   ticket: string;
   type: string;
   repoIds: ReadonlyArray<string>;
+  tags?: ReadonlyArray<string>;
   base?: string;
   dryRun: boolean;
 };
@@ -53,6 +62,7 @@ type CreateArgsInput = {
   ticket?: string;
   type?: string;
   repoIds: ReadonlyArray<string>;
+  tags?: ReadonlyArray<string>;
   base?: string;
   dryRun: boolean;
 };
@@ -143,6 +153,7 @@ function parseCreateArgsInput(
         type: value("--type"),
         base: value("--base"),
         repoIds,
+        tags: Array.isArray(parsed.options["--tag"]) ? parsed.options["--tag"] : [],
         dryRun: parsed.options["--dry-run"] === true,
       };
     },
@@ -162,7 +173,7 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
   }
 
   if (parsedArgs.repoIds.length === 0) {
-    missing.push("At least one --repo is required.");
+    missing.push("At least one --repo or --tag is required.");
   }
 
   if (missing.length > 0) {
@@ -173,6 +184,7 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
     ticket: parsedArgs.ticket as string,
     type: parsedArgs.type as string,
     repoIds: parsedArgs.repoIds,
+    tags: parsedArgs.tags,
     base: parsedArgs.base,
     dryRun: parsedArgs.dryRun,
   });
@@ -497,18 +509,22 @@ function createBranch(
 function createWorktree(
   plan: CreatePlan
 ): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
-  return commandExitCode(
+  return commandResult(
     gitCommand("--git-dir", plan.managedRepoPath, "worktree", "add", plan.worktreePath, plan.branch)
   ).pipe(
     Effect.mapError(
-      (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      (error) =>
+        new CreateError({
+          message: `Failed to create worktree for repo ${plan.repoId}: ${error.message}`,
+          ...domainDetails(error),
+        })
     ),
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
+    Effect.flatMap((result) =>
+      result.exitCode === 0
         ? Effect.void
         : Effect.fail(
             new CreateError({
-              message: `Failed to create worktree for repo ${plan.repoId}.`,
+              message: `Failed to create worktree for repo ${plan.repoId} (exit status ${result.exitCode}): ${result.stderr.text}${result.stderr.truncated ? " [stderr truncated]" : ""}`,
             })
           )
     )
@@ -784,9 +800,24 @@ export function runCreate(
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const parsedArgsInput = yield* parseCreateArgsInput(args);
+    let parsedArgsInput = yield* parseCreateArgsInput(args);
 
     const outpostHome = yield* resolveOutpostHome();
+    const tagOnly = !!parsedArgsInput.tags?.length && !parsedArgsInput.repoIds.length;
+    // Resolve tag-only input for prompt handling; selection is repeated under the mutation lock.
+    if (parsedArgsInput.tags?.length && !parsedArgsInput.repoIds.length) {
+      for (const tag of parsedArgsInput.tags)
+        yield* validateTag(tag).pipe(Effect.mapError((error) => usageError(error.message)));
+      const registry = yield* loadRepoRegistry(outpostHome).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+      const repoIds = registry.repos
+        .filter((repo) => matchesTags(repo, parsedArgsInput.tags ?? []))
+        .map((repo) => repo.id);
+      if (!repoIds.length)
+        return yield* Effect.fail(usageError("No repositories match all selected tags."));
+      parsedArgsInput = { ...parsedArgsInput, repoIds };
+    }
 
     let parsedArgs: CreateArgs;
 
@@ -814,14 +845,14 @@ export function runCreate(
       yield* validateCreateArgs(parsedArgs);
     }
 
-    const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
-    yield* validateBranchName(branchName);
-
-    const config = yield* loadConfig(outpostHome).pipe(
+    yield* validateWindowsInvocationCwd().pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
+    const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
+    yield* validateBranchName(branchName);
+
     const mutation = parsedArgs.dryRun
       ? undefined
       : yield* acquireHomeMutationLock(outpostHome, "create").pipe(
@@ -829,6 +860,11 @@ export function runCreate(
             (error) => new CreateError({ message: error.message, ...domainDetails(error) })
           )
         );
+    const config = yield* loadConfig(outpostHome).pipe(
+      Effect.mapError(
+        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const record = (step: Record<string, unknown>) =>
       (mutation?.record(step) ?? Effect.void).pipe(
         Effect.mapError(
@@ -840,7 +876,21 @@ export function runCreate(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
-    const selectedRepos = yield* getSelectedRepos(registry.repos, parsedArgs.repoIds);
+    for (const tag of parsedArgs.tags ?? [])
+      yield* validateTag(tag).pipe(Effect.mapError((error) => usageError(error.message)));
+    const selectedRepos = (yield* getSelectedRepos(
+      registry.repos,
+      tagOnly
+        ? registry.repos
+            .filter((repo) => matchesTags(repo, parsedArgs.tags ?? []))
+            .map((repo) => repo.id)
+        : parsedArgs.repoIds
+    )).filter((repo) => matchesTags(repo, parsedArgs.tags ?? []));
+    if (!selectedRepos.length)
+      return yield* Effect.fail(usageError("No repositories match all selected tags."));
+    yield* validatePortableFilename("--ticket", parsedArgs.ticket).pipe(
+      Effect.mapError((error) => usageError(error.message))
+    );
 
     const workspacePath = parsedArgs.ticket;
     const ticketDirectory = yield* resolvePathWithinRoot(config.worktreesRoot, workspacePath).pipe(
@@ -848,6 +898,24 @@ export function runCreate(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
+
+    for (const repo of selectedRepos)
+      yield* validateWindowsWorktreePlan(
+        repo.managedRepoPath,
+        `${ticketDirectory}/${repo.name}`
+      ).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
+    for (const repo of selectedRepos) {
+      yield* validateWorktreeGuidancePath(ticketDirectory, `${ticketDirectory}/${repo.name}`).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+      yield* validatePortableFilename("repository folder", repo.name).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+    }
 
     if (parsedArgs.dryRun) {
       const plans = yield* prepareCreate(
@@ -913,6 +981,13 @@ export function runCreate(
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* fs
+              .makeDirectory(config.worktreesRoot, { recursive: true })
+              .pipe(
+                Effect.mapError(
+                  (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+                )
+              );
+            yield* fs
               .makeDirectory(ticketDirectory)
               .pipe(
                 Effect.mapError(
@@ -961,6 +1036,9 @@ export function runCreate(
         );
 
         const manifest: Manifest = {
+          ...(config.version === 2
+            ? { version: 2 as const, worktreesRoot: config.worktreesRoot }
+            : {}),
           ticket: parsedArgs.ticket,
           type: parsedArgs.type,
           branch: branchName,

@@ -8,7 +8,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { commandExitCode, gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
-import { loadConfig } from "./config.js";
+import { knownWorktreesRoots, loadConfig } from "./config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import {
   getCanonicalPortablePathKey,
@@ -50,6 +50,8 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
+  version: Schema.optional(Schema.Literal(2)),
+  worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
   branch: semanticIdentifierSchema("branch"),
@@ -341,7 +343,9 @@ export function readManifest(
         }),
     });
 
-    const manifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(parsedJson).pipe(
+    const manifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(parsedJson, {
+      onExcessProperty: "error",
+    }).pipe(
       Effect.mapError(
         (error) =>
           new ManifestError({
@@ -393,9 +397,9 @@ export function readManifest(
       );
     }
 
-    const workspaceDir = yield* resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath);
+    const workspaceDir = yield* resolveManifestWorkspacePath(config, manifest);
     yield* ensureWorkspaceMatchesTicket(
-      config.worktreesRoot,
+      yield* getManifestWorktreesRoot(config, manifest),
       ticket,
       manifest.workspacePath,
       workspaceDir
@@ -496,7 +500,9 @@ export function writeManifest(
   manifest: Manifest
 ): Effect.Effect<void, ManifestError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
-    const validatedManifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(manifest).pipe(
+    const validatedManifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(manifest, {
+      onExcessProperty: "error",
+    }).pipe(
       Effect.mapError(
         (error) =>
           new ManifestError({
@@ -559,12 +565,9 @@ export function writeManifest(
         (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
       )
     );
-    const workspaceDir = yield* resolveWorkspacePath(
-      config.worktreesRoot,
-      validatedManifest.workspacePath
-    );
+    const workspaceDir = yield* resolveManifestWorkspacePath(config, validatedManifest);
     yield* ensureWorkspaceMatchesTicket(
-      config.worktreesRoot,
+      yield* getManifestWorktreesRoot(config, validatedManifest),
       validatedManifest.ticket,
       validatedManifest.workspacePath,
       workspaceDir
@@ -714,25 +717,13 @@ export function deriveWorkspaceStatus(
     const manifestFileExists = yield* fs.exists(manifestFilePath);
 
     if (!manifestFileExists) {
-      const workspaceDirResult = yield* Effect.result(
-        resolvePathWithinRoot(config.worktreesRoot, ticket)
-      );
-
-      if (Result.isFailure(workspaceDirResult)) {
-        return "missing";
-      }
-
-      const workspaceDir = workspaceDirResult.success;
-      const workspaceDirExists = yield* fs.exists(workspaceDir);
-
-      if (workspaceDirExists) {
-        const stat = yield* fs.stat(workspaceDir);
-
-        if (stat.type === "Directory") {
+      for (const root of knownWorktreesRoots(config)) {
+        const workspaceDirResult = yield* Effect.result(resolvePathWithinRoot(root, ticket));
+        if (Result.isFailure(workspaceDirResult)) continue;
+        const workspaceDir = workspaceDirResult.success;
+        if ((yield* fs.exists(workspaceDir)) && (yield* fs.stat(workspaceDir)).type === "Directory")
           return "unmanaged";
-        }
       }
-
       return "missing";
     }
 
@@ -760,9 +751,7 @@ export function deriveManifestStatus(
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const workspaceDirResult = yield* Effect.result(
-      resolveWorkspacePath(config.worktreesRoot, manifest.workspacePath)
-    );
+    const workspaceDirResult = yield* Effect.result(resolveManifestWorkspacePath(config, manifest));
 
     if (Result.isFailure(workspaceDirResult)) {
       return "invalid";
@@ -822,7 +811,8 @@ export function deriveManifestStatus(
 
 export function scanWorktreesRoot(
   worktreesRoot: string,
-  outpostHome: string
+  outpostHome: string,
+  options: { includeRegisteredDirectories?: boolean } = {}
 ): Effect.Effect<ReadonlyArray<string>, PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -844,6 +834,12 @@ export function scanWorktreesRoot(
         continue;
       }
 
+      // A manifest identifies one path, not every same-named directory across
+      // historical roots. Listing excludes its validated paths after this scan.
+      if (options.includeRegisteredDirectories) {
+        unmanagedTickets.push(entry);
+        continue;
+      }
       const manifestFilePath = path.join(outpostHome, "workspaces", `${entry}.json`);
       const manifestExists = yield* fs
         .exists(manifestFilePath)
@@ -934,4 +930,31 @@ export function ticketIsLocked(
     const lockFilePath = yield* getLockFilePath(outpostHome, ticket);
     return yield* fs.exists(lockFilePath);
   });
+}
+
+/** Roots come from trusted configuration; an arbitrary manifest cannot grant deletion authority. */
+export function getManifestWorktreesRoot(
+  config: OutpostConfig,
+  manifest: Manifest
+): Effect.Effect<string, ManifestError> {
+  if (manifest.version === undefined && manifest.worktreesRoot === undefined)
+    return Effect.succeed(config.legacyWorktreesRoot ?? config.worktreesRoot);
+  if (
+    manifest.version !== 2 ||
+    !manifest.worktreesRoot ||
+    config.version !== 2 ||
+    !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)
+  )
+    return Effect.fail(
+      new ManifestError({
+        message: "Manifest workspace root is not registered in version 2 configuration.",
+      })
+    );
+  return Effect.succeed(manifest.worktreesRoot);
+}
+
+export function resolveManifestWorkspacePath(config: OutpostConfig, manifest: Manifest) {
+  return getManifestWorktreesRoot(config, manifest).pipe(
+    Effect.flatMap((root) => resolveWorkspacePath(root, manifest.workspacePath))
+  );
 }

@@ -5,12 +5,19 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { commandString, gitCommand } from "../child-process.js";
-import { loadConfig, loadRepoRegistry, resolveOutpostHome, writeRepoRegistry } from "../config.js";
+import {
+  knownWorktreesRoots,
+  loadConfig,
+  loadRepoRegistry,
+  resolveOutpostHome,
+  writeRepoRegistry,
+} from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { validateManagedRepoPath, verifyManagedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsInvocationCwd, validateWindowsManagedGitDir } from "../windows-git-path.js";
 import {
   listManifestTickets,
   readManifest,
@@ -49,6 +56,11 @@ export function runRepoRemove(
     );
 
     const fs = yield* FileSystem.FileSystem;
+    yield* validateWindowsInvocationCwd().pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const outpostHome = yield* resolveOutpostHome();
 
     const config = yield* loadConfig(outpostHome).pipe(
@@ -81,6 +93,11 @@ export function runRepoRemove(
       );
     }
 
+    yield* validateWindowsManagedGitDir(existingRepo.managedRepoPath).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
     const tickets = yield* listManifestTickets(outpostHome).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
@@ -148,16 +165,18 @@ export function runRepoRemove(
       );
     }
 
-    const unmanagedTickets = yield* scanWorktreesRoot(config.worktreesRoot, outpostHome).pipe(
+    const unmanagedTickets = (yield* Effect.forEach(knownWorktreesRoots(config), (root) =>
+      scanWorktreesRoot(root, outpostHome)
+    ).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
       )
-    );
+    )).flat();
 
     const warnings =
       unmanagedTickets.length > 0
         ? [
-            `${unmanagedTickets.length} unmanaged workspace(s) found under worktreesRoot. Inspect them before cleanup; Git-linked worktrees still block repository removal.`,
+            `${unmanagedTickets.length} unmanaged workspace(s) found under known workspace roots. Inspect them before cleanup; Git-linked worktrees still block repository removal.`,
           ]
         : [];
     const managedPath = yield* validateManagedRepoPath(config.reposRoot, existingRepo).pipe(

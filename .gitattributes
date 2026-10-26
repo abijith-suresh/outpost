@@ -1,0 +1,6 @@
+# Generated assets and their compiled digest map must retain identical bytes on
+# Windows checkouts; discovery intentionally verifies the shipped schema bytes.
+/apps/cli/schemas/*.json text eol=lf
+/apps/cli/skills/outpost/references/commands.md text eol=lf
+/apps/cli/man/outpost.1 text eol=lf
+/apps/cli/src/schema-integrity.ts text eol=lf
