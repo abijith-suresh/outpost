@@ -155,9 +155,13 @@ describe("configuration, tags and future workspace guidance", () => {
       const localConfigBytes = readFileSync(localConfigPath, "utf8");
       if (gitDirBytes === 220 && process.platform === "win32") {
         const registryBefore = readFileSync(path.join(home, "repos.json"), "utf8");
-        const refsBefore = execFileSync("git", ["--git-dir", record.managedRepoPath, "show-ref"], {
-          encoding: "utf8",
-        });
+        const refsBefore = execFileSync(
+          "git",
+          ["-c", "core.longpaths=true", "--git-dir", record.managedRepoPath, "show-ref"],
+          {
+            encoding: "utf8",
+          }
+        );
         const result = await cli("create", ...createArgs("LONG-1", record.id));
         expectCliCode(result, 1);
         expect(result.envelope.error).toMatchObject({
@@ -171,9 +175,13 @@ describe("configuration, tags and future workspace guidance", () => {
         expect(readFileSync(path.join(home, "repos.json"), "utf8")).toBe(registryBefore);
         expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
         expect(
-          execFileSync("git", ["--git-dir", record.managedRepoPath, "show-ref"], {
-            encoding: "utf8",
-          })
+          execFileSync(
+            "git",
+            ["-c", "core.longpaths=true", "--git-dir", record.managedRepoPath, "show-ref"],
+            {
+              encoding: "utf8",
+            }
+          )
         ).toBe(refsBefore);
         expect(existsSync(path.join(home, "worktrees", "LONG-1"))).toBe(false);
         expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
