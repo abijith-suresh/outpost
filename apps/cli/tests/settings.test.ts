@@ -108,71 +108,149 @@ describe("configuration, tags and future workspace guidance", () => {
     expect(globalSetting()).toEqual(globalBefore);
   });
 
-  it("clones real pack files beyond 260 characters within the supported Git directory budget", async () => {
-    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
-    const outer = realpathSync.native(createTempDir());
-    const baseline = localManagedRepoPath(path.join(outer, "h"), repo.tempRemote);
-    const padding = 220 - Buffer.byteLength(baseline, "utf8");
-    expect(padding).toBeGreaterThanOrEqual(0);
-    const home = path.join(outer, `h${"x".repeat(padding)}`);
-    mkdirSync(home);
-    process.env.OUTPOST_HOME = home;
-    await cliSuccess("init");
-    const configPath = path.join(home, "config.json");
-    const configBytes = readFileSync(configPath, "utf8");
-    const sourceConfig = readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8");
-    const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
-    await cliSuccess("repo", "add", repo.tempRepo);
-    const record = readRegistry(home).repos[0];
-    expect(Buffer.byteLength(record.managedRepoPath, "utf8")).toBe(220);
-    const packDirectory = path.join(record.managedRepoPath, "objects", "pack");
-    const packs = readdirSync(packDirectory).filter((name) => name.endsWith(".pack"));
-    expect(packs.length).toBeGreaterThan(0);
-    for (const pack of packs) expect(path.join(packDirectory, pack).length).toBeGreaterThan(260);
-    const localConfigPath = path.join(record.managedRepoPath, "config");
-    const localConfigBytes = readFileSync(localConfigPath, "utf8");
-    const created = await cliSuccess("create", ...createArgs("LONG-1", record.id));
-    const workspacePath = created.envelope.data.ticketDirectory;
-    const worktreePath = created.envelope.data.worktrees[0].path;
-    expect(
-      execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], { encoding: "utf8" }).trim()
-    ).toBe(initialCommit);
-    expect((await cliSuccess("workspace", "show", "LONG-1")).envelope.data.status).toBe("ready");
-    expect((await cliSuccess("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
-    await cliSuccess("workspace", "remove", "LONG-1");
-    expect(existsSync(workspacePath)).toBe(false);
-    expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
-    expect(
-      execFileSync(
-        "git",
-        ["--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1"],
-        { encoding: "utf8" }
-      ).trim()
-    ).toBe(initialCommit);
-    expect(readFileSync(configPath, "utf8")).toBe(configBytes);
-    expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
-    expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
-    const beyondHome = `${home}b`;
-    mkdirSync(beyondHome);
-    process.env.OUTPOST_HOME = beyondHome;
-    await cliSuccess("init");
-    const beforeRefusal = ["config.json", "repos.json"].map((file) =>
-      readFileSync(path.join(beyondHome, file), "utf8")
-    );
-    const beyond = await cli("repo", "add", repo.tempRepo);
-    if (process.platform === "win32") {
-      expectCliCode(beyond, 1);
-      expect(beyond.envelope.error.message).toContain("221 UTF-8 bytes; maximum 220");
-      expect(
-        ["config.json", "repos.json"].map((file) =>
+  it.each([205, 220])(
+    "clones real pack files beyond 260 characters at a %i-byte Git directory and validates the full plan",
+    async (gitDirBytes) => {
+      const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+      const outer = realpathSync.native(createTempDir());
+      const baseline = localManagedRepoPath(path.join(outer, "h"), repo.tempRemote);
+      const padding = gitDirBytes - Buffer.byteLength(baseline, "utf8");
+      expect(padding).toBeGreaterThanOrEqual(0);
+      const home = path.join(outer, `h${"x".repeat(padding)}`);
+      mkdirSync(home);
+      process.env.OUTPOST_HOME = home;
+      await cliSuccess("init");
+      const configPath = path.join(home, "config.json");
+      const configBytes = readFileSync(configPath, "utf8");
+      const sourceConfig = readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8");
+      const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      await cliSuccess("repo", "add", repo.tempRepo);
+      const record = readRegistry(home).repos[0];
+      expect(Buffer.byteLength(record.managedRepoPath, "utf8")).toBe(gitDirBytes);
+      const packDirectory = path.join(record.managedRepoPath, "objects", "pack");
+      const packs = readdirSync(packDirectory).filter((name) => name.endsWith(".pack"));
+      expect(packs.length).toBeGreaterThan(0);
+      for (const pack of packs) expect(path.join(packDirectory, pack).length).toBeGreaterThan(260);
+      await cliSuccess("repo", "fetch", "--all");
+      let adminSentinel: string | undefined;
+      if (gitDirBytes === 205) {
+        execFileSync("git", [
+          "--git-dir",
+          record.managedRepoPath,
+          "config",
+          "extensions.worktreeConfig",
+          "true",
+        ]);
+        writeFileSync(
+          path.join(record.managedRepoPath, "config.worktree"),
+          "[core]\n bare = true\n[outpost]\n boundary = preserved\n"
+        );
+        adminSentinel = path.join(record.managedRepoPath, "worktrees", record.name);
+        mkdirSync(path.dirname(adminSentinel), { recursive: true });
+        writeFileSync(adminSentinel, "unowned administrative-name sentinel");
+      }
+      const localConfigPath = path.join(record.managedRepoPath, "config");
+      const localConfigBytes = readFileSync(localConfigPath, "utf8");
+      if (gitDirBytes === 220 && process.platform === "win32") {
+        const registryBefore = readFileSync(path.join(home, "repos.json"), "utf8");
+        const refsBefore = execFileSync("git", ["--git-dir", record.managedRepoPath, "show-ref"], {
+          encoding: "utf8",
+        });
+        const result = await cli("create", ...createArgs("LONG-1", record.id));
+        expectCliCode(result, 1);
+        expect(result.envelope.error).toMatchObject({
+          reason: "invalid-arguments",
+          retryable: false,
+        });
+        expect(result.envelope.error.message).toContain("administrative-directory");
+        expect(result.envelope.error.message).toContain("maximum 243");
+        expect(readFileSync(configPath, "utf8")).toBe(configBytes);
+        expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
+        expect(readFileSync(path.join(home, "repos.json"), "utf8")).toBe(registryBefore);
+        expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
+        expect(
+          execFileSync("git", ["--git-dir", record.managedRepoPath, "show-ref"], {
+            encoding: "utf8",
+          })
+        ).toBe(refsBefore);
+        expect(existsSync(path.join(home, "worktrees", "LONG-1"))).toBe(false);
+        expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
+        for (const pack of packs) expect(existsSync(path.join(packDirectory, pack))).toBe(true);
+      } else {
+        const created = await cliSuccess("create", ...createArgs("LONG-1", record.id));
+        const workspacePath = created.envelope.data.ticketDirectory;
+        const worktreePath = created.envelope.data.worktrees[0].path;
+        if (gitDirBytes === 205) {
+          const adminPath = readFileSync(path.join(worktreePath, ".git"), "utf8")
+            .replace(/^gitdir: /, "")
+            .trim();
+          expect(adminPath.length).toBe(243);
+          expect(path.join(adminPath, "config.worktree").length).toBe(259);
+          expect(readFileSync(path.join(adminPath, "config.worktree"), "utf8")).toContain(
+            "boundary = preserved"
+          );
+          // The mirror stays bare; its linked checkout has separate worktree
+          // configuration. Exercise startup reading that file at 259 units.
+          execFileSync("git", [
+            "-c",
+            "core.longpaths=true",
+            "-C",
+            worktreePath,
+            "config",
+            "--worktree",
+            "core.bare",
+            "false",
+          ]);
+        }
+        expect(
+          execFileSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim()
+        ).toBe(initialCommit);
+        expect((await cliSuccess("workspace", "show", "LONG-1")).envelope.data.status).toBe(
+          "ready"
+        );
+        expect((await cliSuccess("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
+        await cliSuccess("workspace", "remove", "LONG-1");
+        expect(existsSync(workspacePath)).toBe(false);
+        expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
+        expect(
+          execFileSync(
+            "git",
+            ["--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1"],
+            { encoding: "utf8" }
+          ).trim()
+        ).toBe(initialCommit);
+        expect(readFileSync(configPath, "utf8")).toBe(configBytes);
+        expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
+        expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
+        if (adminSentinel)
+          expect(readFileSync(adminSentinel, "utf8")).toBe("unowned administrative-name sentinel");
+      }
+      if (gitDirBytes === 220) {
+        const beyondHome = `${home}b`;
+        mkdirSync(beyondHome);
+        process.env.OUTPOST_HOME = beyondHome;
+        await cliSuccess("init");
+        const beforeRefusal = ["config.json", "repos.json"].map((file) =>
           readFileSync(path.join(beyondHome, file), "utf8")
-        )
-      ).toEqual(beforeRefusal);
-      expect(existsSync(localManagedRepoPath(beyondHome, repo.tempRemote))).toBe(false);
-    } else expectCliSuccess(beyond);
-  });
+        );
+        const beyond = await cli("repo", "add", repo.tempRepo);
+        if (process.platform === "win32") {
+          expectCliCode(beyond, 1);
+          expect(beyond.envelope.error.message).toContain("221 UTF-8 bytes; maximum 220");
+          expect(
+            ["config.json", "repos.json"].map((file) =>
+              readFileSync(path.join(beyondHome, file), "utf8")
+            )
+          ).toEqual(beforeRefusal);
+          expect(existsSync(localManagedRepoPath(beyondHome, repo.tempRemote))).toBe(false);
+        } else expectCliSuccess(beyond);
+      }
+    }
+  );
 
   it("refuses unsupported canonical roots before import or config migration, preserving source and metadata", async () => {
     const outer = realpathSync.native(createTempDir());

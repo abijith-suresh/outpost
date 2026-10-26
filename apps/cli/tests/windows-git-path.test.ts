@@ -47,11 +47,14 @@ describe("bounded Windows Git paths", () => {
       "222 UTF-8 bytes"
     );
     for (const kind of ["cwd", "administrative-directory"] as const) {
-      const maximum = kind === "cwd" ? 258 : 259;
+      const maximum = kind === "cwd" ? 258 : 243;
       expect(
         Exit.isSuccess(
           await run(
-            validateWindowsGitPathLength(`${"😀".repeat(129)}${maximum % 2 ? "a" : ""}`, kind)
+            validateWindowsGitPathLength(
+              `${"😀".repeat(Math.floor(maximum / 2))}${maximum % 2 ? "a" : ""}`,
+              kind
+            )
           )
         )
       ).toBe(true);
@@ -85,7 +88,7 @@ describe("bounded Windows Git paths", () => {
     rejection(
       await provided(validateWindowsWorktreePlan(paddedManaged, shortCheckout, "win32")),
       "administrative-directory",
-      "maximum 259"
+      "maximum 243"
     );
   });
 
@@ -124,6 +127,26 @@ describe("bounded Windows Git paths", () => {
         )
       )
     ).toBe(true);
+  });
+
+  it("reserves config.worktree and NUL at the exact administrative bootstrap boundary", async () => {
+    const outer = realpathSync.native(createTempDir());
+    const managed = path.join(outer, "m".repeat(205 - outer.length - 1));
+    mkdirSync(managed);
+    expect(
+      Exit.isSuccess(
+        await provided(
+          validateWindowsWorktreePlan(managed, path.join(outer, "r".repeat(26)), "win32")
+        )
+      )
+    ).toBe(true);
+    rejection(
+      await provided(
+        validateWindowsWorktreePlan(managed, path.join(outer, "r".repeat(27)), "win32")
+      ),
+      "244 UTF-16 code units",
+      "maximum 243"
+    );
   });
 
   it("canonicalizes missing descendants through a space/Unicode junction before measuring", async () => {
@@ -184,7 +207,7 @@ describe("bounded Windows Git paths", () => {
       await provided(validateWindowsWorktreePlan(alias, path.join(outer, name), "win32")),
       "administrative-directory",
       "263 UTF-16 code units",
-      "maximum 259"
+      "maximum 243"
     );
   });
 

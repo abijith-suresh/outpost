@@ -11,11 +11,11 @@ import { resolveLocalRemoteTransportPath } from "./remote-identity.js";
 export const WINDOWS_GIT_DIR_BYTES = 220;
 // compat/mingw.c mingw_getcwd() stores cwd in wchar_t[MAX_PATH], including its NUL.
 // Its sole direct caller, strbuf_getcwd(), grows the UTF-8 output buffer on ERANGE.
-// Apply the same cwd-safe ceiling conservatively to worktree admin directories;
-// this does not assert a MAX_PATH limit on every internal file operation.
 // Win32 process creation additionally reserves a trailing separator, then NUL.
 export const WINDOWS_GIT_CWD_UNITS = 258;
-export const WINDOWS_GIT_ADMIN_UNITS = 259;
+// Linked-worktree bootstrap opens /HEAD, /commondir and optionally /config.worktree
+// before configuration enables long paths. Reserve the longest suffix (16) + NUL.
+export const WINDOWS_GIT_ADMIN_UNITS = 260 - 16 - 1;
 
 export class WindowsGitPathError extends Schema.TaggedError<WindowsGitPathError>()(
   "WindowsGitPathError",
