@@ -112,6 +112,7 @@
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",
+                "REPO_RESTORE_FAILED",
                 "REPO_SHOW_FAILED",
                 "WORKSPACE_LIST_FAILED",
                 "WORKSPACE_REMOVE_FAILED",

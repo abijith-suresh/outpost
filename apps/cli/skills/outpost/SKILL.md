@@ -45,12 +45,15 @@ Read [commands](references/commands.md) for syntax and
 - Preview cleanup with `outpost workspace remove <ticket> --dry-run --json`, then
   remove only when cleanup is intended. Dirty worktrees block removal. Local
   branches are preserved, including work committed after creation.
-- Remove a repository with `outpost repo remove <id> --dry-run --json`, followed
-  by removal only after workspaces and Git links no longer reference it. Repository
-  removal deletes the mirror that stores its local branches and commits. Keep the
-  mirror or save needed work elsewhere first. For a local Git bundle, follow
-  [branch preservation](references/recovery.md#save-local-branches-before-repository-removal)
-  and verify the saved commit before cleanup.
+- Unregister with `outpost repo remove <id> --dry-run --json`, then execute only
+  when registration removal is intended and no workspaces or Git links reference
+  it. This retains the mirror, local branches and all objects. No storage purge
+  is provided. Inspect saved registrations with `repo list --retained --json`
+  and `repo show <id> --retained --json`. Use `repo restore <id> --dry-run --json`
+  before explicitly restoring. Restore checks the saved identity, ownership and
+  path; it never fetches, clones or adopts arbitrary unregistered directories.
+  Missing source/remote paths do not require another import. Do not remove or
+  replace retained storage to make a failed command pass.
   Push only if the user explicitly authorizes that network action.
 
 ## Interpret the result before retrying

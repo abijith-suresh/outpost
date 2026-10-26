@@ -47,12 +47,15 @@ Commands:
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
                         Fetch all managed mirror repositories
-  repo list [--tag <tag> ...] [--json] List imported repositories
+  repo list [--tag <tag> ...] [--retained] [--json]
+                       List active or explicitly retained repositories
   repo tag <id> [--add <tag> ...] [--remove <tag> ...] [--json]
                        Edit optional flat repository tags
   repo remove <id> [--dry-run] [--json]
-                         Remove an imported repository
-  repo show <id> [--json]
+                         Unregister a repository while retaining its storage
+  repo restore <id> [--dry-run] [--json]
+                         Restore a validated retained registration without fetching
+  repo show <id> [--retained] [--json]
                        Show one imported repository by id
   workspace list [--json]
                          List created ticket workspaces
@@ -95,7 +98,7 @@ outpost guidance clear --json
 
 Extra instructions are optional plaintext appended to the generated factual orientation, under its existing SHA256 ownership marker. They are read from a UTF-8 file of at most 65,536 bytes, without NUL characters, so multiline text does not depend on shell quoting. Preview uses the create preflight and returns the proposed full `AGENTS.md`; it writes no files and acquires no mutation lock. Setting or clearing instructions affects future generation only. Existing generated, modified and foreign guidance retains its normal protection.
 
-The first settings, tag or guidance mutation upgrades configuration to version 2 and installs an incompatible version 2 registry before saving extended settings or tags. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new manifests declare their version and root. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
+The first settings, tag or guidance mutation upgrades configuration to version 2 and installs an incompatible version 2 registry before saving extended settings or tags. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new manifests declare their version and root. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 or 3 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
 
 ### Workspace remove
 
@@ -107,11 +110,42 @@ Removes all worktrees for the given ticket. The command refuses to remove:
 - Worktrees it cannot prove it owns
 - Workspaces where `AGENTS.md` has been modified or replaced (interactive mode prompts for confirmation; non-interactive mode fails)
 
-Workspace removal preserves branches in the managed mirrors. Repository removal
-deletes that storage, including its local refs and any commits stored only there.
-Keep the mirror or save needed work elsewhere before `repo remove`, for example
-with a local Git bundle. Push only when the user explicitly authorizes network
-access. Existing-mirror previews and removal results always include this warning.
+Workspace removal preserves branches in the managed mirrors. `repo remove` now
+unregisters the repository and retains its storage, including every local ref and
+object. Neither operation deletes branch-only work. Registration removal still
+refuses active manifests and linked Git worktrees. No storage purge is provided.
+
+### Retained repositories and restoration
+
+```sh
+outpost repo remove <id> --dry-run --json
+outpost repo remove <id> --json
+outpost repo list --retained --json
+outpost repo show <id> --retained --json
+outpost repo restore <id> --dry-run --json
+outpost repo restore <id> --json
+```
+
+The ordinary repository list, create selection and fetch include active
+registrations. `--retained` explicitly selects saved registrations and their
+storage paths. Retained show also reports local refs and inspection diagnostics.
+A path-presence status of `ok` alone does not prove ownership; check
+`inspection.status` before using its refs. Unsupported or foreign storage remains
+visible with an unavailable inspection. Restore uses the saved record, validates identity, ownership,
+containment, Windows path budgets and registration conflicts, and returns the
+repository to the active set. It does not clone or fetch and does not require the
+original source or remote to be available. Tags and import/fetch timestamps stay
+unchanged. `repo add` refuses a retained identity and directs you to restore it.
+It never automatically adopts an unregistered directory.
+
+The first unregister/restore lifecycle mutation installs a version 3 repository
+registry after the existing version 2 configuration barrier. The atomic registry
+holds active and retained records together, so a failure or interruption leaves
+each record discoverable in one set. Older repository writers refuse the new
+format. Inspect both lists and the journal after an uncertain result before
+retrying. Retained storage is still owned state; do not delete it or replace its
+Git metadata to bypass a refusal. A missing or changed directory remains
+inspectable but cannot be restored until its recorded ownership is validated.
 
 ### Interactive vs non-interactive
 
@@ -151,7 +185,7 @@ outpost workspace show PROJ-123 --json
 
 ## Safety
 
-Repository mutations validate registry paths against both `reposRoot` and, for legacy mirrors without ownership markers, the path derived from repository identity. Existing directories must be bare Git repositories with a matching origin and an Outpost ownership marker, or a verified legacy mirror layout. Unregistered directories are never adopted. Create preflight reserves `AGENTS.md`, including portable case and trailing-dot collisions, before either dry-run or execution. Removal refuses any linked Git worktree, including one whose workspace manifest is missing. An absent mirror can be unregistered after containment and manifest checks; foreign directories remain untouched. `repo remove --json` carries unmanaged-directory warnings in `data.warnings` without plain stderr output.
+Repository mutations validate registry paths against both `reposRoot` and, for legacy mirrors without ownership markers, the path derived from repository identity. Existing directories must be bare Git repositories with a matching origin and an Outpost ownership marker, or a verified legacy mirror layout. Unregistered directories are never adopted. Create preflight reserves `AGENTS.md`, including portable case and trailing-dot collisions, before either dry-run or execution. Removal refuses any linked Git worktree, including one whose workspace manifest is missing. An absent mirror can be unregistered into retained metadata after containment and manifest checks; restoring it requires the original validated storage. Foreign directories remain untouched. `repo remove --json` carries unmanaged-directory warnings in `data.warnings` without plain stderr output.
 
 Git commands drain both output streams and request termination after 120 seconds by default. Set `OUTPOST_GIT_TIMEOUT_MS` to a positive number of milliseconds for slower remotes. Diagnostics retain at most 256 KiB per stream, append lines without expanding them into function arguments, and mark truncation; commands requiring stdout fail rather than consume truncated or failed output.
 

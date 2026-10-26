@@ -65,6 +65,56 @@
                   "status": {
                     "type": "string",
                     "enum": ["ok", "missing"]
+                  },
+                  "retainedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "inspection": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": ["ok", "unavailable"]
+                          },
+                          "refs": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "objectId": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["name", "objectId"],
+                              "additionalProperties": true
+                            }
+                          },
+                          "diagnostics": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": ["status", "refs", "diagnostics"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -128,6 +178,7 @@
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",
+                "REPO_RESTORE_FAILED",
                 "REPO_SHOW_FAILED",
                 "WORKSPACE_LIST_FAILED",
                 "WORKSPACE_REMOVE_FAILED",

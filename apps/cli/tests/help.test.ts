@@ -122,7 +122,9 @@ describe("run", () => {
     expect(exitCode).toBe(0);
     expect(infoSpy).toHaveBeenCalledTimes(1);
     expect(infoSpy.mock.calls[0]?.[0]).toContain("Usage:");
-    expect(infoSpy.mock.calls[0]?.[0]).toContain("outpost repo list [--tag <tag> ...] [--json]");
+    expect(infoSpy.mock.calls[0]?.[0]).toContain(
+      "outpost repo list [--retained] [--tag <tag> ...] [--json]"
+    );
   });
 
   it("prints command-level help when repo fetch includes --help", async () => {
@@ -560,7 +562,9 @@ describe("run", () => {
     const exitCode = await runCli(["repo", "list", "unexpected"]);
 
     expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenCalledWith("Usage: outpost repo list [--tag <tag> ...] [--json]");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Usage: outpost repo list [--retained] [--tag <tag> ...] [--json]"
+    );
   });
 
   it("rejects unexpected positional argument for workspace list", async () => {

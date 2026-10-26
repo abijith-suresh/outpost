@@ -304,6 +304,41 @@ export function resolveRemoteIdentity(
   });
 }
 
+/** Validate a saved identity without touching a potentially unavailable source or remote. */
+export function resolveRecordedRemoteIdentity(remoteUrl: string) {
+  return Effect.gen(function* () {
+    const network = yield* parseNetworkRemote(remoteUrl);
+    if (network) return network;
+    const path = yield* Path.Path;
+    return yield* Effect.try({
+      try: () => {
+        if (!remoteUrl.startsWith("file://")) throw new Error("Expected a canonical file URL");
+        const url = new URL(remoteUrl);
+        if (url.search || url.hash) throw new Error("Unexpected query or fragment");
+        const transportPath = fileURLToPath(url);
+        if (!path.isAbsolute(transportPath) || pathToFileURL(transportPath).href !== remoteUrl)
+          throw new Error("Expected a canonical absolute file URL");
+        const canonicalPath = stripTerminalGit(transportPath);
+        const name = path.basename(canonicalPath);
+        const id = pathToFileURL(canonicalPath).href;
+        const pathSegments = getFileManagedPathSegments(id);
+        if (
+          !name ||
+          pathSegments
+            .slice(1)
+            .some(
+              (segment) =>
+                !segment || segment === "." || segment === ".." || /[/\\\0]/.test(segment)
+            )
+        )
+          throw new Error("Unsafe identity path component");
+        return { kind: "file" as const, id, name, pathSegments, transportUrl: remoteUrl };
+      },
+      catch: (error) => invalidRemote(remoteUrl, String(error)),
+    });
+  });
+}
+
 export function getManagedRepoPath(
   reposRoot: string,
   identity: RemoteIdentity

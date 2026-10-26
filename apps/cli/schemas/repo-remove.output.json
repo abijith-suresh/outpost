@@ -36,6 +36,20 @@
                 "type": "string"
               }
             },
+            "action": {
+              "type": "string",
+              "enum": ["unregistered"]
+            },
+            "storage": {
+              "type": "string",
+              "enum": ["retained", "missing"]
+            },
+            "retainedAt": {
+              "type": "string"
+            },
+            "recoveryCommand": {
+              "type": "string"
+            },
             "dryRun": {
               "anyOf": [
                 {
@@ -47,7 +61,18 @@
               ]
             }
           },
-          "required": ["id", "name", "managedRepoPath", "remoteUrl", "sourceRepoPath", "warnings"],
+          "required": [
+            "id",
+            "name",
+            "managedRepoPath",
+            "remoteUrl",
+            "sourceRepoPath",
+            "warnings",
+            "action",
+            "storage",
+            "retainedAt",
+            "recoveryCommand"
+          ],
           "additionalProperties": true
         },
         "exitCode": {
@@ -93,6 +118,7 @@
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",
+                "REPO_RESTORE_FAILED",
                 "REPO_SHOW_FAILED",
                 "WORKSPACE_LIST_FAILED",
                 "WORKSPACE_REMOVE_FAILED",

@@ -9,11 +9,12 @@ import {
   knownWorktreesRoots,
   loadConfig,
   loadRepoRegistry,
+  prepareExtendedState,
   resolveOutpostHome,
   writeRepoRegistry,
 } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
-import { validateManagedRepoPath, verifyManagedRepository } from "../managed-repo.js";
+import { validateManagedRepoPath, verifyRetainedRepository } from "../managed-repo.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { getCanonicalPortablePathKey, validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
@@ -193,9 +194,9 @@ export function runRepoRemove(
       );
     if (exists) {
       warnings.push(
-        "Removing this managed repository deletes its local branches and any commits stored only here. Save needed branches and commits outside this mirror before repository cleanup."
+        "Registration will be removed; owned Git storage, all branches and commits will be retained. Use repo list --retained to inspect it and repo restore <id> to register it again."
       );
-      yield* verifyManagedRepository(config.reposRoot, existingRepo).pipe(
+      yield* verifyRetainedRepository(config.reposRoot, existingRepo).pipe(
         Effect.mapError(
           (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
         )
@@ -226,6 +227,10 @@ export function runRepoRemove(
       remoteUrl: existingRepo.remoteUrl,
       sourceRepoPath: existingRepo.sourceRepoPath,
       warnings,
+      action: "unregistered" as const,
+      storage: exists ? ("retained" as const) : ("missing" as const),
+      retainedAt: new Date().toISOString(),
+      recoveryCommand: "outpost repo restore <id>",
     };
     if (dryRun)
       return {
@@ -234,36 +239,9 @@ export function runRepoRemove(
       } satisfies CommandOutput<"repo remove">;
     if (!mutation)
       return yield* Effect.fail(new RepoRemoveError({ message: "Missing mutation lock" }));
-    if (exists) {
-      yield* mutation
-        .record({
-          action: "remove-repository",
-          repoId: existingRepo.id,
-          managedRepoPath: managedPath,
-        })
-        .pipe(
-          Effect.mapError(
-            (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
-          )
-        );
-      yield* fs.remove(managedPath, { recursive: true }).pipe(
-        Effect.mapError(
-          (error) =>
-            new RepoRemoveError({
-              message: `Failed to remove repo directory: ${error.message}`,
-            })
-        )
-      );
-    }
-
-    const nextRegistry = {
-      ...registry,
-      repos: registry.repos.filter((repo) => repo.id !== repoId),
-    };
-
     yield* mutation
       .record({
-        action: "unregister-repository",
+        action: "prepare-retained-repository-state",
         repoId: existingRepo.id,
         managedRepoPath: managedPath,
       })
@@ -272,7 +250,49 @@ export function runRepoRemove(
           (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
         )
       );
-    yield* writeRepoRegistry(outpostHome, nextRegistry).pipe(
+    yield* prepareExtendedState(outpostHome, config).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
+    const compatible = yield* loadRepoRegistry(outpostHome).pipe(
+      Effect.mapError(
+        (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+      )
+    );
+    // Block v2 writers before retaining records they would otherwise strip. A
+    // failed/interrupted write leaves the complete record active or retained.
+    if (compatible.version !== 3)
+      yield* writeRepoRegistry(outpostHome, {
+        ...compatible,
+        version: 3,
+        retainedRepositories: [],
+      }).pipe(
+        Effect.mapError(
+          (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+        )
+      );
+    yield* mutation
+      .record({
+        action: "unregister-repository",
+        repoId: existingRepo.id,
+        managedRepoPath: managedPath,
+        retainedAt: data.retainedAt,
+      })
+      .pipe(
+        Effect.mapError(
+          (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+        )
+      );
+    yield* writeRepoRegistry(outpostHome, {
+      ...compatible,
+      version: 3,
+      repos: compatible.repos.filter((repo) => repo.id !== repoId),
+      retainedRepositories: [
+        ...(compatible.retainedRepositories ?? []),
+        { ...existingRepo, retainedAt: data.retainedAt },
+      ],
+    }).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
       )

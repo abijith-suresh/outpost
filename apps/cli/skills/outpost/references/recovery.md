@@ -13,7 +13,7 @@ commits. Inspect `outpost doctor --json`, `outpost config show --json` and the
 operation journal. Retrying the requested setting with the newer tool repairs
 forward after the lock owner has finished. Do not restore stale config/registry
 backups over newer workspaces or delete a lock merely because a process looks old.
-If config is missing beside a version 2 registry, init refuses to invent roots;
+If config is missing beside a version 2 or 3 registry, init refuses to invent roots;
 restore the original config only after inspecting the existing workspaces.
 
 ## Operation failures
@@ -44,11 +44,10 @@ fetching may change remote tracking refs and tags, but preserves local branches.
 A partial `workspace remove --json` returns `completed`, `remaining`, `status` and
 diagnostics. Existing worktrees, the manifest or residual files may remain. Inspect
 `workspace show` and the filesystem before retrying. A nonempty workspace root is
-preserved. Workspace removal does not delete local branches. Repository removal deletes
-the mirror containing those branches and any commits stored only there. Retain
-the mirror or save needed work outside it before repository cleanup. A local Git
-bundle can preserve work without network access; push only with explicit user
-authorization.
+preserved. Workspace removal does not delete local branches. Repository removal
+unregisters while retaining the mirror and all its refs and objects. Inspect
+`repo list --retained --json` and explicitly restore the saved registration when
+needed. Neither command authorizes storage deletion or a network push.
 
 Git diagnostic output is bounded to 80 lines and 16,384 text characters in total,
 40 lines and 8,192 characters per stream. `diagnosticTruncation.truncated` covers
@@ -56,7 +55,27 @@ clipped long lines, omitted lines and capture truncation. `omittedLineCount` cou
 whole omitted lines from captured text; output beyond the byte capture limit is
 unknown. Never interpret absence of a line in truncated output as success.
 
-## Save local branches before repository removal
+## Restore a retained registration
+
+`repo remove` moves the complete registered record into the retained set in one
+atomic registry write. It never deletes Git storage. `repo list --retained --json`
+and `repo show <id> --retained --json` expose that saved identity and location.
+`repo restore <id> --dry-run --json` previews ownership and path validation;
+`repo restore <id> --json` reactivates the exact record without fetching.
+The source checkout and remote may be offline or gone. `repo add` refuses retained
+identities and arbitrary pre-existing directories, so it cannot silently replace
+branch-only work.
+
+Lifecycle mutation installs registry version 3 behind the configuration version 2
+barrier. The version 3 registry reserves active and retained IDs and canonical
+paths. Older destructive repository writers refuse it. If a failure occurs
+between the barrier and the transfer, the record remains active; if the transfer
+commits, it is retained. Inspect both lists and operation records after a crash.
+Do not restore older registry backups or use a journal as adoption authority.
+Missing, foreign or changed storage stays recorded and must pass the original
+identity/ownership checks before restoration. There is no purge or force bypass.
+
+## Save a separate local copy
 
 Keep the bundle and restored checkout outside the managed mirror and workspace.
 A bundle containing only a saved branch may have no `HEAD`; select that branch
@@ -72,7 +91,8 @@ git -C <restore-directory> rev-parse HEAD
 ```
 
 Record the first commit ID and confirm the restored `HEAD` matches it. Inspect
-needed files in the restored checkout before deleting the mirror. Repeat for any
+needed files in the restored checkout before relying on the backup. Retained
+Outpost storage remains managed state; this copy does not authorize its deletion. Repeat for any
 other branches that must survive. These bundle operations stay local; pushing
 still requires explicit user authorization.
 

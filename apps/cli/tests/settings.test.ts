@@ -705,7 +705,7 @@ describe("configuration, tags and future workspace guidance", () => {
       expect(readFileSync(registryPath, "utf8")).toBe(registry);
     }
     writeFileSync(configPath, JSON.stringify(config));
-    writeFileSync(registryPath, JSON.stringify({ ...JSON.parse(registry), version: 3 }));
+    writeFileSync(registryPath, JSON.stringify({ ...JSON.parse(registry), version: 4 }));
     expectCliCode(await cli("repo", "tag", id, "--add", "safe"), 1);
     writeFileSync(registryPath, registry);
     const manifestPath = path.join(home, "workspaces", "SCHEMA-1.json");

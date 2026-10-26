@@ -58,10 +58,10 @@ export function runInit(): Effect.Effect<
             })
         )
       );
-      if (retainedRegistry.version === 2)
+      if (retainedRegistry.version !== undefined)
         return yield* Effect.fail(
           new InitError({
-            message: `Cannot initialize ${outpostHome}: a version 2 registry remains without its configuration. Run outpost doctor and restore the original config after inspecting existing workspace roots and guidance. Init will not reset migrated state.`,
+            message: `Cannot initialize ${outpostHome}: a version ${retainedRegistry.version} registry remains without its configuration. Run outpost doctor and restore the original config after inspecting existing workspace roots and guidance. Init will not reset migrated state.`,
           })
         );
     }

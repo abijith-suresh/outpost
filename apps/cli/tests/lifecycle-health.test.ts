@@ -158,7 +158,7 @@ it("preserves a completed workspace when interruption arrives during the manifes
   expect(JSON.parse(String(output.mock.calls[0][0])).data.status).toBe("ready");
 });
 
-it("records removal intent before deleting a mirror and releases the lock if journaling fails", async () => {
+it("records unregister intent before metadata mutation and releases the lock if journaling fails", async () => {
   const home = createTempDir();
   process.env.OUTPOST_HOME = home;
   vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -179,7 +179,7 @@ it("records removal intent before deleting a mirror and releases the lock if jou
   expect(existsSync(path.join(home, ".mutation.lock"))).toBe(false);
 });
 
-it("retries unregistering after deletion succeeds but the registry write fails", async () => {
+it("retries unregistering after a registry write failure while preserving owned storage", async () => {
   const home = createTempDir();
   process.env.OUTPOST_HOME = home;
   vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -197,7 +197,7 @@ it("retries unregistering after deletion succeeds but the registry write fails",
         : original(file, value)
     );
   expect(await runCli(["repo", "remove", repo.id])).toBe(1);
-  expect(existsSync(repo.managedRepoPath)).toBe(false);
+  expect(existsSync(repo.managedRepoPath)).toBe(true);
   expect(readRegistry(home).repos).toHaveLength(1);
   write.mockRestore();
   expect(await runCli(["repo", "remove", repo.id])).toBe(0);

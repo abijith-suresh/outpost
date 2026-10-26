@@ -19,7 +19,7 @@ setupAfterEach();
 
 describe("run", () => {
   describe("repo remove", () => {
-    it("removes a repo from the registry and deletes the managed repo", async () => {
+    it("unregisters a repo while retaining its managed storage", async () => {
       const tempHome = createTempDir("outpost-test-");
       process.env.OUTPOST_HOME = tempHome;
 
@@ -56,12 +56,10 @@ describe("run", () => {
       expect(infoSpy).toHaveBeenNthCalledWith(5, `remote url: ${remoteUrl}`);
       expect(infoSpy).toHaveBeenNthCalledWith(6, `source repo path: ${sourceRepoPath}`);
 
-      const nextRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
-        repos: Array<unknown>;
-      };
+      const nextRegistry = readRegistry(tempHome);
 
       expect(nextRegistry.repos).toEqual([]);
-      expect(existsSync(managedRepoPath)).toBe(false);
+      expect(existsSync(managedRepoPath)).toBe(true);
     });
 
     it("prints repo remove output as json", async () => {
@@ -94,13 +92,12 @@ describe("run", () => {
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledTimes(1);
       const output = infoSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain('"ok": true');
-      expect(output).toContain('"exitCode": 0');
-      expect(output).toContain('"command": "repo remove"');
-      expect(output).toContain(`"id": "${repoId}"`);
-      expect(output).toContain(`"managedRepoPath": "${managedRepoPath}"`);
-      expect(output).toContain(`"remoteUrl": "${remoteUrl}"`);
-      expect(output).toContain(`"sourceRepoPath": "${sourceRepoPath}"`);
+      expect(JSON.parse(output)).toMatchObject({
+        ok: true,
+        exitCode: 0,
+        command: "repo remove",
+        data: { id: repoId, managedRepoPath, remoteUrl, sourceRepoPath },
+      });
     });
 
     it("returns an error for unknown repo id", async () => {
@@ -263,7 +260,7 @@ describe("run", () => {
 
       expect(exitCode).toBe(0);
       expect(infoSpy).toHaveBeenCalledWith("outpost repo remove");
-      expect(existsSync(repo.managedRepoPath)).toBe(false);
+      expect(existsSync(repo.managedRepoPath)).toBe(true);
     });
 
     it("blocks removal when a workspace manifest is uninspectable", async () => {

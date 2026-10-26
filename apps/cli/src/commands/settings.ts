@@ -183,7 +183,7 @@ export function runRepoTag(id: string, add: readonly string[], remove: readonly 
     if (config.version === 1) yield* writeConfig(outpostHome, upgradeConfig(config));
     yield* writeRepoRegistry(outpostHome, {
       ...registry,
-      version: 2,
+      version: registry.version === 3 ? 3 : 2,
       repos: registry.repos.map((repo) => (repo.id === id ? { ...repo, tags } : repo)),
     });
     return { command: "repo tag", data: { id, tags } } satisfies CommandOutput<"repo tag">;

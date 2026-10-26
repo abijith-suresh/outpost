@@ -26,7 +26,18 @@ const repoFields = {
   lastFetchedAt: Schema.String,
   tags: Schema.optional(strings),
 };
-const repo = Schema.Struct({ ...repoFields, status: Schema.Literals(["ok", "missing"]) });
+const repo = Schema.Struct({
+  ...repoFields,
+  status: Schema.Literals(["ok", "missing"]),
+  retainedAt: optionalString,
+  inspection: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literals(["ok", "unavailable"]),
+      refs: Schema.Array(Schema.Struct({ name: Schema.String, objectId: Schema.String })),
+      diagnostics: strings,
+    })
+  ),
+});
 export const WorkspaceWorktreeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -196,6 +207,14 @@ export const ResultSchemas = {
       })
     ),
   }),
+  "repo restore": Schema.Struct({
+    id: Schema.String,
+    name: Schema.String,
+    managedRepoPath: Schema.String,
+    action: Schema.Literal("restored"),
+    storage: Schema.Literal("retained"),
+    dryRun: optionalBoolean,
+  }),
   "repo remove": Schema.Struct({
     id: Schema.String,
     name: Schema.String,
@@ -203,6 +222,10 @@ export const ResultSchemas = {
     remoteUrl: Schema.String,
     sourceRepoPath: Schema.String,
     warnings: strings,
+    action: Schema.Literal("unregistered"),
+    storage: Schema.Literals(["retained", "missing"]),
+    retainedAt: Schema.String,
+    recoveryCommand: Schema.String,
     dryRun: optionalBoolean,
   }),
   "workspace list": Schema.Struct({ workspaces: Schema.Array(workspaceSummary) }),

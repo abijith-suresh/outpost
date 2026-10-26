@@ -179,7 +179,7 @@ GitHub Actions run on every pull request and push to `main`:
   schemas from an unrelated directory. Windows uses the npm-generated `.cmd`
   shim through native PowerShell, with spaces and Unicode in fixture paths. The
   installed smoke also asserts the effective Node and npm versions against
-  `.node-version` and `packageManager`, after the pin installation step. Native acceptance includes real internal Git files longer than 260 characters, canonical path-budget boundaries, junction resolution and pre-mutation preservation for unsupported paths. A passing Linux run does not replace this native installed-artifact check.
+  `.node-version` and `packageManager`, after the pin installation step. Native acceptance includes real internal Git files longer than 260 characters, canonical path-budget boundaries, junction resolution and pre-mutation preservation for unsupported paths. Repository lifecycle regressions also retain exact branch-only commits through unregistration and offline restoration, inspect retained refs and refuse foreign replacement storage. A passing Linux run does not replace this native installed-artifact check.
   This matrix does not claim the entire POSIX process-shutdown suite is portable
   or that the owner's managed laptop has been tested.
 - `Website build (Node 24)` remains local because website compilation is an

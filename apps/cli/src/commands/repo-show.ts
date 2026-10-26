@@ -1,7 +1,9 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
+import { commandString, gitCommand } from "../child-process.js";
 import {
   getRepoHealthDiagnostics,
   loadConfig,
@@ -9,8 +11,10 @@ import {
   resolveOutpostHome,
 } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
+import { verifyRetainedRepository } from "../managed-repo.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
+import { validateWindowsInvocationCwd, validateWindowsManagedGitDir } from "../windows-git-path.js";
 
 export class RepoShowError extends Schema.TaggedError<RepoShowError>()("RepoShowError", {
   ...ErrorDetailFields,
@@ -20,9 +24,14 @@ export class RepoShowError extends Schema.TaggedError<RepoShowError>()("RepoShow
 export function runRepoShow(
   repoId: string | undefined,
   extraArgs: ReadonlyArray<string>
-): Effect.Effect<CommandOutput<"repo show">, RepoShowError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  CommandOutput<"repo show">,
+  RepoShowError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
-    if (!repoId || extraArgs.length > 0) {
+    const retained = extraArgs.length === 1 && extraArgs[0] === "--retained";
+    if (!repoId || (extraArgs.length > 0 && !retained)) {
       return yield* Effect.fail(
         new RepoShowError({
           ...reasonDetails("invalid-arguments"),
@@ -40,7 +49,7 @@ export function runRepoShow(
     const fs = yield* FileSystem.FileSystem;
     const outpostHome = yield* resolveOutpostHome();
 
-    yield* loadConfig(outpostHome).pipe(
+    const config = yield* loadConfig(outpostHome).pipe(
       Effect.mapError(
         (error) => new RepoShowError({ message: error.message, ...domainDetails(error) })
       )
@@ -51,7 +60,9 @@ export function runRepoShow(
         (error) => new RepoShowError({ message: error.message, ...domainDetails(error) })
       )
     );
-    const matches = registry.repos.filter((repo) => repo.id === repoId);
+    const matches = (retained ? (registry.retainedRepositories ?? []) : registry.repos).filter(
+      (repo) => repo.id === repoId
+    );
 
     if (matches.length === 0) {
       return yield* Effect.fail(
@@ -82,6 +93,38 @@ export function runRepoShow(
           ...reasonDetails("repo-missing"),
         })
       );
+    if (retained) {
+      const inspection = yield* Effect.gen(function* () {
+        yield* validateWindowsInvocationCwd();
+        yield* validateWindowsManagedGitDir(shown.managedRepoPath);
+        yield* verifyRetainedRepository(config.reposRoot, shown);
+        const output = yield* commandString(
+          gitCommand(
+            "--git-dir",
+            shown.managedRepoPath,
+            "for-each-ref",
+            "--format=%(refname)%09%(objectname)"
+          )
+        );
+        const refs = output
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            const [name, objectId] = line.split("\t");
+            return { name, objectId };
+          });
+        return { status: "ok" as const, refs, diagnostics: [] as string[] };
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.succeed({ status: "unavailable" as const, refs: [], diagnostics: [error.message] })
+        )
+      );
+      return {
+        command: "repo show",
+        data: { ...shown, inspection },
+      } satisfies CommandOutput<"repo show">;
+    }
     return {
       command: "repo show",
       data: shown,

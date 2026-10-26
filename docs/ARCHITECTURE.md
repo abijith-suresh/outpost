@@ -89,7 +89,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 `OutpostConfig` reads legacy version 1 and version 2. Read-only commands do not migrate files. Configuration, repository-tag and extra-guidance mutations acquire the home mutation lock and install version 2 default configuration before extended state is written. The config marker makes newly started version 1 binaries refuse the home. The persisted version 2 repository registry uses `{ version: 2, repositories: [...] }`, adapted to the existing in-memory `repos` model. Its missing legacy `repos` field also makes an older process that cached v1 config before taking the lock refuse the registry before mutation. Unknown future versions and malformed version fields fail closed.
 
-Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
+Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 or 3 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
 
 Version 2 saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. New version 2 manifests pin their root; legacy manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
 
@@ -133,7 +133,7 @@ Root setting reserves the smallest valid `<root>/a/a/.git` layout before configu
 
 Unsupported operations fail with the existing structured `invalid-arguments` reason and an actionable message identifying the canonical path, measured count, unit and budget. They preserve source data, refs, manifests, guidance, configuration, registry and unowned sentinels. Existing homes and roots are never moved or aliased; global Windows/Git settings are unchanged. A shorter future root can repair new workspace creation without hiding old metadata. Arbitrary config include targets, custom environment path overrides, hooks, submodules, external programs and noncooperating filesystem changes retain their own constraints. Existing containment, ownership, locks, output limits and timeouts continue to apply.
 
-**Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
+**Registry** (`repos.json`): active `RepoRecord` objects contain the identity, managed path, remote name and URL, timestamps. The version 3 format also retains unregistered records with `retainedAt`; active and retained identities and canonical paths must be unique across both sets. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
 
 ## Worktree and Branch Model
 
@@ -269,7 +269,7 @@ When a workspace is created, Outpost generates an `AGENTS.md` file in the worksp
 
 Outpost automatically deletes `"generated"` files. A `"foreign"` or `"modified"` file is deleted only after explicit interactive approval; non-interactive removal fails. Deletion compares the exact classified snapshot immediately before removal so a concurrently changed file is preserved.
 
-Repository mutation boundaries validate absolute registry paths through `resolveManagedPath`, including canonical ancestor containment, and require the identity-derived managed path for legacy mirrors without ownership markers. Marked repositories may retain a registered relocated path within the root. Create reserves the generated `AGENTS.md` path with the same canonical portable identity checks as worktree paths. Ownership requires a bare Git repository, a matching local origin URL, and either a matching `outpost.repository-id` local Git config marker or the legacy mirror refspec at the expected registered path. Repo add writes the marker after a successful import; it refuses unregistered pre-existing directories. Fetch and create preflight also verify ownership before modifying a repository. Repo removal additionally inspects `git worktree list --porcelain -z` and refuses all linked entries regardless of manifest presence. Missing mirrors may be safely unregistered after path and manifest checks. Unmanaged-directory warnings are structured command data; only the human renderer prints them to stderr.
+Repository mutation boundaries validate absolute registry paths through `resolveManagedPath`, including canonical ancestor containment, and require the identity-derived managed path for legacy mirrors without ownership markers. Marked repositories may retain a registered relocated path within the root. Create reserves the generated `AGENTS.md` path with the same canonical portable identity checks as worktree paths. Ownership requires a bare Git repository, a matching local origin URL, and either a matching `outpost.repository-id` local Git config marker or the legacy mirror refspec at the expected registered path. Repo add writes the marker after a successful import; it refuses unregistered pre-existing directories. Fetch and create preflight also verify ownership before modifying a repository. Repo removal additionally inspects `git worktree list --porcelain -z` and refuses all linked entries regardless of manifest presence. Missing mirrors may be unregistered into retained metadata after path and manifest checks; restoration requires validated storage. Unmanaged-directory warnings are structured command data; only the human renderer prints them to stderr.
 
 ## Path Safety (`apps/cli/src/path-safety.ts`)
 
@@ -303,10 +303,11 @@ Path and semantic identifier validation are separate contracts:
 | `apps/cli/src/commands/doctor.ts`                  | Environment status report                                                   |
 | `apps/cli/src/commands/repo-add.ts`                | Register a local repo                                                       |
 | `apps/cli/src/commands/repo-mirror.ts`             | Git clone/fetch mirror operations                                           |
-| `apps/cli/src/commands/repo-fetch.ts`              | Fetch all managed mirrors                                                   |
+| `apps/cli/src/commands/repo-fetch.ts`              | Fetch all active managed mirrors                                            |
+| `apps/cli/src/commands/repo-restore.ts`            | Validate retained identity and reactivate registration without fetching      |
 | `apps/cli/src/commands/repo-list.ts`               | List registered repos                                                       |
 | `apps/cli/src/commands/repo-show.ts`               | Show repo details                                                           |
-| `apps/cli/src/commands/repo-remove.ts`             | Remove registered repo (with workspace reference check)                     |
+| `apps/cli/src/commands/repo-remove.ts`             | Unregister while retaining owned storage and recovery record                     |
 | `apps/cli/src/commands/workspace-list.ts`          | List workspaces with derived status                                         |
 | `apps/cli/src/commands/workspace-show.ts`          | Show workspace details                                                      |
 | `apps/cli/src/commands/workspace-remove.ts`        | Remove workspace with safety checks                                         |
@@ -323,9 +324,13 @@ interactive prompt; identifier, Git and ownership checks remain in the commands.
 `renderer.ts` owns text and JSON formatting, while `program.ts` selects and runs
 commands.
 
-Contract version `1.1.0` adds settings, tags and guidance commands and makes
+Contract version `1.1.0` added settings, tags and guidance commands and made
 `--repo` optional when tag selection is supplied. The package version is unchanged;
 metadata version 2 separately protects stored state from older writers.
+
+Contract version `2.0.0` changes repository removal to registration-only retention,
+adds retained inspection and offline restoration, and reports the explicit storage
+outcome. The package version is independent of this machine contract version.
 
 `describe --json` reports an independently versioned `contractVersion` and the
 installed `cliVersion`. Each command includes normalized input and output JSON
@@ -384,13 +389,25 @@ skill, reject a second export and verify the man link resolves into the package.
 The workspace AGENTS generator adds a short offline guidance pointer and states
 that Outpost owns the generated file and records its hash.
 
-Repository-removal previews and results always warn when an existing mirror will
-be deleted, including its local refs and commits stored only there. Workspace
-removal preserves those branches; repository removal does not. Shipped guidance
-requires retaining the mirror or saving needed work elsewhere first and grants no
-implicit permission to push. Result counts use nonnegative safe integer schemas,
-which exclude nonfinite values and generate stable optional-count JSON under both
-paired Effect patches used by the source and maintenance stacks.
+Repository removal unregisters without deleting Git storage, branches or objects.
+An atomic version 3 registry stores active records separately from retained records,
+including the full repository identity and retention time. Retained IDs and
+canonical paths remain reserved. `repo list --retained` and `repo show --retained`
+inspect saved registrations; `repo restore` validates the recorded identity,
+containment, Git ownership, conflicts and Windows budgets before transferring a
+record back to the active set. Restore neither fetches nor requires the source or
+remote to exist. `repo add` refuses retained identities before import mutation.
+No storage purge or generic force bypass is implemented.
+
+The lifecycle migration retains the existing version 2 config barrier, installs
+an incompatible version 3 registry with all existing active records, then commits
+the registration transfer atomically. Older strict registry decoders refuse it
+before destructive repository operations. A failed or interrupted transfer leaves
+the complete record active or retained; storage never moves. Existing settings,
+tag, import and fetch writers preserve the retained set and registry version.
+Operation journals describe intent, while current registry and validated Git state
+remain the recovery authority. Cached remote refs and cleanliness are never used
+as proof that local work can be deleted.
 
 ## Startup and workspace inspection performance
 

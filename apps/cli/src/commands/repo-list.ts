@@ -45,7 +45,10 @@ export function runRepoList(
       )
     );
     const { missingRepoCount, repos } = yield* getRepoHealthDiagnostics(
-      registry.repos.filter((repo) => matchesTags(repo, tags))
+      (parsed.options["--retained"]
+        ? (registry.retainedRepositories ?? [])
+        : registry.repos
+      ).filter((repo) => matchesTags(repo, tags))
     ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
 
     return {

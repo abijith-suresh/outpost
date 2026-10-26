@@ -7,7 +7,11 @@ import { commandExitCode, commandString, gitCommand } from "./child-process.js";
 import type { RepoRecord } from "./config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { getCanonicalPortablePathKey } from "./path-safety.js";
-import { getFileManagedPathSegments, getManagedRepoPath } from "./remote-identity.js";
+import {
+  getFileManagedPathSegments,
+  getManagedRepoPath,
+  resolveRecordedRemoteIdentity,
+} from "./remote-identity.js";
 import { resolveManagedPath } from "./workspace-manifest.js";
 
 export class ManagedRepoError extends Schema.TaggedError<ManagedRepoError>()("ManagedRepoError", {
@@ -143,6 +147,24 @@ export function markManagedRepository(managedRepoPath: string, id: string) {
               message: `Failed to mark repository ownership at ${managedRepoPath}.`,
             })
           )
+    )
+  );
+}
+
+/** A retained record must be internally consistent as well as match its owned Git directory. */
+export function verifyRetainedRepository(reposRoot: string, repo: RepoRecord) {
+  return Effect.gen(function* () {
+    const identity = yield* resolveRecordedRemoteIdentity(repo.remoteUrl);
+    if (identity.id !== repo.id || identity.name !== repo.name)
+      return yield* Effect.fail(
+        new ManagedRepoError({
+          message: `Retained repository identity does not match its saved remote URL: ${repo.id}`,
+        })
+      );
+    return yield* verifyManagedRepository(reposRoot, repo);
+  }).pipe(
+    Effect.mapError(
+      (error) => new ManagedRepoError({ message: error.message, ...domainDetails(error) })
     )
   );
 }
