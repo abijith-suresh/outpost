@@ -366,19 +366,20 @@ try {
   assert.equal(initResult.stderr, "");
 
   const now = new Date(0).toISOString();
+  const missingRemote = pathToFileURL(join(smokeRoot, "missing-repo")).href;
   writeFileSync(
     join(outpostHome, "repos.json"),
     `${JSON.stringify(
       {
         repos: [
           {
-            id: "file:///missing/repo",
+            id: missingRemote,
             importedAt: now,
             lastFetchedAt: now,
             managedRepoPath: join(outpostHome, "repos", "missing.git"),
             name: "repo",
             remoteName: "origin",
-            remoteUrl: "file:///missing/repo",
+            remoteUrl: missingRemote,
             sourceRepoPath: join(smokeRoot, "missing-source"),
           },
         ],
