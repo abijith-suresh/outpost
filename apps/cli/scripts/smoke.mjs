@@ -106,6 +106,17 @@ function runInstalled(args, env) {
 }
 
 try {
+  const repositoryRoot = join(projectRoot, "..", "..");
+  const expectedNode = readFileSync(join(repositoryRoot, ".node-version"), "utf8").trim();
+  const { packageManager } = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
+  assert.match(packageManager, /^npm@\d+\.\d+\.\d+$/);
+  const npmVersionResult = runNpm(["--version"]);
+  assertSuccess(npmVersionResult, "read effective npm version");
+  const npmVersion = npmVersionResult.stdout.trim();
+  process.stdout.write(`Toolchain: Node ${process.versions.node}, npm ${npmVersion}\n`);
+  assert.equal(process.versions.node, expectedNode, "Use the repository's exact Node pin");
+  assert.equal(npmVersion, packageManager.slice(4), "Use the repository's exact npm pin");
+
   mkdirSync(packDir, { recursive: true });
 
   console.log("Building...");
