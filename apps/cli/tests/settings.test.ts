@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readdirSync, rmSync, symlinkSync } from "node:fs";
 import { NodePath, NodeServices } from "@effect/platform-node";
 import * as Effect from "effect/Effect";
@@ -6,6 +6,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vitest";
+import { commandString, gitCommand } from "../src/child-process.ts";
 import {
   runConfigSet,
   runGuidanceSet,
@@ -80,16 +81,83 @@ const createArgs = (ticket: string, id: string) => [
 ];
 
 describe("configuration, tags and future workspace guidance", () => {
+  it("keeps the Windows long-path override scoped to the Git command", async () => {
+    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+    // A disposable fixture has an explicit contrary value, so precedence is observable.
+    execFileSync("git", ["-C", repo.tempRepo, "config", "--local", "core.longpaths", "false"]);
+    const configPath = path.join(repo.tempRepo, ".git", "config");
+    const before = readFileSync(configPath, "utf8");
+    const globalSetting = () => {
+      const result = spawnSync("git", ["config", "--global", "--get-all", "core.longpaths"], {
+        encoding: "utf8",
+      });
+      if (result.error) throw result.error;
+      return { status: result.status, value: result.stdout };
+    };
+    const globalBefore = globalSetting();
+    const observed = await Effect.runPromise(
+      commandString(
+        gitCommand("-C", repo.tempRepo, "config", "--show-scope", "--get", "core.longpaths")
+      ).pipe(Effect.provide(NodeServices.layer))
+    );
+    expect(observed.trim().split(/\s+/)).toEqual(
+      process.platform === "win32" ? ["command", "true"] : ["local", "false"]
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(before);
+    expect(globalSetting()).toEqual(globalBefore);
+  });
+
+  it("runs the lifecycle in a managed Git path longer than 260 characters without changing configuration", async () => {
+    const outer = createTempDir();
+    const home = path.join(outer, "long-managed-root-".repeat(5), "nested-space-café-".repeat(4));
+    mkdirSync(home, { recursive: true });
+    process.env.OUTPOST_HOME = home;
+    await cliSuccess("init");
+    const configPath = path.join(home, "config.json");
+    const configBytes = readFileSync(configPath, "utf8");
+    const repo = await createManagedRepoFixture({ defaultBranch: "main" });
+    const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    await cliSuccess("repo", "add", repo.tempRepo);
+    const record = readRegistry(home).repos[0];
+    expect(record.managedRepoPath.length).toBeGreaterThan(260);
+    const git = (...args: string[]) =>
+      Effect.runPromise(
+        commandString(gitCommand(...args)).pipe(Effect.provide(NodeServices.layer))
+      );
+    const localConfigPath = path.join(record.managedRepoPath, "config");
+    const localConfigBytes = readFileSync(localConfigPath, "utf8");
+    const created = await cliSuccess("create", ...createArgs("LONG-1", record.id));
+    const workspacePath = created.envelope.data.ticketDirectory;
+    const worktreePath = created.envelope.data.worktrees[0].path;
+    expect((await git("-C", worktreePath, "rev-parse", "HEAD")).trim()).toBe(initialCommit);
+    expect((await cliSuccess("workspace", "show", "LONG-1")).envelope.data.status).toBe("ready");
+    expect((await cliSuccess("doctor")).envelope.data.unhealthyWorkspaceCount).toBe(0);
+    await cliSuccess("workspace", "remove", "LONG-1");
+    expect(existsSync(workspacePath)).toBe(false);
+    expect(existsSync(path.join(home, "workspaces", "LONG-1.json"))).toBe(false);
+    expect(
+      (await git("--git-dir", record.managedRepoPath, "rev-parse", "refs/heads/feat/LONG-1")).trim()
+    ).toBe(initialCommit);
+    expect(readFileSync(configPath, "utf8")).toBe(configBytes);
+    expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
+  });
+
   it("keeps legacy and newer workspace roots stable across repeated root changes, inspection and removal", async () => {
     const { home, repo, id } = await fixture();
+    const initialCommit = execFileSync("git", ["-C", repo.tempRepo, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
     expectCliSuccess(await cli("create", ...createArgs("OLD-1", id)));
     const manifestPath = path.join(home, "workspaces", "OLD-1.json");
     const manifestBytes = readFileSync(manifestPath, "utf8");
     expect(JSON.parse(manifestBytes).version).toBeUndefined();
     const oldPath = path.join(home, "worktrees", "OLD-1");
     const agentsBytes = readFileSync(path.join(oldPath, "AGENTS.md"), "utf8");
-    const rootA = path.join(createTempDir(), "space café", "worktrees");
-    expectCliSuccess(await cli("config", "set", "worktreesRoot", rootA));
+    const requestedRootA = path.join(createTempDir(), "space café", "worktrees");
+    const rootA = (await cliSuccess("config", "set", "worktreesRoot", requestedRootA)).envelope.data
+      .value;
     expect(existsSync(rootA)).toBe(false);
     expectCliSuccess(await cli("create", ...createArgs("NEW-1", id)));
     const rootB = path.join(createTempDir(), "future");
@@ -121,7 +189,7 @@ describe("configuration, tags and future workspace guidance", () => {
       execFileSync("git", ["--git-dir", managed, "rev-parse", "refs/heads/feat/OLD-1"], {
         encoding: "utf8",
       }).trim()
-    ).toMatch(/^[a-f0-9]{40}$/);
+    ).toBe(initialCommit);
   });
 
   it("keeps unmanaged directories at previous roots visible without adopting them", async () => {
@@ -147,8 +215,8 @@ describe("configuration, tags and future workspace guidance", () => {
   it("reports unowned same-ticket directories at another root and preserves them on removal", async () => {
     const { home, id } = await fixture();
     expectCliSuccess(await cli("create", ...createArgs("SAME-1", id)));
-    const nextRoot = createTempDir();
-    expectCliSuccess(await cli("config", "set", "worktreesRoot", nextRoot));
+    const nextRoot = (await cliSuccess("config", "set", "worktreesRoot", createTempDir())).envelope
+      .data.value;
     const leftover = path.join(nextRoot, "SAME-1");
     mkdirSync(leftover);
     writeFileSync(path.join(leftover, "sentinel.txt"), "unowned data");
@@ -417,19 +485,19 @@ describe("configuration, tags and future workspace guidance", () => {
       });
       expect(readFileSync(registryPath, "utf8")).toBe(registryBytes);
       expect(existsSync(path.join(home, ".mutation.lock"))).toBe(false);
-      expectCliSuccess(
-        await cli(
-          ...(setting === "root"
-            ? ["config", "set", "worktreesRoot", root]
-            : ["guidance", "set", instructionsPath])
-        )
+      const retried = await cliSuccess(
+        ...(setting === "root"
+          ? ["config", "set", "worktreesRoot", root]
+          : ["guidance", "set", instructionsPath])
       );
       expect(JSON.parse(readFileSync(registryPath, "utf8"))).toMatchObject({
         version: 2,
         repositories: expect.any(Array),
       });
       expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject(
-        setting === "root" ? { worktreesRoot: root } : { extraInstructions: "Future instructions" }
+        setting === "root"
+          ? { worktreesRoot: retried.envelope.data.value }
+          : { extraInstructions: "Future instructions" }
       );
     }
   );

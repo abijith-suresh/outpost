@@ -110,6 +110,8 @@ The identity determines the managed mirror path under `repos/`. Path segments ar
 
 **Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create resolves bases from remote tracking refs first, then existing local branches. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
 
+The checked Git adapter adds command-scoped `-c core.longpaths=true` on Windows. This supports encoded managed mirror paths whose pack/admin files exceed Git's default path limit without writing system, global or repository configuration. Path containment, ownership, output limits and timeouts still apply. Windows filesystem canonicalization follows the native realpath operation, so returned root paths and local repository identities can expand short-name aliases. Tests use the same native path semantics rather than assuming aliases have identical spellings.
+
 **Registry** (`repos.json`): an ordered array of `RepoRecord` objects, each containing the identity, managed path, remote name and URL, timestamps. Repository IDs, names, and remote names are validated as non-empty semantic identifiers without ASCII control characters when state is read or written. Adding a repo with an identity that already exists in the registry updates the existing record rather than duplicating.
 
 ## Worktree and Branch Model

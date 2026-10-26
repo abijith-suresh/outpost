@@ -10,15 +10,19 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   const home = join(fixture, "home");
   const source = join(fixture, "source");
   const remote = join(fixture, "origin.git");
-  const nextRoot = join(fixture, "future workspaces");
+  const requestedRoot = join(fixture, "future workspaces");
   mkdirSync(source, { recursive: true });
   const git = (args, cwd = source) =>
-    execFileSync("git", args, {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
-    }).trim();
+    execFileSync(
+      "git",
+      process.platform === "win32" ? ["-c", "core.longpaths=true", ...args] : args,
+      {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
+      }
+    ).trim();
   git(["init", "--bare", remote]);
   git(["init", "-b", "main"]);
   git(["config", "user.name", "Outpost Smoke"]);
@@ -68,7 +72,7 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   delete legacyManifest.worktreesRoot;
   writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
   const legacyBytes = readFileSync(manifestPath);
-  call(["config", "set", "worktreesRoot", nextRoot]);
+  const nextRoot = call(["config", "set", "worktreesRoot", requestedRoot]).value;
   assert.deepEqual(readFileSync(manifestPath), legacyBytes, "root change rewrote legacy state");
   assert.deepEqual(readFileSync(agentsPath), agentsBefore, "root change overwrote guidance");
   assert.equal(git(["rev-parse", "HEAD"], oldWorktree), oldHead);

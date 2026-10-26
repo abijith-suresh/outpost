@@ -155,6 +155,8 @@ Repository mutations validate registry paths against both `reposRoot` and, for l
 
 Git commands drain both output streams and request termination after 120 seconds by default. Set `OUTPOST_GIT_TIMEOUT_MS` to a positive number of milliseconds for slower remotes. Diagnostics retain at most 256 KiB per stream, append lines without expanding them into function arguments, and mark truncation; commands requiring stdout fail rather than consume truncated or failed output.
 
+On Windows, Outpost passes `-c core.longpaths=true` to its Git commands so managed paths can exceed Git's default path limit. This does not change system, global or repository Git configuration. Other programs and manually run Git commands retain their own path limits. Root setters return canonical paths, which can expand Windows short-name aliases such as `RUNNER~1`; existing worktrees are never moved.
+
 Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branches in `refs/heads` and their commits survive fetch and repository re-import. Older mirrors migrate on their next fetch without deleting or rewriting local refs. Create prefers a fetched remote base, with a local branch fallback for existing mirrors and workspace branches.
 
 - **Semantic identifier validation:** empty values and ASCII control characters are rejected in tickets, branch inputs, repository identities, remote names, and persisted state before filesystem or Git operations.
