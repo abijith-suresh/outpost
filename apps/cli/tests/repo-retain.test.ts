@@ -63,8 +63,9 @@ function registry(home: string) {
 function refs(managed: string) {
   return git(["--git-dir", managed, "for-each-ref", "--format=%(refname)%09%(objectname)"]);
 }
-async function fixture(repoName?: string) {
-  const home = createTempDir("op-r-");
+async function fixture(repoName?: string, canonicalHome = false) {
+  const createdHome = createTempDir("op-r-");
+  const home = canonicalHome ? realpathSync.native(createdHome) : createdHome;
   process.env.OUTPOST_HOME = home;
   await success("init");
   const source = await createManagedRepoFixture({ defaultBranch: "main", repoName });
@@ -78,8 +79,8 @@ async function fixture(repoName?: string) {
   const repo = readRegistry(home).repos[0];
   return { home, source, repo, sourceSha };
 }
-async function branchFixture(repoName?: string) {
-  const f = await fixture(repoName);
+async function branchFixture(repoName?: string, canonicalHome = false) {
+  const f = await fixture(repoName, canonicalHome);
   await success("repo", "tag", f.repo.id, "--add", "keep");
   const created = await success(
     "create",
@@ -347,7 +348,13 @@ describe("retained repository registration lifecycle", () => {
   it.each([220, 221])(
     "preserves retained refs at the native %i-byte Git-directory boundary, including Unicode/spaces and junction resolution",
     async (bytes) => {
-      const f = await branchFixture();
+      // The target below uses native canonical paths. Establish that same root
+      // spelling before init; Windows temp homes can use a RUNNER~1 ancestor.
+      // Mixing those spellings would exercise lexical containment instead of
+      // the actual 220/221-byte Git-directory boundary.
+      const f = await branchFixture(undefined, true);
+      const config = JSON.parse(readFileSync(path.join(f.home, "config.json"), "utf8"));
+      expect(config.reposRoot).toBe(path.join(realpathSync.native(f.home), "repos"));
       await success("repo", "remove", f.repo.id);
       const parent = path.join(f.home, "repos", "owned café");
       mkdirSync(parent);
@@ -388,7 +395,10 @@ describe("retained repository registration lifecycle", () => {
         expect((await failure("repo", "restore", f.repo.id)).message).toContain(target);
         expect(readFileSync(path.join(f.home, "repos.json"), "utf8")).toBe(aliasBytes);
       } else {
-        expect(shown.inspection.status).toBe("ok");
+        expect(
+          shown.inspection.status,
+          JSON.stringify({ bytes, target, inspection: shown.inspection }, null, 2)
+        ).toBe("ok");
         expect(shown.inspection.refs).toContainEqual({
           name: "refs/heads/feat/KEEP-1",
           objectId: f.sha,
