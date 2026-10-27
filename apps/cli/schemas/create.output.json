@@ -59,9 +59,51 @@
                   },
                   "base": {
                     "type": "string"
+                  },
+                  "baseSource": {
+                    "type": "string",
+                    "enum": ["local", "cached-remote", "fresh-remote"]
+                  },
+                  "requestedBase": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseRef": {
+                    "type": "string"
+                  },
+                  "baseCommit": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseResolution": {
+                    "type": "string",
+                    "enum": ["resolved", "fetch-required"]
                   }
                 },
-                "required": ["repoId", "repoName", "path", "branch", "base"],
+                "required": [
+                  "repoId",
+                  "repoName",
+                  "path",
+                  "branch",
+                  "base",
+                  "baseSource",
+                  "requestedBase",
+                  "baseRef",
+                  "baseCommit",
+                  "baseResolution"
+                ],
                 "additionalProperties": true
               }
             }

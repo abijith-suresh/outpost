@@ -6,6 +6,7 @@ import type { PlatformError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { ProvenanceFields } from "./base-selection.js";
 import { commandExitCode, gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { knownWorktreesRoots, loadConfig } from "./config.js";
@@ -43,6 +44,7 @@ export const RepositoryEntrySchema = Schema.Struct({
   id: semanticIdentifierSchema("repository id"),
   name: semanticIdentifierSchema("repository name"),
   base: semanticIdentifierSchema("base branch"),
+  ...ProvenanceFields,
   managedPath: Schema.String,
   worktreePath: Schema.String,
 });
@@ -50,7 +52,7 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  version: Schema.optional(Schema.Literal(2)),
+  version: Schema.optional(Schema.Literals([2, 3])),
   worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
@@ -58,7 +60,28 @@ export const ManifestSchema = Schema.Struct({
   createdAt: Schema.String,
   workspacePath: Schema.String,
   repositories: Schema.Array(RepositoryEntrySchema),
-});
+}).check(
+  Schema.makeFilter((manifest) => {
+    for (const repo of manifest.repositories) {
+      const hasAny =
+        repo.baseSource !== undefined ||
+        repo.requestedBase !== undefined ||
+        repo.baseRef !== undefined ||
+        repo.baseCommit !== undefined;
+      if (manifest.version === 3) {
+        if (
+          !repo.baseSource ||
+          repo.requestedBase === undefined ||
+          !repo.baseRef ||
+          !repo.baseCommit ||
+          (repo.requestedBase !== null && !repo.requestedBase.trim())
+        )
+          return "Version 3 manifests require complete immutable base provenance for every repository.";
+      } else if (hasAny) return "Base provenance requires manifest version 3.";
+    }
+    return true;
+  })
+);
 
 export type Manifest = Schema.Schema.Type<typeof ManifestSchema>;
 
@@ -940,7 +963,7 @@ export function getManifestWorktreesRoot(
   if (manifest.version === undefined && manifest.worktreesRoot === undefined)
     return Effect.succeed(config.legacyWorktreesRoot ?? config.worktreesRoot);
   if (
-    manifest.version !== 2 ||
+    (manifest.version !== 2 && manifest.version !== 3) ||
     !manifest.worktreesRoot ||
     config.version !== 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)

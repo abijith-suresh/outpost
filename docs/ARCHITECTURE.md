@@ -91,7 +91,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 or 3 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
 
-Version 2 saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. New version 2 manifests pin their root; legacy manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
+Version 2 configuration saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. Version 2 and 3 manifests pin their root; unversioned manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
 
 `config show` exposes validated settings. `guidance set <file>` reads bounded UTF-8 plaintext into optional global `extraInstructions`; `guidance clear` removes it. `guidance preview` uses create preflight and the same factual `AGENTS.md` renderer without locks or writes. These settings affect future generation only. The command adapter and application operations remain in the CLI package, with Effect workflows and the existing filesystem/Git boundaries; there is no HTTP server or daemon in this phase.
 
@@ -108,7 +108,7 @@ The identity determines the managed mirror path under `repos/`. Path segments ar
 
 **Checked process execution** (`apps/cli/src/child-process.ts`): all Git helpers drain stdout and stderr concurrently with exit-status waiting, retaining at most 256 KiB per stream. String results require exit status zero and complete stdout. Exit-code probes explicitly accept nonzero results. The default 120-second timeout is configurable with `OUTPOST_GIT_TIMEOUT_MS`; checked execution applies an explicit termination policy to every standard command and pipeline member. POSIX commands run in separate process groups, with SIGTERM followed by SIGKILL after one second. This uses the existing Effect spawner's `forceKillAfter` option. The spawner may wait one additional second for the group after SIGKILL. Cleanup is included in timeout/interruption completion, rather than abandoned in the background. Diagnostic lines are appended individually so bounded output with many tiny lines cannot overflow the JavaScript argument stack.
 
-**Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create resolves bases from remote tracking refs first, then existing local branches. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
+**Managed mirrors** (`apps/cli/src/commands/repo-mirror.ts`): bare repos cloned with `git clone --mirror`. Before fetching, Outpost replaces the legacy mirror refspec with `+refs/heads/*:refs/remotes/origin/*` and disables `remote.origin.mirror`. Fetch uses `git fetch origin --prune --tags`. Existing `refs/heads` are never rewritten or pruned during this migration, preserving workspace commits. Create selects an explicit base source; cached-remote is the default with no local fallback. Fresh creation uses a separate targeted checked fetch rather than the bulk mirror fetch/prune path. Git environment is sanitized (GCM_INTERACTIVE=never, GIT_TERMINAL_PROMPT=0).
 
 The checked Git adapter adds command-scoped `-c core.longpaths=true` on Windows. Internal pack/admin files can exceed 260 characters without writing system, global or repository configuration. This option does not remove Git's repository startup or cwd limits.
 
@@ -139,41 +139,71 @@ Unsupported operations fail with the existing structured `invalid-arguments` rea
 
 ### Create (`apps/cli/src/commands/create.ts`)
 
-`outpost create --ticket <id> --type <prefix> --repo <id> [--repo <id> ...] [--base <branch>] [--dry-run]`
+`outpost create --ticket <id> --type <prefix> --repo <id> [--repo <id> ...] [--base-source <source>] [--base <ref>] [--dry-run]`
 
 Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on every specified managed repo, then creates a worktree for each at `<worktreesRoot>/<ticket>/<repo-name>`.
 
-**Base branch resolution:**
+**Base selection and provenance:**
 
-- If `--base` provided: use that branch
-- Otherwise: resolve HEAD symbolic ref from the bare mirror
+`--base-source` is local, cached-remote or fresh-remote. Cached-remote is the
+non-network default, with no implicit local fallback. Checked creation Git
+operations disable lazy promisor fetching, including ref resolution and checkout;
+explicit fresh fetches remain explicit. Missing owned commits or blobs fail
+without silently contacting the promisor remote. Local selects only available
+owned refs/objects. Cached resolves only selected remote-tracking refs. Fresh
+requires a successful checked fetch of the selected upstream branch and captures
+its actual immutable receipt; a cached ref is never substituted after failure.
+An omitted `--base` uses each repository's recorded managed symbolic HEAD branch,
+not a remotely rediscovered default. Fresh receipt parsing uses Git's
+[machine-readable fetch output](https://git-scm.com/docs/git-fetch/2.43.0#_output),
+not a later read of a mutable cached ref.
+
+New manifest version 3 records source, requested ref, resolved ref and immutable
+commit per repository and pins its trusted root. Legacy unversioned/v2 manifests
+keep their original root interpretation and do not gain invented provenance.
+Previous strict manifest decoders refuse version 3 before modifying its workspace.
+The existing config/registry barriers and retained records stay intact.
+
+Branch creation consumes the resolved SHA. Before manifest commit, creation
+checks that the resulting branch/worktree still matches it. Base-ref races cannot
+change the chosen starting commit; a changed target is refused and preserved.
+Journals record the request, immutable plan and confirmed fresh receipts. Remote
+refreshes are not part of a filesystem rollback and remain inspectable after
+partial failure or interruption. Fresh selection fetches into an operation-owned
+receipt namespace, then updates only the selected tracking ref with a no-dereference
+compare-and-swap. Explicit ref mappings override legacy mirror refspecs; no pruning,
+tag refresh, submodule recursion or automatic maintenance is requested. Confirmed
+receipt cleanup occurs before the manifest commit, while the created branch and
+tracking ref preserve the fetched object. Uncertain or changed receipts remain
+journaled for inspection. Retained repository records are unchanged.
 
 **Validation (pre-flight):**
 
 - Ticket, type, repository IDs, and an explicit base branch are validated as non-empty semantic identifiers without ASCII control characters before state or Git access
 - Ticket and type are also validated for path segment safety
 - Target branches must not already exist
-- Base branches must exist
+- Local/cached selections require an owned commit and its selected checkout objects; fresh execution validates fetched objects, while a fresh preview leaves remote existence unresolved
 - No two repos may produce colliding worktree paths
 - The ticket must not already have a manifest
 
 **Transaction ordering:**
 
-1. Create the workspace directory.
-2. For each selected repository in order, create its branch and then its worktree.
-3. Write `AGENTS.md` into the workspace directory.
-4. Write the manifest to `workspaces/<ticket>.json` as the successful creation commit marker.
+1. Preflight every selected member, resolve offline sources or explicitly refresh fresh sources, and journal immutable receipts. Preserve any completed refresh after failure. Install trusted-root metadata before writing a provenance manifest.
+2. Create the workspace directory.
+3. For each selected repository in order, create its branch and then its worktree from the immutable plan, checking actual branch/HEAD before committing provenance.
+4. Write `AGENTS.md` into the workspace directory.
+5. Write the manifest to `workspaces/<ticket>.json` as the successful creation commit marker.
 
 **Rollback** on failure or interruption before the manifest commit marker:
 
 - Consider only worktrees whose creation returned success for this operation; verify repository association, unchanged branch and HEAD, then remove only clean worktrees with `git worktree remove` without force
-- Consider only branches whose creation returned success for this operation; delete only unlinked branches whose commit still matches the immutable starting commit, using compare-and-delete `git update-ref -d <ref> <expected-oid>`
+- Consider only branches whose creation returned success for this operation; preserve symbolic refs, and delete only unlinked direct refs whose commit still matches the immutable starting commit, using compare-and-delete `git update-ref --no-deref -d <ref> <expected-oid>` so a raced symbolic ref cannot delete its user-owned destination
 - Delete AGENTS.md (only if content matches the snapshot — never delete user-modified files)
 - Remove workspace directory (only if empty via `rmdir`)
 
 The directory-creation ownership flag, generated guidance snapshot, and manifest commit marker are installed in short uninterruptible filesystem sections. A late cancellation after manifest commit preserves the completed workspace. Git commands remain interruptible and scoped. Intent is journaled before execution, but an artifact becomes eligible for rollback only after the Git command returns success. An interruption mask protects the short transition from successful command result to in-memory confirmation; the Git command itself is restored to interruptible execution. A failed or interrupted mutation leaves creation unconfirmed, even when it may have installed a partial artifact. These artifacts are preserved for manual inspection. A matching path, base commit, or bare-repository association never substitutes for operation confirmation.
 
-**Dry-run:** validates all inputs and produces a plan, but does not acquire locks or mutate any state.
+**Dry-run:** validates local state and produces a plan, but does not acquire locks, fetch or mutate refs/configuration. Local/cached sources resolve actual owned commits. Fresh plans explicitly report fetch-required with no resolved fresh commit; execution resolves again after fetching. Guidance preview follows the same rule.
 
 **Interactive vs non-interactive:**
 
@@ -238,7 +268,7 @@ Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
 }
 ```
 
-The example above is the legacy unversioned shape. New manifests add `version: 2` and an absolute `worktreesRoot` validated against the roots recorded in version 2 configuration. Repository paths remain relative to `reposRoot`; workspace paths remain relative to the manifest's saved root. Unversioned manifests use `legacyWorktreesRoot` (or the current root in version 1 configuration). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: schema version, trusted root, semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
+The example above is the legacy unversioned shape. New manifests use `version: 3`, an absolute trusted `worktreesRoot`, and complete per-member `baseSource`, nullable `requestedBase`, `baseRef` and full `baseCommit` provenance. Version 2 manifests retain their saved roots without gaining provenance. Repository paths remain relative to `reposRoot`; workspace paths remain relative to the manifest's saved root. Unversioned manifests use `legacyWorktreesRoot` (or the current root in version 1 configuration). Ticket, type, branch, and repository identity fields are validated as non-empty semantic identifiers without ASCII control characters. Paths retain their domain-specific validation and are not treated as identifiers. The manifest is validated exhaustively on read and before write: schema version, provenance completeness, trusted root, semantic field validation, ticket identity collision detection, path containment checks, path uniqueness enforcement, and worktree single-segment checks.
 
 ## Mutation and ticket locks
 
@@ -256,7 +286,7 @@ Process cleanup is limited by the OS and the installed Effect spawner. POSIX gro
 
 ## Workspace AGENTS.md (`apps/cli/src/workspace-agents.ts`)
 
-When a workspace is created, Outpost generates an `AGENTS.md` file in the workspace directory using exclusive-create semantics (hard link from temp file — fails if the file already exists). The file contains workspace metadata (ticket, branch) and a per-repository block with the repo name, ID, worktree path, expected branch, and base branch. Optional global extra instructions follow these facts as plaintext. The ownership hash covers both the generated facts and the extra instructions. Changing settings never regenerates an existing file.
+When a workspace is created, Outpost generates an `AGENTS.md` file in the workspace directory using exclusive-create semantics (hard link from temp file — fails if the file already exists). The file contains workspace metadata (ticket, branch) and a per-repository block with the repo name, ID, worktree path, expected branch, base selection source/ref and actual immutable starting commit when available. Fresh read-only previews state that resolution requires a fetch; legacy manifests do not gain fabricated facts. Optional global extra instructions follow these facts as plaintext. The ownership hash covers both the generated facts and the extra instructions. Changing settings never regenerates an existing file.
 
 **Ownership marker:** the first line is `<!-- outpost:workspace-agents sha256=<64-char-hex> -->`. The SHA256 is computed over the body (all content after the marker).
 
@@ -328,9 +358,15 @@ Contract version `1.1.0` added settings, tags and guidance commands and made
 `--repo` optional when tag selection is supplied. The package version is unchanged;
 metadata version 2 separately protects stored state from older writers.
 
-Contract version `2.0.0` changes repository removal to registration-only retention,
+Contract version `2.0.0` changed repository removal to registration-only retention,
 adds retained inspection and offline restoration, and reports the explicit storage
 outcome. The package version is independent of this machine contract version.
+
+Contract version `3.0.0` adds explicit base sources and immutable commit
+provenance. Cached selection no longer falls back to local branches. Create's
+network policy declares that explicit fresh selection can fetch; the default
+cached mode and all previews remain offline. Manifest version 3 independently
+protects stored provenance from incompatible older readers.
 
 `describe --json` reports an independently versioned `contractVersion` and the
 installed `cliVersion`. Each command includes normalized input and output JSON

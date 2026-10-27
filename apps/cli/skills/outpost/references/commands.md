@@ -125,7 +125,7 @@ Side effects: exported-guidance.
 
 ```text
 Usage:
-  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run] [--json]
+  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run] [--json]
 
 Create worktrees for imported repositories
 
@@ -139,19 +139,20 @@ Options:
   --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
   --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)
   --tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
-  --base <branch>  Base branch (defaults to repo HEAD)
+  --base-source <source>  local, cached-remote (default) or explicit fresh-remote fetch
+  --base <ref>  Base ref (defaults to each repository's recorded managed HEAD branch)
   --dry-run  Validate without creating
   --json  Output as JSON
 ```
 
-Network: none. Retry: inspect-before-retry.
-Side effects: local-branches, worktrees, workspace-metadata.
+Network: explicit. Retry: inspect-before-retry.
+Side effects: explicit-fresh-remote-fetch, remote-tracking-refs, local-branches, worktrees, workspace-metadata.
 
 ## guidance preview
 
 ```text
 Usage:
-  outpost guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--json]
+  outpost guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--json]
 
 Preview factual workspace AGENTS.md using current settings without writing files
 
@@ -163,7 +164,8 @@ Options:
   --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
   --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)
   --tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
-  --base <branch>  Base branch (defaults to repo HEAD)
+  --base-source <source>  local, cached-remote (default) or explicit fresh-remote fetch
+  --base <ref>  Base ref (defaults to each repository's recorded managed HEAD branch)
   --json  Output as JSON
 ```
 

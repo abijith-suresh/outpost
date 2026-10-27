@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifySettingsWorkflow } from "./settings-smoke.mjs";
 
 const require = createRequire(import.meta.url);
@@ -333,8 +334,8 @@ try {
   assertSuccess(discovery, "installed describe");
   const contract = JSON.parse(discovery.stdout).data;
   assert.equal(contract.cliVersion, version);
-  assert.equal(contract.contractVersion, "2.0.0");
-  assert.equal(contract.network, "none");
+  assert.equal(contract.contractVersion, "3.0.0");
+  assert.equal(contract.network, "explicit");
   assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
   assert.ok(contract.outputSchema.anyOf.length >= 2);
 
@@ -413,6 +414,7 @@ try {
 
   console.log("Test: installed settings, tags, guidance and old-workspace preservation");
   verifySettingsWorkflow({ runInstalled, validateInstalled, smokeRoot });
+  verifyBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
   console.log("\nAll smoke tests passed.");
 } finally {

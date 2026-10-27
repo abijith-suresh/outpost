@@ -111,6 +111,14 @@ export function runWorkspaceShow(
           id: repo.id,
           name: repo.name,
           base: repo.base,
+          ...(repo.baseSource === undefined
+            ? {}
+            : {
+                baseSource: repo.baseSource,
+                requestedBase: repo.requestedBase,
+                baseRef: repo.baseRef,
+                baseCommit: repo.baseCommit,
+              }),
           managedPath: repo.managedPath,
           resolvedManagedPath,
           worktreePath: repo.worktreePath,

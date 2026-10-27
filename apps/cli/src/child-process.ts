@@ -13,6 +13,12 @@ export function gitCommand(...args: ReadonlyArray<string>): ChildProcess.Command
   });
 }
 
+/** Creation must not lazily contact a promisor remote while resolving or checking owned objects.
+ * Explicit fetch commands still work; this disables only Git's implicit object fetches. */
+export function noLazyFetchGitCommand(...args: ReadonlyArray<string>): ChildProcess.Command {
+  return gitCommand(...args).pipe(ChildProcess.setEnv({ GIT_NO_LAZY_FETCH: "1" }));
+}
+
 type CommandOptions = {
   /** Defaults to OUTPOST_GIT_TIMEOUT_MS, or 120 seconds. */
   timeoutMs?: number;

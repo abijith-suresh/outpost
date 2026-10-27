@@ -56,9 +56,15 @@ const CREATE_OPTIONS: readonly CommandOption[] = [
     repeatable: true,
   },
   {
+    name: "--base-source",
+    valueName: "source",
+    description: "local, cached-remote (default) or explicit fresh-remote fetch",
+    required: false,
+  },
+  {
     name: "--base",
-    valueName: "branch",
-    description: "Base branch (defaults to repo HEAD)",
+    valueName: "ref",
+    description: "Base ref (defaults to each repository's recorded managed HEAD branch)",
     required: false,
   },
   {
@@ -547,7 +553,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "2.0.0";
+export const CONTRACT_VERSION = "3.0.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -674,12 +680,20 @@ export function commandPolicy(spec: CommandSpec) {
   const name = spec.path.join(" ");
   return {
     network:
-      name === "repo add" || name === "repo fetch" ? ("explicit" as const) : ("none" as const),
+      name === "repo add" || name === "repo fetch" || name === "create"
+        ? ("explicit" as const)
+        : ("none" as const),
     retry: spec.mutation ? ("inspect-before-retry" as const) : ("safe" as const),
     sideEffects: !spec.mutation
       ? []
       : name === "create"
-        ? ["local-branches", "worktrees", "workspace-metadata"]
+        ? [
+            "explicit-fresh-remote-fetch",
+            "remote-tracking-refs",
+            "local-branches",
+            "worktrees",
+            "workspace-metadata",
+          ]
         : name === "workspace remove"
           ? ["worktrees", "workspace-metadata"]
           : name === "skill export"

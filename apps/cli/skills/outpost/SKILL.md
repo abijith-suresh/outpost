@@ -20,11 +20,21 @@ Read [commands](references/commands.md) for syntax and
   before changing existing repositories or workspaces.
 - Import a local checkout with `outpost repo add <path> --json` only when repository
   network access is intended. `outpost repo fetch --all --json` explicitly updates
-  managed repositories. Both can access the remote. Create never fetches.
+  managed repositories. Both can access the remote. Create uses cached remote
+  refs by default and never falls back to local branches. Select
+  `--base-source local` for owned local refs/objects. Only explicit
+  `--base-source fresh-remote` authorizes a creation-time fetch.
 - Select exact IDs from `repo list`. Preview with
   `outpost create --ticket <ticket> --type <type> --repo <id> --dry-run --json`.
   Use repeated `--repo` options for multiple repositories, then create with the
   same arguments without `--dry-run`. Non-interactive create requires all inputs.
+  Use `--base <ref>` to choose a ref; omitted refs use each repository's recorded
+  managed symbolic HEAD branch, which is not a newly discovered remote default.
+  Inspect each member's requested source/ref, resolved ref and immutable starting
+  SHA. Fresh previews report `fetch-required` with no resolved fresh SHA and never
+  fetch. Fresh execution fails on unavailable refs/network/authentication instead
+  of falling back to cache. Local mode cannot use source-only objects absent from
+  owned managed storage. Preserve source work until targeted import is supported.
 - Inspect settings with `outpost config show --json`. Set `worktreesRoot` only
   for future workspaces; old workspaces keep their recorded paths. The first
   settings/tag/guidance mutation upgrades metadata so older writers refuse it.

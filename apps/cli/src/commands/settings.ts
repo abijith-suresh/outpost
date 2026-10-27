@@ -211,6 +211,10 @@ export function runGuidancePreview(args: readonly string[]) {
           id: worktree.repoId,
           name: worktree.repoName,
           base: worktree.base,
+          baseSource: worktree.baseSource,
+          requestedBase: worktree.requestedBase,
+          baseRef: worktree.baseRef,
+          baseCommit: worktree.baseCommit ?? undefined,
           managedPath: path.relative(
             config.reposRoot,
             registry.repos.find((repo) => repo.id === worktree.repoId)?.managedRepoPath ?? ""

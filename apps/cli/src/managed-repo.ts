@@ -43,7 +43,8 @@ export function validateManagedRepoPath(reposRoot: string, repo: RepoRecord) {
 /** A marker or a verifiable legacy mirror layout proves ownership, never a name alone. */
 export function verifyManagedRepository(
   reposRoot: string,
-  repo: RepoRecord
+  repo: RepoRecord,
+  command: typeof gitCommand = gitCommand
 ): Effect.Effect<
   string,
   ManagedRepoError,
@@ -59,7 +60,7 @@ export function verifyManagedRepository(
           message: `Managed repository is missing at ${managedPath}`,
         })
       );
-    const git = (...args: string[]) => gitCommand("--git-dir", managedPath, ...args);
+    const git = (...args: string[]) => command("--git-dir", managedPath, ...args);
     const bare = yield* commandString(git("rev-parse", "--is-bare-repository"));
     if (bare.trim() !== "true") {
       return yield* Effect.fail(

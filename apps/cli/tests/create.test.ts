@@ -161,7 +161,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]\n--type is required.\nAt least one --repo or --tag is required."
+      "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]\n--type is required.\nAt least one --repo or --tag is required."
     );
   });
 
@@ -876,10 +876,10 @@ describe("run", () => {
     };
 
     const registry = JSON.parse(readFileSync(path.join(tempHome, "repos.json"), "utf8"));
-    const alphaManaged = registry.repos.find(
+    const alphaManaged = (registry.repositories ?? registry.repos).find(
       (r: { id: string }) => r.id === localRepoId(alpha.tempRemote)
     );
-    const betaManaged = registry.repos.find(
+    const betaManaged = (registry.repositories ?? registry.repos).find(
       (r: { id: string }) => r.id === localRepoId(beta.tempRemote)
     );
 

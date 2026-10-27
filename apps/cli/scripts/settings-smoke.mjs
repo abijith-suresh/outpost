@@ -79,7 +79,28 @@ export function verifySettingsWorkflow({ runInstalled, validateInstalled, smokeR
   const legacyManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   delete legacyManifest.version;
   delete legacyManifest.worktreesRoot;
+  for (const member of legacyManifest.repositories) {
+    for (const key of ["baseSource", "requestedBase", "baseRef", "baseCommit"]) delete member[key];
+  }
   writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+  // New creation installs root/provenance safeguards. Model a genuine legacy
+  // home explicitly so the following root-refusal test still checks migration
+  // from v1, with its original paths and exact persisted bytes.
+  const initialConfig = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+  writeFileSync(
+    join(home, "config.json"),
+    `${JSON.stringify({
+      version: 1,
+      outpostHome: initialConfig.outpostHome,
+      reposRoot: initialConfig.reposRoot,
+      worktreesRoot: initialConfig.worktreesRoot,
+    })}\n`
+  );
+  const initialRegistry = JSON.parse(readFileSync(join(home, "repos.json"), "utf8"));
+  writeFileSync(
+    join(home, "repos.json"),
+    `${JSON.stringify({ repos: initialRegistry.repositories ?? initialRegistry.repos })}\n`
+  );
   const legacyBytes = readFileSync(manifestPath);
   if (process.platform === "win32") {
     // Exercise the installed .cmd shim and native canonicalization before the

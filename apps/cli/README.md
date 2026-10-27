@@ -37,9 +37,9 @@ Commands:
                        Set the root for future workspaces
   guidance set <file> [--json] Set extra instructions from a UTF-8 text file
   guidance clear [--json] Clear extra instructions for future workspaces
-  guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--json]
+  guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--json]
                        Preview factual workspace AGENTS.md without writing
-  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run] [--json]
+  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
@@ -73,9 +73,40 @@ Use `outpost help <command>` or `outpost <command> --help` for command-level hel
 
 ### Create
 
-`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]`
+`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]`
 
-Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Use `--base` to branch from a specific branch (defaults to the repo's HEAD). `--dry-run` validates inputs without creating anything.
+Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Choose `--base-source local`, `cached-remote` or `fresh-remote`. The default is
+`cached-remote`. Use `--base <ref>` to select the ref; without it, each repository
+uses its own recorded managed symbolic HEAD branch. This does not rediscover a
+remote's current default branch.
+
+| Source | Ref selection | Network and failure behavior |
+| --- | --- | --- |
+| `local` | An available owned local ref or immutable object | Never fetches. Missing objects fail; source-only commits are not imported. |
+| `cached-remote` | The selected branch under `refs/remotes/origin/` | Never fetches and never falls back to a local branch. |
+| `fresh-remote` | Explicitly fetch the selected upstream branch | Requires a successful checked fetch. Missing/unavailable refs or authentication fail without using cached/local work as a substitute. |
+
+Git's implicit promisor-object fetching is disabled during base selection and
+creation. Missing commits or checkout objects therefore fail honestly instead of
+opening an undeclared fetch. Explicit fresh selection still uses the checked
+fetch operation; it does not authorize arbitrary implicit fetches afterward.
+
+Every successful member reports its requested source/ref, resolved ref and actual
+immutable starting SHA. The manifest and factual generated `AGENTS.md` record the
+same provenance. The branch is created from that SHA. If concurrent changes make
+the created branch/worktree disagree, creation refuses to commit false provenance
+and preserves changed work for inspection. Existing branches are never reset.
+
+`--dry-run` validates without locks, writes or fetching. Local and cached previews
+resolve owned commits and check their checkout objects. A fresh preview reports `fetch-required` with no resolved
+fresh SHA; execution must fetch and resolve again. `guidance preview` follows the
+same read-only rule. Refreshes completed before another repository fails are not
+rolled back or described as a complete workspace. Inspect the operation journal
+before retrying a failed or interrupted fresh operation. A failed operation may
+retain a private receipt ref under `refs/outpost/base-fetch/` to keep a confirmed
+fetched commit recoverable. Journals identify those refs and SHAs for inspection;
+they are not authority to replay an operation or delete storage. Bulk repository
+fetch timestamps are not a substitute for the per-workspace immutable receipt.
 
 Select explicit repository IDs, tags, or both. Repeated tags require every tag to match. When combined with explicit IDs, tags filter only those IDs. Tags contain 1–64 lowercase letters, numbers, dots, underscores or hyphens, starting with a letter or number. Creation records the selected concrete repository IDs; changing tags later never changes a workspace. An empty selection fails before creating worktrees.
 
@@ -98,7 +129,7 @@ outpost guidance clear --json
 
 Extra instructions are optional plaintext appended to the generated factual orientation, under its existing SHA256 ownership marker. They are read from a UTF-8 file of at most 65,536 bytes, without NUL characters, so multiline text does not depend on shell quoting. Preview uses the create preflight and returns the proposed full `AGENTS.md`; it writes no files and acquires no mutation lock. Setting or clearing instructions affects future generation only. Existing generated, modified and foreign guidance retains its normal protection.
 
-The first settings, tag or guidance mutation upgrades configuration to version 2 and installs an incompatible version 2 registry before saving extended settings or tags. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new manifests declare their version and root. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 or 3 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
+The first settings, tag or guidance mutation, or new workspace creation, upgrades configuration to version 2 and installs an incompatible version 2 registry before writing extended state. Existing version 3 retained registries are preserved. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new version 3 manifests declare their root and complete immutable base provenance. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 or 3 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
 
 ### Workspace remove
 
@@ -199,7 +230,7 @@ These budgets follow Git for Windows' explicit `GIT_DIR` guard and fixed cwd buf
 
 Outpost does not create path aliases, move existing roots, or change system, global or repository Git configuration. Other programs, hooks, submodules and manually run Git commands retain their own limits. See [the path-budget derivation](../../docs/ARCHITECTURE.md#windows-git-path-budgets) for the supported boundary.
 
-Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branches in `refs/heads` and their commits survive fetch and repository re-import. Older mirrors migrate on their next fetch without deleting or rewriting local refs. Create prefers a fetched remote base, with a local branch fallback for existing mirrors and workspace branches.
+Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branches in `refs/heads` and their commits survive fetch and repository re-import. Older mirrors migrate on their next fetch without deleting or rewriting local refs. Create uses explicit base sources. Cached-remote is the default and has no local fallback; use local mode to select an owned local branch. Fresh creation uses a narrowly selected checked fetch and records its actual immutable receipt, without pruning local work or inheriting a mirror refspec that could overwrite user branches.
 
 - **Semantic identifier validation:** empty values and ASCII control characters are rejected in tickets, branch inputs, repository identities, remote names, and persisted state before filesystem or Git operations.
 - **Dirty worktree protection:** workspace removal checks `git status --porcelain` and refuses worktrees with uncommitted changes.

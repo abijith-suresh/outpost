@@ -122,7 +122,15 @@ export function renderAgentsMarkdown(
           `    id: ${jsonEncode(repo.id)}`,
           `    worktree: ${jsonEncode(`./${relativeWorktree}`)}`,
           `    expectedBranch: ${jsonEncode(manifest.branch)}`,
-          `    baseBranch: ${jsonEncode(repo.base)}`,
+          `    ${repo.baseSource === undefined ? "baseBranch" : "baseSelection"}: ${jsonEncode(repo.base)}`,
+          ...(repo.baseSource === undefined
+            ? []
+            : [
+                `    baseSource: ${jsonEncode(repo.baseSource)}`,
+                `    requestedBase: ${repo.requestedBase === null ? "null (recorded managed HEAD default)" : jsonEncode(repo.requestedBase ?? "")}`,
+                `    baseRef: ${jsonEncode(repo.baseRef ?? "")}`,
+                `    baseCommit: ${repo.baseCommit ? jsonEncode(repo.baseCommit) : "unresolved (fetch-required; preview did not fetch)"}`,
+              ]),
           "```",
         ].join("\n")
       );

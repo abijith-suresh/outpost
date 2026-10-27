@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { BaseSourceSchema, CommitSchema, ProvenanceFields } from "./base-selection.js";
 
 const strings = Schema.Array(Schema.String);
 const optionalString = Schema.optional(Schema.String);
@@ -42,6 +43,7 @@ export const WorkspaceWorktreeSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   base: Schema.String,
+  ...ProvenanceFields,
   managedPath: Schema.String,
   worktreePath: Schema.String,
   resolvedManagedPath: optionalString,
@@ -134,6 +136,11 @@ export const ResultSchemas = {
         path: Schema.String,
         branch: Schema.String,
         base: Schema.String,
+        baseSource: BaseSourceSchema,
+        requestedBase: Schema.NullOr(Schema.String),
+        baseRef: Schema.String,
+        baseCommit: Schema.NullOr(CommitSchema),
+        baseResolution: Schema.Literals(["resolved", "fetch-required"]),
       })
     ),
   }),
