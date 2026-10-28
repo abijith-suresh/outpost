@@ -1,6 +1,6 @@
 ---
 name: outpost
-description: Manage local multi-repository Git workspaces with the Outpost CLI, including repository import, workspace creation, inspection, removal and recovery. Use when operating Outpost, not for application code changes inside a worktree.
+description: Manage local multi-repository Git workspaces with the Outpost CLI, including repository import, workspace creation, safe resume, inspection, removal and recovery. Use when operating Outpost, not for application code changes inside a worktree.
 ---
 
 # Outpost
@@ -13,8 +13,9 @@ Read [commands](references/commands.md) for syntax and
 
 ## Choose the next operation
 
-- Start with `outpost doctor --json`. `OUTPOST_HOME` selects the home; otherwise
-  it is `~/.outpost`.
+- For a known existing ticket, use named `workspace resume` inspection. Use
+  `outpost doctor --json` to diagnose initialization or recovery.
+  `OUTPOST_HOME` selects the home; otherwise it is `~/.outpost`.
 - If the home is not initialized, run `outpost init --json` before list commands.
   Then inspect `outpost repo list --json` and `outpost workspace list --json`
   before changing existing repositories or workspaces.
@@ -35,9 +36,19 @@ Read [commands](references/commands.md) for syntax and
   fetch. Fresh execution fails on unavailable refs/network/authentication instead
   of falling back to cache. Local mode cannot use source-only objects absent from
   owned managed storage. Preserve source work until targeted import is supported.
+- Continue an existing ticket with `outpost workspace resume <ticket> --json`.
+  Use its verified paths, current branch/HEAD and working-state facts. Preserve
+  `originalBase` as creation history even when current HEAD has advanced. Dirty,
+  untracked or diverged owned work on the expected branch can be resumable.
+  Inspect partial/not-ready member diagnostics; wrong/detached branches, missing
+  or foreign members, unavailable/retained registration and held locks require
+  explicit inspection. Resume never fetches, switches branches, resets, repairs,
+  adopts, moves paths or overwrites guidance/metadata. Repeating create points to
+  resume and cannot fresh-fetch an existing ticket. Missing manifests or crash
+  residuals require doctor/manual recovery, not a new create over existing work.
 - Inspect settings with `outpost config show --json`. Set `worktreesRoot` only
   for future workspaces; old workspaces keep their recorded paths. The first
-  settings/tag/guidance mutation upgrades metadata so older writers refuse it.
+  creation or settings/tag/guidance mutation upgrades metadata so older writers refuse it.
   Keep the newer tool after migration; do not restore stale config over new state.
 - Use `repo tag <id> --add <tag> --remove <tag> --json` for optional flat tags.
   `repo list --tag <tag>` and `create --tag <tag>` require every supplied tag.
@@ -68,7 +79,8 @@ Read [commands](references/commands.md) for syntax and
 
 ## Interpret the result before retrying
 
-Success JSON has `ok: true` and exit code 0. Partial fetch or removal has
+Success JSON has `ok: true` and exit code 0. Partial fetch/removal or a resume
+result that is partial/not-ready has
 `ok: false`, `data` and exit code 1 on stdout. Inspect per-repository results or
 `completed`, `remaining` and diagnostics; do not treat a partial result as a
 complete rollback. Errors without results are JSON on stderr with a stable

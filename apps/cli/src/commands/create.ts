@@ -780,7 +780,7 @@ function prepareCreate(
     if (hasManifest) {
       return yield* Effect.fail(
         new CreateError({
-          message: `A workspace manifest already exists for ticket ${ticket}`,
+          message: `A workspace manifest already exists for ticket ${ticket}. Use outpost workspace resume <ticket> --json to inspect the existing workspace; use outpost doctor --json for incomplete metadata. No base refresh was performed.`,
         })
       );
     }
@@ -798,7 +798,7 @@ function prepareCreate(
     if (ticketDirectoryExists) {
       return yield* Effect.fail(
         new CreateError({
-          message: `A workspace already exists for ticket ${ticket}: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`,
+          message: `A workspace directory already exists for ticket ${ticket}: ${ticketDirectory}\nPreserve its contents and run outpost doctor --json to inspect incomplete or interrupted creation. A directory alone is never adopted or repaired.`,
         })
       );
     }
@@ -837,6 +837,29 @@ export function runCreate(
     let parsedArgsInput = yield* parseCreateArgsInput(args);
 
     const outpostHome = yield* resolveOutpostHome();
+    // Existing membership is frozen: current tags, registrations and base refs
+    // must not hide the explicit resume path or authorize a fresh fetch.
+    if (parsedArgsInput.ticket) {
+      yield* validateSemanticIdentifier("--ticket", parsedArgsInput.ticket).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+      yield* validatePathSegment("--ticket", parsedArgsInput.ticket).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+      if (
+        yield* manifestExists(outpostHome, parsedArgsInput.ticket).pipe(
+          Effect.mapError(
+            (error) => new CreateError({ ...domainDetails(error), message: error.message })
+          )
+        )
+      )
+        return yield* Effect.fail(
+          new CreateError({
+            ...reasonDetails("invalid-state"),
+            message: `A workspace manifest already exists for ticket ${parsedArgsInput.ticket}. Use outpost workspace resume <ticket> --json to inspect its frozen membership and current work. For invalid metadata, run outpost doctor --json. No base refresh was performed.`,
+          })
+        );
+    }
     const tagOnly = !!parsedArgsInput.tags?.length && !parsedArgsInput.repoIds.length;
     // Resolve tag-only input for prompt handling; selection is repeated under the mutation lock.
     if (parsedArgsInput.tags?.length && !parsedArgsInput.repoIds.length) {

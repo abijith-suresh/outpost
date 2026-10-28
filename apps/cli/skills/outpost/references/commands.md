@@ -481,6 +481,27 @@ Options:
 Network: none. Retry: inspect-before-retry.
 Side effects: worktrees, workspace-metadata.
 
+## workspace resume
+
+```text
+Usage:
+  outpost workspace resume <ticket> [--json]
+
+Verify one existing workspace and report current work without fetching or changing it
+
+  mutation: false
+  json output: yes
+
+Arguments:
+  <ticket>  Existing ticket workspace identifier (required)
+
+Options:
+  --json  Output as JSON
+```
+
+Network: none. Retry: safe.
+Side effects: none.
+
 ## workspace show
 
 ```text
@@ -504,4 +525,4 @@ Side effects: none.
 
 ## Exit and recovery contract
 
-Success uses stdout and exit 0. Partial fetch/removal uses stdout, `ok: false`, `data` and exit 1. Errors without results use stderr and exit 1, with `code`, `reason`, `retryable` and `action`. See [recovery](recovery.md) before retrying.
+Success uses stdout and exit 0. Partial fetch/removal and partial/not-ready resume use stdout, `ok: false`, `data` and exit 1. Errors without results use stderr and exit 1, with `code`, `reason`, `retryable` and `action`. See [recovery](recovery.md) before retrying.

@@ -4,7 +4,11 @@ import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import { getCanonicalPortablePathKey, semanticIdentifierSchema } from "./path-safety.js";
+import {
+  getCanonicalPortablePathKey,
+  getPortablePathKey,
+  semanticIdentifierSchema,
+} from "./path-safety.js";
 import { writeJsonFileAtomic } from "./store.js";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
@@ -190,7 +194,8 @@ export const emptyRepoRegistry: RepoRegistry = {
 };
 
 function validateRepoRegistryUniqueness(
-  registry: RepoRegistry
+  registry: RepoRegistry,
+  canonicalPaths = true
 ): Effect.Effect<RepoRegistry, ConfigError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const ids = new Set<string>();
@@ -222,7 +227,9 @@ function validateRepoRegistryUniqueness(
       }
       ids.add(repo.id);
 
-      const managedRepoPathKey = yield* getCanonicalPortablePathKey(repo.managedRepoPath);
+      const managedRepoPathKey = yield* canonicalPaths
+        ? getCanonicalPortablePathKey(repo.managedRepoPath)
+        : getPortablePathKey(repo.managedRepoPath);
       if (managedRepoPaths.has(managedRepoPathKey)) {
         return yield* Effect.fail(
           new ConfigError({
@@ -238,7 +245,8 @@ function validateRepoRegistryUniqueness(
 }
 
 export function loadRepoRegistry(
-  outpostHome: string
+  outpostHome: string,
+  options: { canonicalPaths?: boolean; contents?: string } = {}
 ): Effect.Effect<RepoRegistry, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -251,14 +259,16 @@ export function loadRepoRegistry(
       });
     }
 
-    const contents = yield* fs.readFileString(registryFilePath).pipe(
-      Effect.mapError(
-        (error) =>
-          new ConfigError({
-            message: `Failed to read repo registry ${registryFilePath}: ${error.message}`,
-          })
-      )
-    );
+    const contents =
+      options.contents ??
+      (yield* fs.readFileString(registryFilePath).pipe(
+        Effect.mapError(
+          (error) =>
+            new ConfigError({
+              message: `Failed to read repo registry ${registryFilePath}: ${error.message}`,
+            })
+        )
+      ));
 
     const parsedJson = yield* Effect.try({
       try: () => JSON.parse(contents) as unknown,
@@ -287,7 +297,7 @@ export function loadRepoRegistry(
             ...(stored.version === 3 ? { retainedRepositories: stored.retainedRepositories } : {}),
           }
         : stored;
-    return yield* validateRepoRegistryUniqueness(registry);
+    return yield* validateRepoRegistryUniqueness(registry, options.canonicalPaths ?? true);
   });
 }
 
@@ -331,7 +341,8 @@ export function writeRepoRegistry(
 }
 
 export function loadConfig(
-  outpostHome: string
+  outpostHome: string,
+  options: { contents?: string } = {}
 ): Effect.Effect<OutpostConfig, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -344,14 +355,16 @@ export function loadConfig(
       });
     }
 
-    const contents = yield* fs.readFileString(configFilePath).pipe(
-      Effect.mapError(
-        (error) =>
-          new ConfigError({
-            message: `Failed to read config file ${configFilePath}: ${error.message}`,
-          })
-      )
-    );
+    const contents =
+      options.contents ??
+      (yield* fs.readFileString(configFilePath).pipe(
+        Effect.mapError(
+          (error) =>
+            new ConfigError({
+              message: `Failed to read config file ${configFilePath}: ${error.message}`,
+            })
+        )
+      ));
 
     const parsedJson = yield* Effect.try({
       try: () => JSON.parse(contents) as unknown,

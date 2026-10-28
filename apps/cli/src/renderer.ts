@@ -314,6 +314,39 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
             ]
           : []),
       ]).pipe(Effect.asVoid);
+    case "workspace resume":
+      return Effect.all([
+        Console.log("outpost workspace resume (read-only snapshot)"),
+        Console.log(`ticket: ${output.data.ticket}`),
+        Console.log(`status: ${output.data.status}`),
+        ...(output.data.ticketDirectory
+          ? [Console.log(`workspace directory: ${output.data.ticketDirectory}`)]
+          : []),
+        ...output.data.diagnostics.map((item) =>
+          Console.log(`${item.code}: ${item.message}\n  ${item.action}`)
+        ),
+        ...output.data.worktrees.flatMap((member) => [
+          Console.log(`- ${member.name} (${member.id}) [${member.status}; ${member.registration}]`),
+          ...(member.path ? [Console.log(`  verified path: ${member.path}`)] : []),
+          ...(member.currentBranch !== undefined
+            ? [Console.log(`  current branch: ${member.currentBranch ?? "(detached)"}`)]
+            : []),
+          ...(member.currentHead ? [Console.log(`  current HEAD: ${member.currentHead}`)] : []),
+          Console.log(
+            `  original base: ${member.originalBase.base}${member.originalBase.baseCommit ? ` (${member.originalBase.baseCommit})` : " (legacy provenance not recorded)"}`
+          ),
+          ...(member.workingState
+            ? [
+                Console.log(
+                  `  working state: ${member.workingState.status}; tracked entries ${member.workingState.trackedEntries}; untracked entries ${member.workingState.untrackedEntries}; conflicted entries ${member.workingState.conflictedEntries}`
+                ),
+              ]
+            : []),
+          ...member.diagnostics.map((item) =>
+            Console.log(`  ${item.code}: ${item.message}\n    ${item.action}`)
+          ),
+        ]),
+      ]).pipe(Effect.asVoid);
     case "workspace show":
       return Effect.all([
         Console.log("outpost workspace show"),

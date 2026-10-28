@@ -17,6 +17,7 @@ outpost init                          # create ~/.outpost
 outpost repo add ./my-project         # import a repo
 outpost create --ticket PROJ-123 --type feat --repo <id>
 outpost workspace list                # see your workspaces
+outpost workspace resume PROJ-123     # inspect existing work before continuing
 outpost workspace remove PROJ-123     # clean up when done
 ```
 
@@ -61,6 +62,8 @@ Commands:
                          List created ticket workspaces
   workspace remove <ticket> [--dry-run] [--json]
                          Remove a ticket workspace and all its worktrees
+  workspace resume <ticket> [--json]
+                         Verify one existing workspace without changing it
   workspace show <ticket> [--json]
                          Show one created ticket workspace
 Global options:
@@ -111,6 +114,54 @@ fetch timestamps are not a substitute for the per-workspace immutable receipt.
 Select explicit repository IDs, tags, or both. Repeated tags require every tag to match. When combined with explicit IDs, tags filter only those IDs. Tags contain 1–64 lowercase letters, numbers, dots, underscores or hyphens, starting with a letter or number. Creation records the selected concrete repository IDs; changing tags later never changes a workspace. An empty selection fails before creating worktrees.
 
 If run interactively (terminal, no `--json`), missing ticket, type or repository selection is prompted. Non-interactive use requires a ticket, type and explicit repository IDs or tags.
+
+An existing ticket is a conflict, including when fresh selection was requested.
+Use `workspace resume <ticket>` explicitly; repeating create never refreshes or
+repairs an existing workspace.
+
+### Workspace resume
+
+```bash
+outpost workspace resume PROJ-123 --json
+```
+
+Inspects only the named ticket's frozen manifest and members. It uses the saved
+root, even after settings or tags change. Verified paths, current branch, current
+HEAD and bounded working-state counts are separate from `originalBase`, the
+creation facts recorded in the manifest. A later commit does not replace the
+original base SHA. Legacy manifests expose only their recorded base facts.
+
+An owned checkout on its expected branch can be advanced, diverged, dirty or have
+untracked work and still be resumable. `workingState` reports clean, dirty or
+unknown and entry counts, without printing file names. Untracked directories
+count as entries, not every contained file. Truncated or unavailable inspection
+is never described as clean. Wrong or detached branches, missing or foreign
+members, invalid ownership, retained/unregistered repositories and held locks
+produce explicit diagnostics. A `partial` or `not-ready` result uses exit 1 with
+structured data on stdout; inspect each member before continuing.
+
+Resume is an advisory read-only snapshot. It does not fetch, resolve a new base,
+switch/reset branches, recreate checkouts, refresh worktree state, migrate
+metadata, move roots or overwrite `AGENTS.md`. Git inspection disables optional
+writes and implicit promisor fetching. A missing manifest or interrupted-create
+residual needs `outpost doctor --json` and manual inspection. A matching directory
+name is never permission to adopt or repair it. Resume does not clear locks or
+approve cleanup.
+
+Resume reports Git's working-state snapshot, not a filesystem audit. Status
+inspection refuses tracked submodules or assigned content filters in this slice
+so it cannot run nested status commands or repository-configured filter programs.
+Those members report unknown/not-ready with an inspection diagnostic; their work
+is preserved. Globally configured filters that do not apply to tracked paths do
+not by themselves prevent ordinary resume.
+Split indexes also report unknown/not-ready because Git can renew their shared
+index timestamps during reads. Resume detects that format before index-reading
+Git commands and leaves it intact.
+
+Resume also refuses inherited Git layout redirection, such as an alternate index
+or common object directory, so current state cannot be taken from unrelated
+storage. Diagnostics name the unsupported variable without exposing its value.
+The command does not change environment or global Git settings.
 
 ### Configuration, tags and guidance
 
