@@ -32,6 +32,7 @@ import {
 } from "./commands/settings.js";
 import { runWorkspaceList } from "./commands/workspace-list.js";
 import { runWorkspaceRemove } from "./commands/workspace-remove.js";
+import { runWorkspaceResume } from "./commands/workspace-resume.js";
 import { runWorkspaceShow } from "./commands/workspace-show.js";
 import { commandTokens, resolveEarlyOutput } from "./early-output.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
@@ -145,6 +146,7 @@ function resolveCommand(
     "repo remove": "REPO_REMOVE_FAILED",
     "repo restore": "REPO_RESTORE_FAILED",
     "workspace show": "WORKSPACE_SHOW_FAILED",
+    "workspace resume": "WORKSPACE_RESUME_FAILED",
     "workspace remove": "WORKSPACE_REMOVE_FAILED",
   };
   if (spec) {
@@ -285,6 +287,12 @@ function resolveCommand(
       return runWorkspaceShow(positionalArgs[2], positionalArgs.slice(3)).pipe(
         Effect.mapError((error) =>
           cliError("WORKSPACE_SHOW_FAILED", error.message, undefined, error)
+        )
+      );
+    case "workspace resume":
+      return runWorkspaceResume(positionalArgs[2], positionalArgs.slice(3)).pipe(
+        Effect.mapError((error) =>
+          cliError("WORKSPACE_RESUME_FAILED", error.message, undefined, error)
         )
       );
     case "workspace remove":

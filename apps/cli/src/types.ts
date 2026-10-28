@@ -25,6 +25,7 @@ export const CLI_ERROR_CODES = [
   "WORKSPACE_LIST_FAILED",
   "WORKSPACE_REMOVE_FAILED",
   "WORKSPACE_SHOW_FAILED",
+  "WORKSPACE_RESUME_FAILED",
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];

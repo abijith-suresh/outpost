@@ -19,6 +19,18 @@ export function noLazyFetchGitCommand(...args: ReadonlyArray<string>): ChildProc
   return gitCommand(...args).pipe(ChildProcess.setEnv({ GIT_NO_LAZY_FETCH: "1" }));
 }
 
+/** Inspection must not fetch objects, refresh indexes or execute fsmonitor hooks. */
+export function readOnlyGitCommand(...args: ReadonlyArray<string>): ChildProcess.Command {
+  return noLazyFetchGitCommand(
+    "--no-optional-locks",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    ...args
+  ).pipe(ChildProcess.setEnv({ GIT_OPTIONAL_LOCKS: "0" }));
+}
+
 type CommandOptions = {
   /** Defaults to OUTPOST_GIT_TIMEOUT_MS, or 120 seconds. */
   timeoutMs?: number;

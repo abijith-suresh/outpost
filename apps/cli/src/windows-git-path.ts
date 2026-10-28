@@ -165,7 +165,8 @@ export function validateWindowsWorktreePlan(
 export function validateWindowsExistingWorktree(
   managed: string,
   checkout: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  gitfileContents?: string
 ) {
   if (platform !== "win32") return Effect.void;
   return Effect.gen(function* () {
@@ -174,8 +175,8 @@ export function validateWindowsExistingWorktree(
     yield* validateWindowsManagedGitDir(managed, platform);
     yield* validateWindowsCheckout(checkout, platform);
     const file = path.join(checkout, ".git");
-    if (yield* fs.exists(file)) {
-      const text = yield* fs.readFileString(file);
+    if (gitfileContents !== undefined || (yield* fs.exists(file))) {
+      const text = gitfileContents ?? (yield* fs.readFileString(file));
       const match = /^gitdir:\s*(.+)\s*$/m.exec(text);
       if (match?.[1])
         yield* validateWindowsGitPath(

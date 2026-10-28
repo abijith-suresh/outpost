@@ -586,7 +586,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      `A workspace already exists for ticket TICKET-321: ${ticketDirectory}\nRemove that workspace directory or choose a different ticket.`
+      `A workspace directory already exists for ticket TICKET-321: ${ticketDirectory}\nPreserve its contents and run outpost doctor --json to inspect incomplete or interrupted creation. A directory alone is never adopted or repaired.`
     );
     expect(readFileSync(sentinelPath, "utf8")).toBe("keep\n");
   });

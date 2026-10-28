@@ -397,6 +397,18 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     ],
   },
   {
+    path: ["workspace", "resume"],
+    description:
+      "Verify one existing workspace and report current work without fetching or changing it",
+    arguments: [
+      { name: "ticket", description: "Existing ticket workspace identifier", required: true },
+    ],
+    mutation: false,
+    interactive: false,
+    json: true,
+    dryRun: false,
+  },
+  {
     path: ["workspace", "show"],
     description: "Show one created ticket workspace",
     arguments: [
@@ -553,7 +565,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "3.0.0";
+export const CONTRACT_VERSION = "3.1.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;

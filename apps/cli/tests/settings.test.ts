@@ -206,6 +206,14 @@ describe("configuration, tags and future workspace guidance", () => {
         });
         const workspacePath = created.envelope.data.ticketDirectory;
         const worktreePath = created.envelope.data.worktrees[0].path;
+        const resumed = await cliSuccess("workspace", "resume", "LONG-1");
+        expect(resumed.envelope.data.status).toBe("ready");
+        expect(resumed.envelope.data.worktrees[0]).toMatchObject({
+          path: worktreePath,
+          currentHead: initialCommit,
+          currentBranch: "feat/LONG-1",
+          originalBase: { baseCommit: initialCommit },
+        });
         if (gitDirBytes === 205) {
           const adminPath = readFileSync(path.join(worktreePath, ".git"), "utf8")
             .replace(/^gitdir: /, "")

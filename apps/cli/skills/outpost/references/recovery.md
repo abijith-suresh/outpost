@@ -51,6 +51,28 @@ inspection evidence, never automatic replay or deletion authority.
 
 ## Operation failures
 
+`workspace resume <ticket>` reports an existing workspace without repairing it.
+Its frozen root and members come from the manifest, not current settings or tags.
+Current HEAD and working-state entries are separate from `originalBase` creation
+facts. Preserve advanced, diverged, dirty and untracked work. A partial/not-ready
+result is not permission to switch branches, delete paths, clear a lock or recreate
+a checkout. Read member diagnostics for wrong/detached branches, missing/foreign
+paths, inconsistent ownership and retained/unregistered storage. Inspect retained
+records explicitly before any deliberate restoration. Resume never adopts them.
+
+Inspection can be unknown because an object is unavailable, output exceeded a
+bound, a path is unsupported or state changed during the snapshot. It never
+silently fetches missing promisor objects or calls that state clean. Retry only
+after inspecting the reason. If no complete manifest exists, use doctor and the
+existing operation journal; residual files alone do not establish ownership.
+
+Tracked submodules and assigned content filters also make resume status
+unsupported in this slice. Outpost refuses to run nested status or custom filter
+programs during a read-only operation. Preserve work and inspect the diagnostic;
+do not clear global Git settings or add a bypass to make it report clean.
+Split indexes are likewise reported unknown/not-ready before Git can renew shared
+index timestamps. Resume does not convert or rewrite them.
+
 Read the `reason`, `retryable`, `action` and diagnostics in a JSON error. The
 command-level `code` identifies the command that failed. Text is explanatory and
 may change; do not match it to decide whether to retry.

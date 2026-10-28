@@ -245,6 +245,52 @@ Scans `workspaces/` for manifest files and every recorded workspace root for dir
 | `invalid`   | Manifest unreadable, path resolution fails, or ownership check fails  |
 | `unmanaged` | Directory exists in worktrees root but no manifest                    |
 
+### Workspace resume
+
+`outpost workspace resume <ticket>` is a named-ticket, read-only operation. It
+loads the frozen manifest/root/member identities, validates selected registration
+and repository/worktree ownership, then reports current branch, HEAD and bounded
+working-state entries separately from recorded `originalBase` provenance. Legacy
+unversioned/v2 manifests retain their root interpretation and expose only recorded
+facts. Advanced or diverged commits and dirty/untracked work on the expected
+branch are resumable; wrong/detached branches, missing/foreign/inconsistent members
+and unavailable or retained registration produce member diagnostics. Complete
+readiness exits 0. Partial/not-ready outcomes retain structured data and exit 1.
+
+Resume never resolves a new base, fetches, imports, changes refs, refreshes Git
+worktree state, creates checkouts, moves paths, migrates metadata or overwrites
+guidance. It does not acquire or create mutation locks/journals. Existing home or
+ticket locks prevent readiness; metadata and lock snapshots are rechecked before
+returning. This is advisory inspection, not a lock on external Git activity.
+Missing or incomplete manifests point to doctor/manual recovery; matching paths
+cannot establish ownership of interrupted creation residuals. Create conflict
+checks direct the caller to explicit resume before fresh fetches.
+
+Read-only Git commands disable optional writes and implicit promisor fetching,
+including shared workspace health probes. Status is checked through the verified
+checkout gitfile with the existing Windows path budgets. Bounded porcelain output
+produces counts without paths; collapsed untracked directories count as entries.
+Unavailable or truncated status is unknown, never clean. Resume bounds metadata,
+member and subprocess output and inspects no unrelated repository storage. Its
+registry reader retains schema/identity/lexical uniqueness validation without
+probing unrelated canonical paths; selected members receive full canonical
+containment and ownership checks. Mutation callers keep their existing registry
+validation.
+
+Resume preflights bounded tracked entries and filter attributes before invoking
+status. Tracked gitlinks and assigned content filters produce unknown/not-ready
+diagnostics, preventing nested status/filter execution. Unused globally
+configured filters do not by themselves block resume. This conservative status
+limit is explicit; no custom filter program is run to obtain a clean result.
+Before index-reading Git commands, bounded checksum/entry/extension inspection
+also refuses split indexes, whose shared index timestamps Git can renew during
+reads. Normal index versions 2/3/4 are inspected; unsupported or invalid formats
+produce unknown status without repair. Shared indexes remain untouched.
+Inherited repository layout overrides are refused before Git inspection, including
+alternate index/common/object storage. This prevents an alternate index from
+producing a false clean result for the verified checkout. Diagnostics expose
+variable names only; no process/global settings are changed.
+
 ## Workspace Manifests (`apps/cli/src/workspace-manifest.ts`)
 
 Each workspace is tracked by a manifest JSON file at `workspaces/<ticket>.json`:
@@ -367,6 +413,12 @@ provenance. Cached selection no longer falls back to local branches. Create's
 network policy declares that explicit fresh selection can fetch; the default
 cached mode and all previews remain offline. Manifest version 3 independently
 protects stored provenance from incompatible older readers.
+
+Contract version `3.1.0` adds explicit safe workspace resume. Current branch/HEAD
+and working-state facts are separate from the manifest's original base
+provenance. The operation is offline and read-only, with partial/not-ready member
+diagnostics and no automatic repair. Package and persisted schema versions remain
+independent.
 
 `describe --json` reports an independently versioned `contractVersion` and the
 installed `cliVersion`. Each command includes normalized input and output JSON

@@ -5,6 +5,34 @@ const strings = Schema.Array(Schema.String);
 const optionalString = Schema.optional(Schema.String);
 const optionalBoolean = Schema.optional(Schema.Boolean);
 const status = Schema.Literals(["ready", "missing", "invalid", "unmanaged"]);
+export const ResumeDiagnosticSchema = Schema.Struct({
+  code: Schema.String,
+  message: Schema.String,
+  action: Schema.String,
+});
+export const ResumeWorkingStateSchema = Schema.Struct({
+  status: Schema.Literals(["clean", "dirty", "unknown"]),
+  trackedEntries: Schema.Natural,
+  untrackedEntries: Schema.Natural,
+  conflictedEntries: Schema.Natural,
+  truncated: Schema.Boolean,
+});
+export const ResumeWorktreeSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  status: Schema.Literals(["ready", "not-ready"]),
+  resumable: Schema.Boolean,
+  registration: Schema.Literals(["active", "retained", "unregistered"]),
+  recordedPath: optionalString,
+  recordedManagedPath: optionalString,
+  path: optionalString,
+  managedRepoPath: optionalString,
+  currentBranch: Schema.optional(Schema.NullOr(Schema.String)),
+  currentHead: Schema.optional(CommitSchema),
+  workingState: Schema.optional(ResumeWorkingStateSchema),
+  originalBase: Schema.Struct({ base: Schema.String, ...ProvenanceFields }),
+  diagnostics: Schema.Array(ResumeDiagnosticSchema),
+});
 export const DiagnosticSchema = Schema.Struct({
   stream: Schema.Literals(["stdout", "stderr"]),
   line: Schema.String,
@@ -249,5 +277,16 @@ export const ResultSchemas = {
     diagnostics: Schema.optional(strings),
   }),
   "workspace remove": removal,
+  "workspace resume": Schema.Struct({
+    ticket: Schema.String,
+    status: Schema.Literals(["ready", "partial", "not-ready"]),
+    resumable: Schema.Boolean,
+    manifestPath: Schema.String,
+    ticketDirectory: optionalString,
+    expectedBranch: optionalString,
+    createdAt: optionalString,
+    worktrees: Schema.Array(ResumeWorktreeSchema),
+    diagnostics: Schema.Array(ResumeDiagnosticSchema),
+  }),
 };
 export type ResultData = { [K in keyof typeof ResultSchemas]: (typeof ResultSchemas)[K]["Type"] };

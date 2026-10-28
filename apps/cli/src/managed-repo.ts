@@ -153,7 +153,11 @@ export function markManagedRepository(managedRepoPath: string, id: string) {
 }
 
 /** A retained record must be internally consistent as well as match its owned Git directory. */
-export function verifyRetainedRepository(reposRoot: string, repo: RepoRecord) {
+export function verifyRetainedRepository(
+  reposRoot: string,
+  repo: RepoRecord,
+  command: typeof gitCommand = gitCommand
+) {
   return Effect.gen(function* () {
     const identity = yield* resolveRecordedRemoteIdentity(repo.remoteUrl);
     if (identity.id !== repo.id || identity.name !== repo.name)
@@ -162,7 +166,7 @@ export function verifyRetainedRepository(reposRoot: string, repo: RepoRecord) {
           message: `Retained repository identity does not match its saved remote URL: ${repo.id}`,
         })
       );
-    return yield* verifyManagedRepository(reposRoot, repo);
+    return yield* verifyManagedRepository(reposRoot, repo, command);
   }).pipe(
     Effect.mapError(
       (error) => new ManagedRepoError({ message: error.message, ...domainDetails(error) })

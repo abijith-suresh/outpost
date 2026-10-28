@@ -129,12 +129,20 @@ describe("agent command contract", () => {
     await run(create);
     await run(["workspace", "list"]);
     await run(["workspace", "show", "AGENT"]);
+    expect((await run(["workspace", "resume", "AGENT"])).data.status).toBe("ready");
     const agents = path.join(home, "worktrees", "AGENT", "AGENTS.md");
     const original = readFileSync(agents, "utf8");
     writeFileSync(agents, `${original}\nLocal guidance\n`);
     writeFileSync(path.join(home, ".mutation.lock"), "held by test");
     writeFileSync(path.join(home, "workspaces", ".agent.lock"), "held by test");
     const before = snapshot(home);
+    expect(await run(["workspace", "resume", "AGENT"], 1)).toMatchObject({
+      ok: false,
+      command: "workspace resume",
+      data: { status: "not-ready", resumable: false },
+      exitCode: 1,
+    });
+    expect(snapshot(home)).toEqual(before);
     const preview = await run(["workspace", "remove", "--dry-run", "AGENT"]);
     expect(preview.data).toMatchObject({
       status: "preview",

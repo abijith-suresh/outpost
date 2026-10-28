@@ -3,7 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
-import { commandString, gitCommand } from "../child-process.js";
+import { commandString, readOnlyGitCommand as gitCommand } from "../child-process.js";
 import {
   getRepoHealthDiagnostics,
   loadConfig,
@@ -97,7 +97,7 @@ export function runRepoShow(
       const inspection = yield* Effect.gen(function* () {
         yield* validateWindowsInvocationCwd();
         yield* validateWindowsManagedGitDir(shown.managedRepoPath);
-        yield* verifyRetainedRepository(config.reposRoot, shown);
+        yield* verifyRetainedRepository(config.reposRoot, shown, gitCommand);
         const output = yield* commandString(
           gitCommand(
             "--git-dir",

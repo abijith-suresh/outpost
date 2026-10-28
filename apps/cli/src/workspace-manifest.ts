@@ -7,7 +7,7 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { ProvenanceFields } from "./base-selection.js";
-import { commandExitCode, gitCommand } from "./child-process.js";
+import { commandExitCode, readOnlyGitCommand as gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { knownWorktreesRoots, loadConfig } from "./config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
@@ -327,7 +327,8 @@ export function buildManifestReadSnapshot(outpostHome: string, config: OutpostCo
 export function readManifest(
   outpostHome: string,
   ticket: string,
-  inspection?: ManifestReadSnapshot
+  inspection?: ManifestReadSnapshot,
+  options: { memberPaths?: "canonical" | "lexical"; contents?: string; config?: OutpostConfig } = {}
 ): Effect.Effect<
   Manifest,
   ManifestError | ManifestNotFoundError | PlatformError,
@@ -349,14 +350,16 @@ export function readManifest(
       );
     }
 
-    const contents = yield* fs.readFileString(manifestFilePath).pipe(
-      Effect.mapError(
-        (error) =>
-          new ManifestError({
-            message: `Failed to read manifest ${manifestFilePath}: ${error.message}`,
-          })
-      )
-    );
+    const contents =
+      options.contents ??
+      (yield* fs.readFileString(manifestFilePath).pipe(
+        Effect.mapError(
+          (error) =>
+            new ManifestError({
+              message: `Failed to read manifest ${manifestFilePath}: ${error.message}`,
+            })
+        )
+      ));
 
     const parsedJson = yield* Effect.try({
       try: () => JSON.parse(contents) as unknown,
@@ -386,13 +389,14 @@ export function readManifest(
     }
 
     const config =
-      inspection?.outpostHome === outpostHome
+      options.config ??
+      (inspection?.outpostHome === outpostHome
         ? inspection.config
         : yield* loadConfig(outpostHome).pipe(
             Effect.mapError(
               (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
             )
-          );
+          ));
     // Default reads (including all mutation preflights) always build a fresh identity index.
     const snapshot =
       inspection?.outpostHome === outpostHome
@@ -471,15 +475,39 @@ export function readManifest(
         );
       }
 
-      const resolvedManagedPath = yield* resolveManagedPath(config.reposRoot, repo.managedPath);
+      // Named resume defers existing member filesystem inspection so one foreign
+      // member can be diagnosed without hiding the other frozen members. Every
+      // mutating/default reader retains the exhaustive canonical checks.
+      const lexicalOnly = options.memberPaths === "lexical";
+      if (lexicalOnly && repo.worktreePath.length === 0)
+        return yield* Effect.fail(new ManifestError({ message: "worktreePath may not be empty." }));
+      const lexicalPath = (root: string, relative: string) =>
+        resolvePathWithinRoot(root, relative).pipe(
+          Effect.mapError(
+            (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+          )
+        );
+      const resolvedManagedPath = yield* lexicalOnly
+        ? lexicalPath(config.reposRoot, repo.managedPath)
+        : resolveManagedPath(config.reposRoot, repo.managedPath);
+      const resolvedWorktreePath = yield* lexicalOnly
+        ? lexicalPath(workspaceDir, repo.worktreePath)
+        : resolveWorktreePath(workspaceDir, repo.worktreePath);
 
-      const resolvedWorktreePath = yield* resolveWorktreePath(workspaceDir, repo.worktreePath);
-
-      yield* validateWorktreeGuidancePath(workspaceDir, resolvedWorktreePath).pipe(
-        Effect.mapError(
-          (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+      if (lexicalOnly) {
+        if (
+          (yield* getPortablePathKey(resolvedWorktreePath)) ===
+          (yield* getPortablePathKey(path.join(workspaceDir, "AGENTS.md")))
         )
-      );
+          return yield* Effect.fail(
+            new ManifestError({ message: "Worktree collides with reserved guidance AGENTS.md." })
+          );
+      } else
+        yield* validateWorktreeGuidancePath(workspaceDir, resolvedWorktreePath).pipe(
+          Effect.mapError(
+            (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
+          )
+        );
 
       resolvedRepos.push({
         originalIndex: i,
@@ -489,7 +517,9 @@ export function readManifest(
     }
 
     for (const resolved of resolvedRepos) {
-      const managedKey = yield* getCanonicalPortablePathKey(resolved.managedPath);
+      const managedKey = yield* options.memberPaths === "lexical"
+        ? getPortablePathKey(resolved.managedPath)
+        : getCanonicalPortablePathKey(resolved.managedPath);
 
       if (managedPathKeys.has(managedKey)) {
         const repo = manifest.repositories[resolved.originalIndex];
@@ -501,7 +531,9 @@ export function readManifest(
       }
       managedPathKeys.add(managedKey);
 
-      const worktreeKey = yield* getCanonicalPortablePathKey(resolved.worktreePath);
+      const worktreeKey = yield* options.memberPaths === "lexical"
+        ? getPortablePathKey(resolved.worktreePath)
+        : getCanonicalPortablePathKey(resolved.worktreePath);
 
       if (worktreePathKeys.has(worktreeKey)) {
         const repo = manifest.repositories[resolved.originalIndex];
@@ -877,7 +909,7 @@ export function scanWorktreesRoot(
   });
 }
 
-function getLockFilePath(
+export function getLockFilePath(
   outpostHome: string,
   ticket: string
 ): Effect.Effect<string, never, Path.Path> {

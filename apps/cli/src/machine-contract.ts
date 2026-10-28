@@ -80,7 +80,7 @@ export function outputSchema(spec: CommandSpec) {
         data,
         exitCode: Schema.Literal(0),
       }),
-      ...(name === "repo fetch" || name === "workspace remove"
+      ...(name === "repo fetch" || name === "workspace remove" || name === "workspace resume"
         ? [
             Schema.Struct({
               ok: Schema.Literal(false),
