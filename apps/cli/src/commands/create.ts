@@ -515,10 +515,14 @@ function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
       const head = (yield* commandString(
         gitCommand("-C", plan.worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
       )).trim();
+      // Use the checkout gitfile so Git does not revalidate the longer linked
+      // admin path as an explicit GIT_DIR when --work-tree is supplied.
       const status = yield* commandString(
         gitCommand(
           "-C",
           plan.worktreePath,
+          "--git-dir",
+          ".git",
           "--work-tree",
           plan.worktreePath,
           "-c",
