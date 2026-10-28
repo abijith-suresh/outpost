@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  closeSync,
+  ftruncateSync,
   lstatSync,
+  openSync,
   readdirSync,
   readlinkSync,
   renameSync,
@@ -114,6 +117,18 @@ function snapshot(root: string) {
   visit(root);
   return rows;
 }
+function overwriteExistingGitfile(file: string, contents: string) {
+  // Git for Windows hides .git. Node's default "w" open rejects hidden files;
+  // update the existing file exactly without replacing its identity/attributes.
+  const fd = openSync(file, "r+");
+  try {
+    ftruncateSync(fd, 0);
+    writeFileSync(fd, contents);
+  } finally {
+    closeSync(fd);
+  }
+  expect(readFileSync(file, "utf8")).toBe(contents);
+}
 async function resume(f: Awaited<ReturnType<typeof fixture>>, expected = 0) {
   const roots = [f.home, ...f.sources.flatMap((source) => [source.tempRepo, source.tempRemote])];
   const before = roots.map(snapshot);
@@ -185,19 +200,28 @@ describe("safe existing workspace resume", () => {
   it("does not recurse into tracked submodules or execute their local filters", async () => {
     const f = await fixture();
     const checkout = f.created.worktrees[0].path;
+    const nested = path.join(checkout, "nested");
+    // A supported old-form submodule keeps its own .git directory. Avoid
+    // submodule-add's extra modules/nested admin path exceeding Git's Windows
+    // bootstrap limit while retaining the actual tracked, active submodule.
+    git(["clone", f.sources[0].tempRemote, nested]);
+    git(["-C", checkout, "config", "--file", ".gitmodules", "submodule.nested.path", "nested"]);
     git([
       "-C",
       checkout,
-      "-c",
-      "protocol.file.allow=always",
-      "submodule",
-      "add",
+      "config",
+      "--file",
+      ".gitmodules",
+      "submodule.nested.url",
       f.sources[0].tempRemote,
-      "nested",
     ]);
+    git(["-C", checkout, "config", "submodule.nested.active", "true"]);
     git(["-C", checkout, "add", ".gitmodules", "nested"]);
     git(["-C", checkout, "commit", "-m", "local submodule"]);
-    const nested = path.join(checkout, "nested");
+    expect(lstatSync(path.join(nested, ".git")).isDirectory()).toBe(true);
+    expect(git(["-C", checkout, "ls-files", "--stage", "nested"])).toBe(
+      `160000 ${git(["-C", nested, "rev-parse", "HEAD"])} 0\tnested`
+    );
     const marker = conversionFilter(nested, "clean");
     writeFileSync(path.join(nested, ".gitattributes"), "README.md filter=proof\n");
     const later = new Date(Date.now() + 5000);
@@ -418,7 +442,7 @@ describe("safe existing workspace resume", () => {
       const checkout = f.created.worktrees[0].path;
       if (kind === "missing") renameSync(checkout, `${checkout}.held`);
       else if (kind === "foreign-gitfile")
-        writeFileSync(path.join(checkout, ".git"), "foreign repository\n");
+        overwriteExistingGitfile(path.join(checkout, ".git"), "foreign repository\n");
       else if (kind === "back-pointer") {
         const admin = readFileSync(path.join(checkout, ".git"), "utf8")
           .replace(/^gitdir: /, "")
@@ -441,7 +465,7 @@ describe("safe existing workspace resume", () => {
 
   it("refuses an oversized gitfile before any Windows full-text inspection and preserves healthy members", async () => {
     const f = await fixture(2);
-    writeFileSync(
+    overwriteExistingGitfile(
       path.join(f.created.worktrees[0].path, ".git"),
       "x".repeat(RESUME_LIMITS.metadataBytes + 1)
     );
