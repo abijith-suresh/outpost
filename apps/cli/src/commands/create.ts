@@ -840,18 +840,19 @@ export function runCreate(
     // Existing membership is frozen: current tags, registrations and base refs
     // must not hide the explicit resume path or authorize a fresh fetch.
     if (parsedArgsInput.ticket) {
-      yield* validateSemanticIdentifier("--ticket", parsedArgsInput.ticket).pipe(
-        Effect.mapError((error) => usageError(error.message))
-      );
-      yield* validatePathSegment("--ticket", parsedArgsInput.ticket).pipe(
-        Effect.mapError((error) => usageError(error.message))
+      // Invalid input follows the established validation below. Only a safe
+      // ticket may be used for this earlier, read-only manifest lookup.
+      const lookup = yield* validateSemanticIdentifier("--ticket", parsedArgsInput.ticket).pipe(
+        Effect.andThen(validatePathSegment("--ticket", parsedArgsInput.ticket)),
+        Effect.result
       );
       if (
-        yield* manifestExists(outpostHome, parsedArgsInput.ticket).pipe(
+        lookup._tag === "Success" &&
+        (yield* manifestExists(outpostHome, parsedArgsInput.ticket).pipe(
           Effect.mapError(
             (error) => new CreateError({ ...domainDetails(error), message: error.message })
           )
-        )
+        ))
       )
         return yield* Effect.fail(
           new CreateError({
