@@ -36,6 +36,50 @@
                   "base": {
                     "type": "string"
                   },
+                  "baseSource": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["local", "cached-remote", "fresh-remote"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "requestedBase": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseCommit": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "managedPath": {
                     "type": "string"
                   },

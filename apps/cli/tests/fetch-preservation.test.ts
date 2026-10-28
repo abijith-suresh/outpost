@@ -44,7 +44,11 @@ describe("fetch ref isolation", () => {
           "fix",
           "--repo",
           localRepoId(source.tempRemote),
-          ...(base ? ["--base", base] : []),
+          ...(base
+            ? ["--base-source", "local", "--base", base]
+            : legacy && ticket === "FIRST"
+              ? ["--base-source", "local"]
+              : []),
         ]);
       expect(await create("FIRST")).toBe(0);
       const worktree = path.join(home, "worktrees", "FIRST", repo.name);

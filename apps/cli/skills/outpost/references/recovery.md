@@ -16,6 +16,39 @@ backups over newer workspaces or delete a lock merely because a process looks ol
 If config is missing beside a version 2 or 3 registry, init refuses to invent roots;
 restore the original config only after inspecting the existing workspaces.
 
+## Base selection and provenance
+
+Create defaults to `--base-source cached-remote`, with no local fallback. Use
+`local` for an available owned ref/object, and `fresh-remote` only when an explicit
+network refresh is intended. `--base` selects a ref; an omitted ref uses each
+repository's recorded managed symbolic HEAD branch. It does not promise that the
+remote still uses that default branch.
+
+Fresh dry runs and guidance previews never fetch. They report unresolved
+`fetch-required` provenance, not a cached SHA labeled fresh. Fresh execution must
+establish an actual fetched commit or fail. Ref and object failures are not
+permission to reset branches, delete source work or silently choose another mode.
+Source-only objects absent from managed storage require a later supported import
+path; preserve the source checkout. Missing promisor objects also fail rather
+than triggering Git's lazy fetch. Do not retry offline selection expecting the
+same command to import missing commits or checkout objects.
+
+New version 3 manifests pin the original root and record requested source/ref,
+resolved ref and actual immutable commit per member. Older manifest readers
+refuse them. Legacy manifests remain readable without invented provenance. Do not
+strip the new fields or restore an old manifest over a newer workspace.
+
+Creation records resolved SHAs before branch/worktree mutation and checks actual
+created work before committing the manifest. A raced or changed branch/worktree
+is preserved when ownership or the starting commit can no longer be confirmed.
+Fresh refreshes completed before a later failure or cancellation remain local
+state; inspect confirmed refresh receipts and current refs in the journal. A
+failure is not a promise that all Git changes rolled back. A private receipt ref
+under `refs/outpost/base-fetch/` may remain to preserve a received commit. Inspect
+its actual ref/value and recorded ownership before making a recovery decision.
+Do not delete it merely to clear an error. Recovery records are
+inspection evidence, never automatic replay or deletion authority.
+
 ## Operation failures
 
 Read the `reason`, `retryable`, `action` and diagnostics in a JSON error. The

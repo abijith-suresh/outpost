@@ -196,6 +196,14 @@ describe("configuration, tags and future workspace guidance", () => {
         for (const pack of packs) expect(existsSync(path.join(packDirectory, pack))).toBe(true);
       } else {
         const created = await cliSuccess("create", ...createArgs("LONG-1", record.id));
+        const configAfterCreate = readFileSync(configPath, "utf8");
+        expect(JSON.parse(configAfterCreate)).toEqual({
+          ...JSON.parse(configBytes),
+          version: 2,
+          legacyWorktreesRoot: JSON.parse(configBytes).worktreesRoot,
+          trustedWorktreesRoots: [JSON.parse(configBytes).worktreesRoot],
+          extraInstructions: "",
+        });
         const workspacePath = created.envelope.data.ticketDirectory;
         const worktreePath = created.envelope.data.worktrees[0].path;
         if (gitDirBytes === 205) {
@@ -228,7 +236,7 @@ describe("configuration, tags and future workspace guidance", () => {
             encoding: "utf8",
           }).trim()
         ).toBe(initialCommit);
-        expect(readFileSync(configPath, "utf8")).toBe(configBytes);
+        expect(readFileSync(configPath, "utf8")).toBe(configAfterCreate);
         expect(readFileSync(localConfigPath, "utf8")).toBe(localConfigBytes);
         expect(readFileSync(path.join(repo.tempRepo, ".git", "config"), "utf8")).toBe(sourceConfig);
         if (adminSentinel)
@@ -312,9 +320,10 @@ describe("configuration, tags and future workspace guidance", () => {
     await cliSuccess("create", ...createArgs("PRESERVE-1", otherId), "--repo", id);
     const registryPath = path.join(home, "repos.json");
     const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-    const oldRecord = registry.repos.find((record: { id: string }) => record.id === id);
+    const records = registry.repositories ?? registry.repos;
+    const oldRecord = records.find((record: { id: string }) => record.id === id);
     const originalManaged = oldRecord.managedRepoPath;
-    const otherRecord = registry.repos.find((record: { id: string }) => record.id === otherId);
+    const otherRecord = records.find((record: { id: string }) => record.id === otherId);
     // A fetch of the first member would visibly rewrite these unsafe legacy settings.
     fixtureGit([
       "--git-dir",
@@ -336,8 +345,8 @@ describe("configuration, tags and future workspace guidance", () => {
     cpSync(originalManaged, deepManaged, { recursive: true });
     oldRecord.managedRepoPath = deepManaged;
     // Put the unsupported member last to exercise fetch-all's complete preflight.
-    registry.repos = [
-      ...registry.repos.filter((record: { id: string }) => record.id !== id),
+    registry[registry.version === undefined ? "repos" : "repositories"] = [
+      ...records.filter((record: { id: string }) => record.id !== id),
       oldRecord,
     ];
     writeFileSync(registryPath, JSON.stringify(registry));
@@ -471,6 +480,15 @@ describe("configuration, tags and future workspace guidance", () => {
     }).trim();
     expectCliSuccess(await cli("create", ...createArgs("OLD-1", id)));
     const manifestPath = path.join(home, "workspaces", "OLD-1.json");
+    // Recreate actual unversioned metadata without v3 provenance, keeping the
+    // original physical paths and generated guidance bytes for legacy inspection.
+    const legacy = JSON.parse(readFileSync(manifestPath, "utf8"));
+    delete legacy.version;
+    delete legacy.worktreesRoot;
+    for (const member of legacy.repositories)
+      for (const key of ["baseSource", "requestedBase", "baseRef", "baseCommit"])
+        delete member[key];
+    writeFileSync(manifestPath, `${JSON.stringify(legacy)}\n`);
     const manifestBytes = readFileSync(manifestPath, "utf8");
     expect(JSON.parse(manifestBytes).version).toBeUndefined();
     const oldPath = path.join(home, "worktrees", "OLD-1");
@@ -711,7 +729,7 @@ describe("configuration, tags and future workspace guidance", () => {
     const manifestPath = path.join(home, "workspaces", "SCHEMA-1.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     for (const changed of [
-      { ...manifest, version: 3 },
+      { ...manifest, version: 4 },
       { ...manifest, futureOption: true },
       { ...manifest, version: 2, worktreesRoot: createTempDir() },
     ]) {

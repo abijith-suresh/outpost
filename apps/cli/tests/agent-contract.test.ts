@@ -77,7 +77,7 @@ describe("agent command contract", () => {
     expect(all.data.cliVersion).toBe(version);
     const create = await run(["describe", "create"]);
     expect(create.data).toMatchObject({
-      network: "none",
+      network: "explicit",
       retry: "inspect-before-retry",
       dryRunPolicy: { locks: false, mutations: false },
     });
@@ -87,6 +87,7 @@ describe("agent command contract", () => {
     );
     expect(result.properties.data.properties.worktrees.items.properties.path.type).toBe("string");
     expect((await run(["describe", "repo", "fetch"])).data.network).toBe("explicit");
+    expect((await run(["describe", "guidance", "preview"])).data.network).toBe("none");
   });
 
   it("validates the registry's shape and accepts options before positional arguments", async () => {

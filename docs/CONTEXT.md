@@ -11,7 +11,7 @@ Coding agents are the primary operators of Outpost, coordinating one ticket acro
 ## Goals
 
 - **Deterministic workspace lifecycle.** Every `outpost create` produces the same branch layout and worktree structure for the same inputs. Humans and coding agents can safely operate within these workspaces.
-- **Local-first.** Workspace operations use local state. Network access happens only through explicit repository operations, never implicitly during workspace creation.
+- **Explicit base provenance.** New workspaces select an owned local ref/object, a cached remote branch, or an explicitly refreshed remote branch. The default is cached remote, with no fallback to local branches. Local and cached modes never fetch. Fresh mode performs an explicit checked fetch and fails when it cannot establish the requested remote commit. Each member records its requested source/ref, resolved ref and immutable starting commit in the result, manifest and factual guidance. Creation uses that commit, and refuses false provenance if another writer changes the created branch or worktree during creation.
 - **Safety over convenience.** Outpost must not delete, overwrite, or adopt state it cannot prove it owns. Workspace removal refuses dirty worktrees and requires explicit interactive approval before deleting modified or foreign workspace guidance.
 - **Terse everyday operations.** Frequent workspace operations (create, list, remove) are short. Infrequent repository and configuration operations may remain explicit.
 - **Machine-readable output.** Most commands support `--json` for scripting and agent consumption.
@@ -34,7 +34,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 
 - **Runtime:** Node.js >= 24.19.0 <25 (Node.js 24 only), npm >= 11.5.1
 - **Delivery:** npm package (`@abijith-suresh/outpost`), installed globally
-- **Zero implicit network access during workspace creation**
+- **Zero implicit network access during workspace creation.** Only explicit fresh-remote base selection authorizes a creation-time fetch. Dry runs never fetch or mutate refs; a fresh preview reports unresolved freshness instead of claiming a cached SHA is fresh.
 - **No native binary dependencies** — uses system `git` CLI only
 - **TypeScript strict mode** with ES modules
 - **Native Windows PowerShell support** without WSL; platform-specific tests and installed-package checks must distinguish CI evidence from checks on the owner's laptop.
@@ -58,6 +58,7 @@ Outpost manages local Git repositories, branches, worktrees, workspace state, an
 7. Guidance preview retains the generated facts, and repository tag selection freezes concrete IDs without changing old workspaces.
 8. Native Windows acceptance includes successful operations on real internal Git files beyond 260 characters and pre-mutation refusal of unsupported repository, checkout and derived administrative paths. Boundary, Unicode, space and junction cases preserve source commits, refs, manifests, guidance, configuration, registry and unrelated files.
 9. An exact branch-only commit survives create, workspace removal, repository unregistration and explicit restoration. Retained records reserve their identities and paths, remain inspectable after failures or interruption, and cannot be replaced by an automatic import. Invalid ownership, conflicting registrations and unsupported Windows paths fail without deleting or adopting storage.
+10. Local, cached-remote and fresh-remote selection resolve distinct real commits without changing local/source branches. Missing refs or objects fail explicitly. Defaults use each selected repository's recorded managed symbolic HEAD, never a guessed remote/local precedence; a fresh refresh of that branch does not claim to rediscover the remote's default branch. Base-ref changes after resolution cannot change the recorded starting commit. Fresh previews disclose that fetching is required, and partial or interrupted refreshes remain journaled rather than being described as rolled back.
 
 ## Delivery phases
 
@@ -65,4 +66,6 @@ The first increment adds validated configuration, repository tags, guidance cust
 
 The next increment separates registration from storage. It adds retained-repository inspection and explicit restoration to the existing mirror-backed model, with versioned metadata that older destructive writers refuse. It does not add storage purge or infer that any local commit is disposable.
 
-Subsequent increments improve create/resume and existing-branch/worktree reuse, explicit local/cached-remote/fresh-remote bases with immutable SHAs, source-only commit preservation, and recovery. A human manager follows those operations, with explicit start/stop behavior and measured resource use. Manual prerelease-only distribution preparation is a final separate phase. These goals do not authorize automatic publication or a storage rewrite.
+The next increment adds explicit local/cached-remote/fresh-remote bases and immutable provenance. Local selection is limited to objects already present in the owned managed repository; it does not import source-only commits. Fresh selection refreshes only remote tracking, without resetting user branches, pruning unique objects or implying a cross-repository transaction.
+
+Subsequent increments improve create/resume and existing-branch/worktree reuse, targeted source-backed import and authentication support, and recovery. A human manager follows those operations, with explicit start/stop behavior and measured resource use. Manual prerelease-only distribution preparation is a final separate phase. These goals do not authorize automatic publication or a storage rewrite.

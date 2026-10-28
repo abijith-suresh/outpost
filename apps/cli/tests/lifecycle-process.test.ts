@@ -249,6 +249,9 @@ describe("cancellation and recovery subprocesses", () => {
 
   it("records intended artifacts before SIGKILL and never reaps or adopts them on retry", async () => {
     const { home, repos } = await fixture(2);
+    const baseCommits = repos.map((repo) =>
+      git(repo.managedRepoPath, "rev-parse", "refs/remotes/origin/main")
+    );
     const pause = barrier(["--git-dir", repos[1].managedRepoPath, "worktree", "add"]);
     const creating = launch(createArgs("KILL", repos), pause.env);
     await waitForFile(pause.ready);
@@ -260,9 +263,25 @@ describe("cancellation and recovery subprocesses", () => {
     const lock = JSON.parse(readFileSync(path.join(home, ".mutation.lock"), "utf8"));
     expect(lock).toMatchObject({ operation: "create", pid: creating.child.pid });
     const journal = JSON.parse(readFileSync(lock.journalPath, "utf8"));
-    expect(journal.steps[0].plans).toHaveLength(2);
+    const preparation = journal.steps.filter(
+      (step: { action: string }) => step.action === "create-workspace"
+    );
+    expect(preparation, JSON.stringify(journal.steps)).toHaveLength(1);
+    expect(preparation[0].plans).toHaveLength(2);
+    for (const [index, repo] of repos.entries()) {
+      expect(preparation[0].plans[index]).toMatchObject({
+        repoId: repo.id,
+        managedRepoPath: repo.managedRepoPath,
+        branch: "fix/KILL",
+        baseSource: "cached-remote",
+        requestedBase: null,
+        baseRef: "refs/remotes/origin/main",
+        startPoint: baseCommits[index],
+      });
+    }
     expect(journal.steps.at(-1)).toMatchObject({
       action: "create-worktree",
+      phase: "intent",
       managedRepoPath: repos[1].managedRepoPath,
     });
     const doctor = JSON.parse((await launch(["doctor"]).done).stdout).data;
@@ -273,6 +292,9 @@ describe("cancellation and recovery subprocesses", () => {
     expect((await launch(createArgs("KILL", repos)).done).code).toBe(1);
     expect(readFileSync(path.join(home, ".mutation.lock"), "utf8")).toContain(lock.id);
     expect(existsSync(path.join(home, "worktrees", "KILL", repos[0].name))).toBe(true);
+    expect(git(path.join(home, "worktrees", "KILL", repos[0].name), "rev-parse", "HEAD")).toBe(
+      baseCommits[0]
+    );
     // Simulate a human releasing inspected locks. The actual Git link still
     // protects the mirror even though no manifest was written.
     rmSync(path.join(home, ".mutation.lock"));

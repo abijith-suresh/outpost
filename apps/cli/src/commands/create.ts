@@ -2,16 +2,30 @@ import { rmdir } from "node:fs/promises";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { type PlatformError, systemError } from "effect/PlatformError";
+import type { PlatformError } from "effect/PlatformError";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
-import { commandExitCode, commandResult, commandString, gitCommand } from "../child-process.js";
+import {
+  type BaseSelection,
+  type BaseSource,
+  baseOutput,
+  refreshBase,
+  releaseBaseReceipt,
+  resolveBase,
+} from "../base-selection.js";
+import {
+  commandExitCode,
+  commandResult,
+  commandString,
+  noLazyFetchGitCommand as gitCommand,
+} from "../child-process.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";
 import {
   loadConfig,
   loadRepoRegistry,
   matchesTags,
+  prepareExtendedState,
   resolveOutpostHome,
   validateTag,
 } from "../config.js";
@@ -27,7 +41,11 @@ import {
   validateWorktreeGuidancePath,
 } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
-import { validateWindowsInvocationCwd, validateWindowsWorktreePlan } from "../windows-git-path.js";
+import {
+  validateWindowsInvocationCwd,
+  validateWindowsLocalTransport,
+  validateWindowsWorktreePlan,
+} from "../windows-git-path.js";
 import type { GeneratedAgentsFile } from "../workspace-agents.js";
 import { deleteAgentsIfSnapshotMatches, generateAgentsMarkdown } from "../workspace-agents.js";
 import type { Manifest, RepositoryEntry } from "../workspace-manifest.js";
@@ -47,7 +65,7 @@ export class CreateError extends Schema.TaggedError<CreateError>()("CreateError"
 }) {}
 
 const createUsage =
-  "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base <branch>] [--dry-run]";
+  "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]";
 
 type CreateArgs = {
   ticket: string;
@@ -55,6 +73,7 @@ type CreateArgs = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  baseSource: BaseSource;
   dryRun: boolean;
 };
 
@@ -64,18 +83,17 @@ type CreateArgsInput = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  baseSource: BaseSource;
   dryRun: boolean;
 };
 
-type CreatePlan = {
+type CreatePlan = BaseSelection & {
   repoId: string;
   repoName: string;
   managedRepoPath: string;
   remoteName: string;
   worktreePath: string;
   branch: string;
-  base: string;
-  startPoint: string;
 };
 
 type CreatedArtifacts = {
@@ -152,6 +170,12 @@ function parseCreateArgsInput(
         ticket: value("--ticket"),
         type: value("--type"),
         base: value("--base"),
+        baseSource: (() => {
+          const source = value("--base-source") ?? "cached-remote";
+          if (!["local", "cached-remote", "fresh-remote"].includes(source))
+            throw new Error("--base-source must be local, cached-remote or fresh-remote.");
+          return source as BaseSource;
+        })(),
         repoIds,
         tags: Array.isArray(parsed.options["--tag"]) ? parsed.options["--tag"] : [],
         dryRun: parsed.options["--dry-run"] === true,
@@ -186,6 +210,7 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
     repoIds: parsedArgs.repoIds,
     tags: parsedArgs.tags,
     base: parsedArgs.base,
+    baseSource: parsedArgs.baseSource,
     dryRun: parsedArgs.dryRun,
   });
 }
@@ -301,6 +326,7 @@ function resolveCreateArgs(
 
     return yield* requireCreateArgs({
       ...promptedArgs,
+      baseSource: parsedArgs.baseSource,
       dryRun: parsedArgs.dryRun,
     });
   });
@@ -363,28 +389,6 @@ function getSelectedRepos(
   );
 }
 
-function resolveRemoteHeadBaseBranch(
-  repo: RepoRecord
-): Effect.Effect<string, PlatformError, ChildProcessSpawner.ChildProcessSpawner> {
-  return commandString(
-    gitCommand("--git-dir", repo.managedRepoPath, "symbolic-ref", "--short", "HEAD")
-  ).pipe(
-    Effect.map((output) => output.trim()),
-    Effect.flatMap((headRef) => {
-      return headRef.length > 0
-        ? Effect.succeed(headRef)
-        : Effect.fail(
-            systemError({
-              _tag: "Unknown",
-              module: "ChildProcess",
-              method: "symbolic-ref",
-              description: `Unexpected mirror HEAD ref ${headRef} for ${repo.id}`,
-            })
-          );
-    })
-  );
-}
-
 function localBranchExists(
   repo: RepoRecord,
   branchName: string
@@ -405,41 +409,15 @@ function buildCreatePlan(
   repo: RepoRecord,
   ticketDirectory: string,
   branchName: string,
-  base: string | undefined
+  base: string | undefined,
+  source: BaseSource
 ): Effect.Effect<CreatePlan, CreateError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function* () {
-    const baseBranch = yield* base
-      ? Effect.succeed(base)
-      : resolveRemoteHeadBaseBranch(repo).pipe(
-          Effect.mapError(
-            (error) =>
-              new CreateError({
-                message: `Failed to resolve default base branch for repo ${repo.id}: ${error.message}`,
-              })
-          )
-        );
-    const remoteRef = `refs/remotes/origin/${baseBranch}`;
-    const remoteExists = yield* commandExitCode(
-      gitCommand("--git-dir", repo.managedRepoPath, "show-ref", "--verify", "--quiet", remoteRef)
-    ).pipe(
+    const selection = yield* resolveBase(repo, source, base).pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
-    const localExists = yield* localBranchExists(repo, baseBranch).pipe(
-      Effect.mapError(
-        (error) => new CreateError({ message: error.message, ...domainDetails(error) })
-      )
-    );
-
-    if (remoteExists !== 0 && !localExists) {
-      return yield* Effect.fail(
-        new CreateError({
-          message: `Base branch ${baseBranch} not found for repo ${repo.id}.`,
-        })
-      );
-    }
-
     const branchExists = yield* localBranchExists(repo, branchName).pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
@@ -467,20 +445,7 @@ function buildCreatePlan(
       remoteName: repo.remoteName,
       worktreePath,
       branch: branchName,
-      base: baseBranch,
-      startPoint: (yield* commandString(
-        gitCommand(
-          "--git-dir",
-          repo.managedRepoPath,
-          "rev-parse",
-          "--verify",
-          `${remoteExists === 0 ? remoteRef : `refs/heads/${baseBranch}`}^{commit}`
-        )
-      ).pipe(
-        Effect.mapError(
-          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
-        )
-      )).trim(),
+      ...selection,
     } satisfies CreatePlan;
   });
 }
@@ -488,8 +453,10 @@ function buildCreatePlan(
 function createBranch(
   plan: CreatePlan
 ): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
+  if (!plan.startPoint)
+    return Effect.fail(new CreateError({ message: "Cannot create an unresolved base plan." }));
   return commandExitCode(
-    gitCommand("--git-dir", plan.managedRepoPath, "branch", plan.branch, plan.startPoint)
+    gitCommand("--git-dir", plan.managedRepoPath, "branch", plan.branch, plan.startPoint ?? "")
   ).pipe(
     Effect.mapError(
       (error) => new CreateError({ message: error.message, ...domainDetails(error) })
@@ -528,6 +495,57 @@ function createWorktree(
             })
           )
     )
+  );
+}
+
+function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
+  return Effect.gen(function* () {
+    for (const plan of plans) {
+      const owned = yield* verifyWorktreeOwnership(plan.worktreePath, plan.managedRepoPath);
+      if (!owned)
+        return yield* Effect.fail(
+          new CreateError({
+            ...reasonDetails("invalid-state"),
+            message: `Created worktree ownership changed for ${plan.repoId}; preserving residual work instead of committing provenance.`,
+          })
+        );
+      const branch = (yield* commandString(
+        gitCommand("-C", plan.worktreePath, "symbolic-ref", "--quiet", "HEAD")
+      )).trim();
+      const head = (yield* commandString(
+        gitCommand("-C", plan.worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
+      )).trim();
+      // Use the checkout gitfile so Git does not revalidate the longer linked
+      // admin path as an explicit GIT_DIR when --work-tree is supplied.
+      const status = yield* commandString(
+        gitCommand(
+          "-C",
+          plan.worktreePath,
+          "--git-dir",
+          ".git",
+          "--work-tree",
+          plan.worktreePath,
+          "-c",
+          "core.bare=false",
+          "status",
+          "--porcelain",
+          "--untracked-files=all"
+        )
+      );
+      if (
+        branch !== `refs/heads/${plan.branch}` ||
+        head !== plan.startPoint ||
+        status.trim() !== ""
+      )
+        return yield* Effect.fail(
+          new CreateError({
+            ...reasonDetails("invalid-state"),
+            message: `Created branch/worktree changed for ${plan.repoId}; preserving changed work rather than committing false base provenance.`,
+          })
+        );
+    }
+  }).pipe(
+    Effect.mapError((error) => new CreateError({ message: error.message, ...domainDetails(error) }))
   );
 }
 
@@ -646,6 +664,13 @@ function rollbackCreatedArtifacts(
         );
         if (exists === 1) return;
         if (exists !== 0) return yield* Effect.fail(`Cannot inspect branch ${plan.branch}`);
+        const symbolic = yield* commandExitCode(
+          gitCommand("--git-dir", plan.managedRepoPath, "symbolic-ref", "--quiet", ref)
+        );
+        if (symbolic !== 1)
+          return yield* Effect.fail(
+            `Preserved branch ${plan.branch}: it became symbolic or could not be inspected`
+          );
         const worktrees = yield* commandString(
           gitCommand("--git-dir", plan.managedRepoPath, "worktree", "list", "--porcelain", "-z")
         );
@@ -657,7 +682,15 @@ function rollbackCreatedArtifacts(
         // Compare-and-delete refuses a branch advanced after creation. The
         // immutable starting commit is recorded before the branch mutation.
         const status = yield* commandExitCode(
-          gitCommand("--git-dir", plan.managedRepoPath, "update-ref", "-d", ref, plan.startPoint)
+          gitCommand(
+            "--git-dir",
+            plan.managedRepoPath,
+            "update-ref",
+            "--no-deref",
+            "-d",
+            ref,
+            plan.startPoint ?? ""
+          )
         );
         if (status !== 0)
           return yield* Effect.fail(
@@ -729,7 +762,8 @@ function prepareCreate(
   ticketDirectory: string,
   selectedRepos: ReadonlyArray<RepoRecord>,
   branchName: string,
-  base: string | undefined
+  base: string | undefined,
+  source: BaseSource
 ): Effect.Effect<
   ReadonlyArray<CreatePlan>,
   CreateError,
@@ -775,14 +809,14 @@ function prepareCreate(
       )
     );
     yield* Effect.forEach(selectedRepos, (repo) =>
-      verifyManagedRepository(config.reposRoot, repo).pipe(
+      verifyManagedRepository(config.reposRoot, repo, gitCommand).pipe(
         Effect.mapError(
           (error) => new CreateError({ message: error.message, ...domainDetails(error) })
         )
       )
     );
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
-      buildCreatePlan(repo, ticketDirectory, branchName, base)
+      buildCreatePlan(repo, ticketDirectory, branchName, base, source)
     );
 
     yield* ensureUniqueWorktreePaths(plans);
@@ -924,7 +958,8 @@ export function runCreate(
         ticketDirectory,
         selectedRepos,
         branchName,
-        parsedArgs.base
+        parsedArgs.base,
+        parsedArgs.baseSource
       );
 
       return {
@@ -941,6 +976,7 @@ export function runCreate(
             path: plan.worktreePath,
             branch: plan.branch,
             base: plan.base,
+            ...baseOutput(plan),
           })),
         },
       } satisfies CommandOutput<"create">;
@@ -955,14 +991,46 @@ export function runCreate(
       () => releaseTicketLock(outpostHome, parsedArgs.ticket).pipe(Effect.ignore)
     );
 
+    let freshStarted = false;
     const result = yield* Effect.gen(function* () {
-      const plans = yield* prepareCreate(
+      let plans = yield* prepareCreate(
         outpostHome,
         parsedArgs.ticket,
         ticketDirectory,
         selectedRepos,
         branchName,
-        parsedArgs.base
+        parsedArgs.base,
+        parsedArgs.baseSource
+      );
+      if (parsedArgs.baseSource === "fresh-remote") {
+        // Validate every transport before the first fetch; local/cached modes never touch it.
+        for (const repo of selectedRepos)
+          yield* validateWindowsLocalTransport(repo.remoteUrl, repo.sourceRepoPath).pipe(
+            Effect.mapError(
+              (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+            )
+          );
+        freshStarted = true;
+        const refreshed: Array<CreatePlan> = [];
+        for (let index = 0; index < plans.length; index++) {
+          const selected = yield* refreshBase(selectedRepos[index], plans[index], record).pipe(
+            Effect.mapError(
+              (error) =>
+                new CreateError({
+                  message: `Fresh selection may have updated earlier tracking/receipt refs; inspect the operation journal. ${error.message}`,
+                  ...domainDetails(error),
+                })
+            )
+          );
+          refreshed.push({ ...plans[index], ...selected });
+        }
+        plans = refreshed;
+      }
+      yield* record({ action: "prepare-workspace-provenance-state", ticket: parsedArgs.ticket });
+      const provenanceConfig = yield* prepareExtendedState(outpostHome, config).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
       );
       const created: CreatedArtifacts = {
         branches: [],
@@ -1019,6 +1087,7 @@ export function runCreate(
           yield* record({ action: "create-worktree", phase: "confirmed", ...plan });
         }
 
+        yield* verifyCreatedPlans(plans);
         const pathModule = yield* Path.Path;
         const repositoryEntries: ReadonlyArray<RepositoryEntry> = yield* Effect.forEach(
           selectedRepos,
@@ -1028,6 +1097,10 @@ export function runCreate(
               id: repo.id,
               name: repo.name,
               base: plan.base,
+              baseSource: plan.baseSource,
+              requestedBase: plan.requestedBase,
+              baseRef: plan.baseRef,
+              baseCommit: plan.startPoint ?? undefined,
               managedPath: pathModule.relative(config.reposRoot, repo.managedRepoPath),
               worktreePath: pathModule.relative(ticketDirectory, plan.worktreePath),
             } satisfies RepositoryEntry);
@@ -1036,9 +1109,8 @@ export function runCreate(
         );
 
         const manifest: Manifest = {
-          ...(config.version === 2
-            ? { version: 2 as const, worktreesRoot: config.worktreesRoot }
-            : {}),
+          version: 3,
+          worktreesRoot: provenanceConfig.worktreesRoot,
           ticket: parsedArgs.ticket,
           type: parsedArgs.type,
           branch: branchName,
@@ -1061,7 +1133,20 @@ export function runCreate(
           })
         );
 
+        yield* verifyCreatedPlans(plans);
+        for (const plan of plans) {
+          if (plan.receiptRef) {
+            yield* record({ action: "release-base-receipt", phase: "intent", ...plan });
+            yield* releaseBaseReceipt(plan.managedRepoPath, plan).pipe(
+              Effect.mapError(
+                (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+              )
+            );
+            yield* record({ action: "release-base-receipt", phase: "confirmed", ...plan });
+          }
+        }
         yield* record({ action: "write-workspace-manifest", ticket: parsedArgs.ticket, manifest });
+        yield* verifyCreatedPlans(plans);
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* writeManifest(outpostHome, manifest).pipe(
@@ -1088,6 +1173,7 @@ export function runCreate(
               path: plan.worktreePath,
               branch: plan.branch,
               base: plan.base,
+              ...baseOutput(plan),
             })),
           },
         } satisfies CommandOutput<"create">;
@@ -1105,7 +1191,16 @@ export function runCreate(
           Effect.uninterruptible(rollbackCreatedArtifacts(created, ticketDirectory, error))
         )
       );
-    });
+    }).pipe(
+      Effect.mapError((error) =>
+        freshStarted
+          ? new CreateError({
+              message: `Fresh-base tracking/receipt updates are not rolled back; inspect the operation journal before retrying. ${error.message}`,
+              ...domainDetails(error),
+            })
+          : error
+      )
+    );
 
     return result;
   }).pipe(Effect.scoped);
