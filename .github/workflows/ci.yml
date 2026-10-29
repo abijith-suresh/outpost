@@ -76,7 +76,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Native regressions take about 11 minutes before the installed smoke starts.
+    # Keep per-test/process deadlines; allow both acceptance stages to finish.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     permissions:
       contents: read
     steps:
