@@ -1,5 +1,5 @@
 {
-  "contractVersion": "3.1.0",
+  "contractVersion": "3.2.0",
   "schemas": [
     {
       "command": "help",

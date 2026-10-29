@@ -191,6 +191,17 @@
                       "base": {
                         "type": "string"
                       },
+                      "branchDisposition": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["created", "existing"]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "baseSource": {
                         "anyOf": [
                           {
@@ -491,6 +502,17 @@
                     "properties": {
                       "base": {
                         "type": "string"
+                      },
+                      "branchDisposition": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["created", "existing"]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "baseSource": {
                         "anyOf": [

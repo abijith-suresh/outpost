@@ -161,7 +161,7 @@ describe("run", () => {
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenNthCalledWith(
       1,
-      "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]\n--type is required.\nAt least one --repo or --tag is required."
+      "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run]\n--type is required.\nAt least one --repo or --tag is required."
     );
   });
 

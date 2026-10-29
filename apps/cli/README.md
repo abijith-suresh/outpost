@@ -40,7 +40,7 @@ Commands:
   guidance clear [--json] Clear extra instructions for future workspaces
   guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--json]
                        Preview factual workspace AGENTS.md without writing
-  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run] [--json]
+  create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run] [--json]
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
@@ -76,9 +76,9 @@ Use `outpost help <command>` or `outpost <command> --help` for command-level hel
 
 ### Create
 
-`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]`
+`outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run]`
 
-Creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Choose `--base-source local`, `cached-remote` or `fresh-remote`. The default is
+By default, creates a branch `<type>/<ticket>` (e.g., `feat/PROJ-123`) on each specified managed repo, then creates a worktree at `<worktrees>/<ticket>/<repo-name>`. Choose `--base-source local`, `cached-remote` or `fresh-remote`. The default is
 `cached-remote`. Use `--base <ref>` to select the ref; without it, each repository
 uses its own recorded managed symbolic HEAD branch. This does not rediscover a
 remote's current default branch.
@@ -118,6 +118,48 @@ If run interactively (terminal, no `--json`), missing ticket, type or repository
 An existing ticket is a conflict, including when fresh selection was requested.
 Use `workspace resume <ticket>` explicitly; repeating create never refreshes or
 repairs an existing workspace.
+
+### Reuse an existing managed branch
+
+```bash
+outpost create --ticket PROJ-124 --type feat --repo <id> --reuse-branch feature/existing --dry-run --json
+outpost create --ticket PROJ-124 --type feat --repo <id> --reuse-branch feature/existing --json
+```
+
+Reuse attaches an existing direct local branch from each selected registered,
+owned managed repository to a new ticket workspace. Supply the branch name,
+without `refs/heads/`. `--type` remains the ticket category; the reused branch
+keeps its exact name instead of becoming `<type>/<ticket>`. `--reuse-branch`
+cannot be combined with `--base` or `--base-source`. Ordinary create still makes
+a new branch, and an existing ticket still requires explicit `workspace resume`.
+No existing checkout is adopted and no branch is force-attached twice.
+
+All selected members must pass ownership, local-object, direct-branch and
+checkout-conflict checks before workspace/configuration mutation. Reuse never
+fetches, imports source-only branches, resolves a remote default, resets or
+renames refs. Missing local objects and promisor objects fail without fetching.
+External object pools, aliased object directories and filesystem ref aliases are refused. Reuse validates canonical containment and never adopts objects or refs through another directory, even when Git can resolve them. Alternate metadata is preserved, never removed as a repair.
+Assigned content filters or tracked submodules are unsupported in reuse because
+creation cannot promise a safe, known working state for them. Resume's existing
+split-index, filter and submodule unknown-status limits remain in effect.
+
+Results distinguish `branchDisposition: existing` from ordinary create's
+`created`. Source `local`, the requested branch, full ref and immutable
+`baseCommit` describe admission of the existing branch, not creation of a new
+branch from a base. Version 4 manifests freeze those facts and the original
+root/members. Current HEAD may later advance; resume reports it separately.
+Previous strict readers refuse version 4 rather than discarding its meaning.
+Legacy, version 2 and version 3 workspaces retain their original interpretation.
+
+Execution takes the existing home/ticket locks and Git's verify-only branch
+locks, attaches a new checkout without changing the branch, then populates it
+from the captured SHA using a merge that refuses raced user files. Ref locks are
+aborted and closed without committing updates. Existing branches never enter
+rollback's created-branch list. Failure, cancellation, manual recovery and
+workspace removal preserve them and their commits. Dirty or changed residual
+worktrees remain for explicit doctor/manual inspection; a journal is evidence,
+not permission to delete refs, clear locks or adopt arbitrary directories.
+Dry-run takes no locks and writes nothing; its result is advisory.
 
 ### Workspace resume
 
@@ -180,7 +222,7 @@ outpost guidance clear --json
 
 Extra instructions are optional plaintext appended to the generated factual orientation, under its existing SHA256 ownership marker. They are read from a UTF-8 file of at most 65,536 bytes, without NUL characters, so multiline text does not depend on shell quoting. Preview uses the create preflight and returns the proposed full `AGENTS.md`; it writes no files and acquires no mutation lock. Setting or clearing instructions affects future generation only. Existing generated, modified and foreign guidance retains its normal protection.
 
-The first settings, tag or guidance mutation, or new workspace creation, upgrades configuration to version 2 and installs an incompatible version 2 registry before writing extended state. Existing version 3 retained registries are preserved. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new version 3 manifests declare their root and complete immutable base provenance. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 or 3 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
+The first settings, tag or guidance mutation, or new workspace creation, upgrades configuration to version 2 and installs an incompatible version 2 registry before writing extended state. Existing version 3 retained registries are preserved. Older Outpost binaries refuse that state, including an old process that read config before the upgrade but takes the mutation lock afterward. Legacy manifests are read against the saved original root; new version 3 manifests declare their root and complete immutable base provenance. Explicit existing-branch reuse writes version 4 admission provenance, which prior readers refuse. Do not restore an old config over newer workspace state as a rollback. Keep the newer tool and repair forward after inspecting `doctor` results. If a version 2 or 3 registry remains but config is missing, init refuses to invent replacement roots; restore the original config only after inspecting existing state.
 
 ### Workspace remove
 
@@ -289,6 +331,7 @@ Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branche
 - **Mutation locks:** init, repository add/fetch/remove, workspace create, and workspace remove take one exclusive home mutation lock before reading state for mutation. An overlapping mutation fails with a clear retry message. Create and remove then take the ticket lock, in that order. Dry-run does not take locks.
 - **Settings safety:** configuration, tag and guidance mutations use the same home lock. Root changes preserve existing workspace locations. Unsupported state versions fail closed; settings do not overwrite existing guidance or change workspace membership.
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
+- **Existing branches:** explicit reuse never makes a borrowed branch eligible for rollback deletion. Removal preserves all local branches.
 - **Rollback:** failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.
 

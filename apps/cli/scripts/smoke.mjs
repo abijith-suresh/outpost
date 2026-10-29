@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
+import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
 import { verifySettingsWorkflow } from "./settings-smoke.mjs";
 
 const require = createRequire(import.meta.url);
@@ -207,6 +208,26 @@ try {
     // Synchronous compilation has no remote loader, so unresolved references fail offline.
     new Ajv2020({ strict: true }).compile(schema);
   }
+  const createInput = new Ajv2020({ strict: true }).compile(
+    JSON.parse(readFileSync(join(assets.schemasPath, "create.input.json"), "utf8"))
+  );
+  const createOptions = { "--ticket": ["SCHEMA-REUSE"], "--type": ["feat"], "--repo": ["id"] };
+  for (const [options, expected] of [
+    [createOptions, true],
+    [{ ...createOptions, "--reuse-branch": ["existing/work"] }, true],
+    [{ ...createOptions, "--base": ["main"], "--base-source": ["local"] }, true],
+    [{ ...createOptions, "--reuse-branch": ["existing/work"], "--base": ["main"] }, false],
+    [
+      { ...createOptions, "--reuse-branch": ["existing/work"], "--base-source": ["fresh-remote"] },
+      false,
+    ],
+  ]) {
+    assert.equal(
+      createInput({ arguments: {}, options }),
+      expected,
+      JSON.stringify(createInput.errors)
+    );
+  }
   const validateInstalled = (command, output) => {
     const schema = JSON.parse(
       readFileSync(join(assets.schemasPath, `${command.replaceAll(" ", "-")}.output.json`), "utf8")
@@ -335,7 +356,7 @@ try {
   assertSuccess(discovery, "installed describe");
   const contract = JSON.parse(discovery.stdout).data;
   assert.equal(contract.cliVersion, version);
-  assert.equal(contract.contractVersion, "3.1.0");
+  assert.equal(contract.contractVersion, "3.2.0");
   assert.equal(contract.network, "explicit");
   assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
   assert.ok(contract.outputSchema.anyOf.length >= 2);
@@ -417,6 +438,7 @@ try {
   verifySettingsWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyResumeWorkflow({ runInstalled, validateInstalled, smokeRoot });
+  verifyReuseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
   console.log("\nAll smoke tests passed.");
 } finally {

@@ -118,6 +118,9 @@ export function runWorkspaceShow(
                 requestedBase: repo.requestedBase,
                 baseRef: repo.baseRef,
                 baseCommit: repo.baseCommit,
+                ...(repo.branchDisposition === undefined
+                  ? {}
+                  : { branchDisposition: repo.branchDisposition }),
               }),
           managedPath: repo.managedPath,
           resolvedManagedPath,

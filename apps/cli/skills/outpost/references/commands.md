@@ -125,7 +125,7 @@ Side effects: exported-guidance.
 
 ```text
 Usage:
-  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run] [--json]
+  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run] [--json]
 
 Create worktrees for imported repositories
 
@@ -141,6 +141,7 @@ Options:
   --tag <tag>  Require every selected tag (repeatable); filters explicit IDs when combined (repeatable)
   --base-source <source>  local, cached-remote (default) or explicit fresh-remote fetch
   --base <ref>  Base ref (defaults to each repository's recorded managed HEAD branch)
+  --reuse-branch <name>  Attach an existing owned managed local branch; incompatible with --base/--base-source
   --dry-run  Validate without creating
   --json  Output as JSON
 ```

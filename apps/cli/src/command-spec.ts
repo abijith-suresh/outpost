@@ -68,6 +68,13 @@ const CREATE_OPTIONS: readonly CommandOption[] = [
     required: false,
   },
   {
+    name: "--reuse-branch",
+    valueName: "name",
+    description:
+      "Attach an existing owned managed local branch; incompatible with --base/--base-source",
+    required: false,
+  },
+  {
     name: "--dry-run",
     description: "Validate without creating",
     required: false,
@@ -161,7 +168,9 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
     path: ["guidance", "preview"],
     description: "Preview factual workspace AGENTS.md using current settings without writing files",
-    options: CREATE_OPTIONS.filter((option) => option.name !== "--dry-run"),
+    options: CREATE_OPTIONS.filter(
+      (option) => !["--dry-run", "--reuse-branch"].includes(option.name)
+    ),
     mutation: false,
     interactive: false,
     json: true,
@@ -565,7 +574,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "3.1.0";
+export const CONTRACT_VERSION = "3.2.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -611,6 +620,8 @@ export function parseCommandInput(
     offset += values.length;
   }
   if (offset < positional.length) throw new Error("Unexpected positional argument.");
+  if ("--reuse-branch" in options && ("--base" in options || "--base-source" in options))
+    throw new Error("--reuse-branch cannot be combined with --base or --base-source.");
   const missing = (spec.options ?? []).filter(
     (option) =>
       option.required &&
@@ -675,6 +686,22 @@ export function commandInputSchema(spec: CommandSpec) {
         required: (spec.options ?? [])
           .filter((option) => option.required)
           .map((option) => option.name),
+        ...(spec.path.join(" ") === "create"
+          ? {
+              allOf: [
+                {
+                  not: {
+                    properties: { "--reuse-branch": {} },
+                    required: ["--reuse-branch"],
+                    anyOf: [
+                      { properties: { "--base": {} }, required: ["--base"] },
+                      { properties: { "--base-source": {} }, required: ["--base-source"] },
+                    ],
+                  },
+                },
+              ],
+            }
+          : {}),
         ...(["create", "guidance preview"].includes(spec.path.join(" "))
           ? {
               anyOf: [

@@ -122,6 +122,12 @@ export function renderAgentsMarkdown(
           `    id: ${jsonEncode(repo.id)}`,
           `    worktree: ${jsonEncode(`./${relativeWorktree}`)}`,
           `    expectedBranch: ${jsonEncode(manifest.branch)}`,
+          ...(repo.branchDisposition === "existing"
+            ? [
+                "    branchDisposition: existing (borrowed user-owned branch; never delete/reset during rollback or removal)",
+                "    provenanceMeaning: immutable admission commit of existing branch; no new branch or base selection",
+              ]
+            : []),
           `    ${repo.baseSource === undefined ? "baseBranch" : "baseSelection"}: ${jsonEncode(repo.base)}`,
           ...(repo.baseSource === undefined
             ? []
