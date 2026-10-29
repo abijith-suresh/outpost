@@ -128,7 +128,7 @@ describe("borrowed local NEW workspaces", () => {
               }
             })
           )
-        )
+        ).pipe(Effect.provide(NodeServices.layer))
       );
       expect(outcome._tag).toBe("Failure");
       if (kind === "index") expect(readFileSync(index, "utf8")).toBe("unexpected index");
