@@ -10,6 +10,7 @@ import { acquireHomeMutationLock } from "../mutation-lock.js";
 import { validateSemanticIdentifier } from "../path-safety.js";
 import type { CommandOutput } from "../types.js";
 import { validateWindowsInvocationCwd, validateWindowsManagedGitDir } from "../windows-git-path.js";
+import { transferBorrowed } from "./repo-register.js";
 
 export class RepoRestoreError extends Schema.TaggedError<RepoRestoreError>()("RepoRestoreError", {
   ...ErrorDetailFields,
@@ -40,6 +41,13 @@ export function runRepoRestore(
     const mutation = dryRun
       ? undefined
       : yield* acquireHomeMutationLock(outpostHome, "repo restore");
+    if (mutation) yield* mutation.record({ action: "inspect-registration-transfer", repoId });
+    const borrowed = yield* transferBorrowed(outpostHome, repoId, "restore", dryRun);
+    if (borrowed) {
+      if (mutation && !dryRun)
+        yield* mutation.record({ action: "borrowed-registration-restore-completed", repoId });
+      return { command: "repo restore" as const, data: borrowed };
+    }
     const registry = yield* loadRepoRegistry(outpostHome);
     const retained = registry.retainedRepositories?.find((repo) => repo.id === repoId);
     if (!retained)

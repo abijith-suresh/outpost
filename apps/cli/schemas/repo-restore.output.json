@@ -13,38 +13,85 @@
           "enum": ["repo restore"]
         },
         "data": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "managedRepoPath": {
-              "type": "string"
-            },
-            "action": {
-              "type": "string",
-              "enum": ["restored"]
-            },
-            "storage": {
-              "type": "string",
-              "enum": ["retained"]
-            },
-            "dryRun": {
-              "anyOf": [
-                {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["borrowed"]
+                },
+                "commonDirectory": {
+                  "type": "string"
+                },
+                "storage": {
+                  "type": "string",
+                  "enum": ["external-unchanged"]
+                },
+                "action": {
+                  "type": "string",
+                  "enum": ["unregistered", "restored"]
+                },
+                "dryRun": {
                   "type": "boolean"
                 },
-                {
-                  "type": "null"
+                "recoveryCommand": {
+                  "type": "string"
                 }
-              ]
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "commonDirectory",
+                "storage",
+                "action",
+                "dryRun",
+                "recoveryCommand"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "managedRepoPath": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": ["restored"]
+                },
+                "storage": {
+                  "type": "string",
+                  "enum": ["retained"]
+                },
+                "dryRun": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["id", "name", "managedRepoPath", "action", "storage"],
+              "additionalProperties": true
             }
-          },
-          "required": ["id", "name", "managedRepoPath", "action", "storage"],
-          "additionalProperties": true
+          ]
         },
         "exitCode": {
           "type": "number",
@@ -86,6 +133,7 @@
                 "DOCTOR_FAILED",
                 "INIT_FAILED",
                 "REPO_ADD_FAILED",
+                "REPO_REGISTER_FAILED",
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",

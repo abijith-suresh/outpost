@@ -156,6 +156,10 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
             })
           : []),
       ]).pipe(Effect.asVoid);
+    case "repo register":
+      return Console.log(
+        `${output.data.action}: ${output.data.repository.id} (borrowed; source unchanged)`
+      );
     case "repo add":
       return Effect.all([
         Console.log("outpost repo add"),
@@ -263,6 +267,8 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
           : []),
       ]).pipe(Effect.asVoid);
     case "repo remove":
+      if (!("managedRepoPath" in output.data))
+        return Console.log(JSON.stringify(output.data, null, 2));
       return Effect.all([
         Console.log("outpost repo remove"),
         ...(output.data.dryRun ? [Console.log("dry run: true")] : []),
@@ -281,6 +287,8 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
           : []),
       ]).pipe(Effect.asVoid);
     case "repo restore":
+      if (!("managedRepoPath" in output.data))
+        return Console.log(JSON.stringify(output.data, null, 2));
       return Effect.all([
         Console.log("outpost repo restore"),
         ...(output.data.dryRun ? [Console.log("dry run: true")] : []),
@@ -289,6 +297,8 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
         Console.log("action: restored registration; owned storage unchanged"),
       ]).pipe(Effect.asVoid);
     case "repo show":
+      if (!("managedRepoPath" in output.data))
+        return Console.log(JSON.stringify(output.data, null, 2));
       return Effect.all([
         Console.log("outpost repo show"),
         Console.log(`id: ${String(output.data.id)}`),

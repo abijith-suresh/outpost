@@ -256,6 +256,20 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
     dryRun: false,
   },
   {
+    path: ["repo", "register"],
+    description:
+      "Register borrowed local clone storage offline without changing Git or source files",
+    arguments: [{ name: "path", description: "Existing checkout", required: true }],
+    options: [
+      { name: "--name", valueName: "name", description: "Portable member name", required: true },
+      { name: "--dry-run", description: "Inspect without writing metadata", required: false },
+    ],
+    mutation: true,
+    interactive: false,
+    json: true,
+    dryRun: true,
+  },
+  {
     path: ["repo", "add"],
     description: "Validate a local repository for Outpost registration",
     arguments: [
@@ -574,7 +588,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "3.2.0";
+export const CONTRACT_VERSION = "4.0.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -741,7 +755,7 @@ export function commandPolicy(spec: CommandSpec) {
               ? ["configuration", "directories"]
               : name === "config set" || name === "guidance set" || name === "guidance clear"
                 ? ["configuration"]
-                : name === "repo tag" || name === "repo remove"
+                : name === "repo tag" || name === "repo remove" || name === "repo register"
                   ? ["configuration", "registry"]
                   : name === "repo restore"
                     ? ["registry"]

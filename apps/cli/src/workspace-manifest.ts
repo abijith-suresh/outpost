@@ -1008,7 +1008,7 @@ export function getManifestWorktreesRoot(
   if (
     (manifest.version !== 2 && manifest.version !== 3 && manifest.version !== 4) ||
     !manifest.worktreesRoot ||
-    config.version !== 2 ||
+    config.version < 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)
   )
     return Effect.fail(

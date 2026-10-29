@@ -8,6 +8,10 @@ Developers working on tickets that span multiple repositories (e.g., a backend c
 
 Coding agents are the primary operators of Outpost, coordinating one ticket across multiple local repositories on behalf of a developer. The developer remains responsible for intent, review and approval. Human command-line use remains supported. Outpost is particularly intended for restricted enterprise machines where installing arbitrary native tools may not be possible but npm packages are available.
 
+## Offline borrowed-clone registration
+
+`repo register <checkout> --name NAME` records a verified ordinary or linked local clone without importing it or owning its storage. Local-only and unborn repositories are supported. Registration, inspection, unregistration and restoration remain offline and preserve source bytes, mtimes, refs, objects, configuration and hooks. External storage is not a backup. Stable canonical filesystem identity is distinct from mutable repository state. Borrowed creation, reuse and fetching remain unsupported and must refuse before any selected member mutation or network action. Existing managed mirrors retain their current behavior. New registry/configuration barriers protect these records from older writers; read-only commands never migrate state.
+
 ## Goals
 
 - **Deterministic workspace lifecycle.** Every `outpost create` produces the same branch layout and worktree structure for the same inputs. Humans and coding agents can safely operate within these workspaces.

@@ -13,112 +13,224 @@
           "enum": ["repo show"]
         },
         "data": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "managedRepoPath": {
-              "type": "string"
-            },
-            "remoteName": {
-              "type": "string"
-            },
-            "remoteUrl": {
-              "type": "string"
-            },
-            "sourceRepoPath": {
-              "type": "string"
-            },
-            "importedAt": {
-              "type": "string"
-            },
-            "lastFetchedAt": {
-              "type": "string"
-            },
-            "tags": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "status": {
-              "type": "string",
-              "enum": ["ok", "missing"]
-            },
-            "retainedAt": {
-              "anyOf": [
-                {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
                   "type": "string"
                 },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "inspection": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string",
-                      "enum": ["ok", "unavailable"]
-                    },
-                    "refs": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "name": {
-                            "type": "string"
-                          },
-                          "objectId": {
-                            "type": "string"
-                          }
-                        },
-                        "required": ["name", "objectId"],
-                        "additionalProperties": true
-                      }
-                    },
-                    "diagnostics": {
+                "name": {
+                  "type": "string"
+                },
+                "managedRepoPath": {
+                  "type": "string"
+                },
+                "remoteName": {
+                  "type": "string"
+                },
+                "remoteUrl": {
+                  "type": "string"
+                },
+                "sourceRepoPath": {
+                  "type": "string"
+                },
+                "importedAt": {
+                  "type": "string"
+                },
+                "lastFetchedAt": {
+                  "type": "string"
+                },
+                "tags": {
+                  "anyOf": [
+                    {
                       "type": "array",
                       "items": {
                         "type": "string"
                       }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["ok", "missing"]
+                },
+                "retainedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inspection": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["ok", "unavailable"]
+                        },
+                        "refs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "objectId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["name", "objectId"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "diagnostics": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["status", "refs", "diagnostics"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "managedRepoPath",
+                "remoteName",
+                "remoteUrl",
+                "sourceRepoPath",
+                "importedAt",
+                "lastFetchedAt",
+                "status"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["borrowed"]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "registeredAt": {
+                  "type": "string"
+                },
+                "anchor": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "device": {
+                      "type": "string"
+                    },
+                    "inode": {
+                      "type": "string"
                     }
                   },
-                  "required": ["status", "refs", "diagnostics"],
+                  "required": ["path", "device", "inode"],
                   "additionalProperties": true
                 },
-                {
-                  "type": "null"
+                "privateGit": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "device": {
+                      "type": "string"
+                    },
+                    "inode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["path", "device", "inode"],
+                  "additionalProperties": true
+                },
+                "common": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "device": {
+                      "type": "string"
+                    },
+                    "inode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["path", "device", "inode"],
+                  "additionalProperties": true
+                },
+                "checkoutKind": {
+                  "type": "string",
+                  "enum": ["main", "linked"]
+                },
+                "retainedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["ok", "unavailable"]
+                },
+                "storage": {
+                  "type": "string",
+                  "enum": ["external-unchanged"]
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
-              ]
+              },
+              "required": [
+                "kind",
+                "id",
+                "name",
+                "registeredAt",
+                "anchor",
+                "privateGit",
+                "common",
+                "checkoutKind",
+                "status",
+                "storage",
+                "diagnostics"
+              ],
+              "additionalProperties": true
             }
-          },
-          "required": [
-            "id",
-            "name",
-            "managedRepoPath",
-            "remoteName",
-            "remoteUrl",
-            "sourceRepoPath",
-            "importedAt",
-            "lastFetchedAt",
-            "status"
-          ],
-          "additionalProperties": true
+          ]
         },
         "exitCode": {
           "type": "number",
@@ -160,6 +272,7 @@
                 "DOCTOR_FAILED",
                 "INIT_FAILED",
                 "REPO_ADD_FAILED",
+                "REPO_REGISTER_FAILED",
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",

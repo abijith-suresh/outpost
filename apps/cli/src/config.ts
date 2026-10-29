@@ -3,6 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import { BorrowedRecordSchema, RetainedBorrowedRecordSchema } from "./borrowed-schema.js";
 
 import {
   getCanonicalPortablePathKey,
@@ -12,14 +13,14 @@ import {
 import { writeJsonFileAtomic } from "./store.js";
 
 export const OUTPOST_HOME_ENV = "OUTPOST_HOME";
-export const CURRENT_CONFIG_VERSION = 2;
+export const CURRENT_CONFIG_VERSION = 3;
 
 export class ConfigError extends Schema.TaggedError<ConfigError>()("ConfigError", {
   message: Schema.String,
 }) {}
 
 export const OutpostConfigSchema = Schema.Struct({
-  version: Schema.Literals([1, 2]),
+  version: Schema.Literals([1, 2, 3]),
   outpostHome: Schema.String,
   reposRoot: Schema.String,
   worktreesRoot: Schema.String,
@@ -77,8 +78,10 @@ export type RepoRecordWithStatus = RepoRecord & {
 };
 
 export const RepoRegistrySchema = Schema.Struct({
-  version: Schema.optional(Schema.Literals([2, 3])),
+  version: Schema.optional(Schema.Literals([2, 3, 4])),
   repos: Schema.Array(RepoRecordSchema),
+  borrowedRepositories: Schema.optional(Schema.Array(BorrowedRecordSchema)),
+  retainedBorrowedRepositories: Schema.optional(Schema.Array(RetainedBorrowedRecordSchema)),
   retainedRepositories: Schema.optional(Schema.Array(RetainedRepoRecordSchema)),
 });
 
@@ -87,7 +90,20 @@ export type RepoRegistry = Schema.Schema.Type<typeof RepoRegistrySchema>;
 // Deliberately incompatible with the legacy { repos } decoder. An older process
 // may have read config before waiting on the home lock, but rereads this file
 // after acquiring it and must fail before changing repositories or workspaces.
+const TaggedRepositorySchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("managed"), record: RepoRecordSchema }),
+  Schema.Struct({ kind: Schema.Literal("borrowed"), record: BorrowedRecordSchema }),
+]);
+const TaggedRetainedSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("managed"), record: RetainedRepoRecordSchema }),
+  Schema.Struct({ kind: Schema.Literal("borrowed"), record: RetainedBorrowedRecordSchema }),
+]);
 const StoredRepoRegistrySchema = Schema.Union([
+  Schema.Struct({
+    version: Schema.Literal(4),
+    repositories: Schema.Array(TaggedRepositorySchema),
+    retainedRepositories: Schema.Array(TaggedRetainedSchema),
+  }),
   Schema.Struct({ repos: Schema.Array(RepoRecordSchema) }),
   Schema.Struct({ version: Schema.Literal(2), repositories: Schema.Array(RepoRecordSchema) }),
   Schema.Struct({
@@ -201,7 +217,10 @@ function validateRepoRegistryUniqueness(
     const ids = new Set<string>();
     const managedRepoPaths = new Set<string>();
 
-    if ((registry.version === 3) !== (registry.retainedRepositories !== undefined))
+    if (
+      (registry.version === 3 || registry.version === 4) !==
+      (registry.retainedRepositories !== undefined)
+    )
       return yield* Effect.fail(
         new ConfigError({
           message:
@@ -209,7 +228,12 @@ function validateRepoRegistryUniqueness(
         })
       );
     for (const repo of [...registry.repos, ...(registry.retainedRepositories ?? [])]) {
-      if (repo.tags !== undefined && registry.version !== 2 && registry.version !== 3)
+      if (
+        repo.tags !== undefined &&
+        registry.version !== 2 &&
+        registry.version !== 3 &&
+        registry.version !== 4
+      )
         return yield* Effect.fail(
           new ConfigError({ message: "Repository tags require registry version 2." })
         );
@@ -240,6 +264,26 @@ function validateRepoRegistryUniqueness(
       managedRepoPaths.add(managedRepoPathKey);
     }
 
+    if (
+      registry.version !== 4 &&
+      (registry.borrowedRepositories !== undefined ||
+        registry.retainedBorrowedRepositories !== undefined)
+    )
+      return yield* new ConfigError({ message: "Borrowed storage requires registry version 4." });
+    for (const repo of [
+      ...(registry.borrowedRepositories ?? []),
+      ...(registry.retainedBorrowedRepositories ?? []),
+    ]) {
+      const key = yield* canonicalPaths
+        ? getCanonicalPortablePathKey(repo.common.path)
+        : getPortablePathKey(repo.common.path);
+      if (ids.has(repo.id) || managedRepoPaths.has(key))
+        return yield* new ConfigError({
+          message: "Conflicting borrowed repository identity or common directory.",
+        });
+      ids.add(repo.id);
+      managedRepoPaths.add(key);
+    }
     return registry;
   });
 }
@@ -290,13 +334,31 @@ export function loadRepoRegistry(
     );
 
     const registry: RepoRegistry =
-      "repositories" in stored
+      "version" in stored && stored.version === 4
         ? {
-            version: stored.version,
-            repos: stored.repositories,
-            ...(stored.version === 3 ? { retainedRepositories: stored.retainedRepositories } : {}),
+            version: 4,
+            repos: stored.repositories.flatMap((entry) =>
+              entry.kind === "managed" ? [entry.record] : []
+            ),
+            borrowedRepositories: stored.repositories.flatMap((entry) =>
+              entry.kind === "borrowed" ? [entry.record] : []
+            ),
+            retainedRepositories: stored.retainedRepositories.flatMap((entry) =>
+              entry.kind === "managed" ? [entry.record] : []
+            ),
+            retainedBorrowedRepositories: stored.retainedRepositories.flatMap((entry) =>
+              entry.kind === "borrowed" ? [entry.record] : []
+            ),
           }
-        : stored;
+        : "repositories" in stored
+          ? {
+              version: stored.version,
+              repos: stored.repositories,
+              ...(stored.version === 3
+                ? { retainedRepositories: stored.retainedRepositories }
+                : {}),
+            }
+          : stored;
     return yield* validateRepoRegistryUniqueness(registry, options.canonicalPaths ?? true);
   });
 }
@@ -320,15 +382,36 @@ export function writeRepoRegistry(
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
     const stored =
-      validatedRegistry.version === 3
+      validatedRegistry.version === 4
         ? {
-            version: 3,
-            repositories: validatedRegistry.repos,
-            retainedRepositories: validatedRegistry.retainedRepositories,
+            version: 4,
+            repositories: [
+              ...validatedRegistry.repos.map((record) => ({ kind: "managed", record })),
+              ...(validatedRegistry.borrowedRepositories ?? []).map((record) => ({
+                kind: "borrowed",
+                record,
+              })),
+            ],
+            retainedRepositories: [
+              ...(validatedRegistry.retainedRepositories ?? []).map((record) => ({
+                kind: "managed",
+                record,
+              })),
+              ...(validatedRegistry.retainedBorrowedRepositories ?? []).map((record) => ({
+                kind: "borrowed",
+                record,
+              })),
+            ],
           }
-        : validatedRegistry.version === 2
-          ? { version: 2, repositories: validatedRegistry.repos }
-          : { repos: validatedRegistry.repos };
+        : validatedRegistry.version === 3
+          ? {
+              version: 3,
+              repositories: validatedRegistry.repos,
+              retainedRepositories: validatedRegistry.retainedRepositories,
+            }
+          : validatedRegistry.version === 2
+            ? { version: 2, repositories: validatedRegistry.repos }
+            : { repos: validatedRegistry.repos };
     yield* writeJsonFileAtomic(registryFilePath, stored).pipe(
       Effect.mapError(
         (error) =>
@@ -400,7 +483,7 @@ export function loadConfig(
 
 /** Extended state is installed only after this single-file older-writer barrier. */
 export function upgradeConfig(config: OutpostConfig): OutpostConfig {
-  return config.version === 2
+  return config.version >= 2
     ? config
     : {
         ...config,
@@ -438,7 +521,7 @@ export function validateConfig(config: OutpostConfig, outpostHome: string) {
       return yield* Effect.fail(
         new ConfigError({ message: "Extended configuration requires version 2." })
       );
-    if (config.version === 2) {
+    if (config.version >= 2) {
       const roots = config.trustedWorktreesRoots;
       if (
         !config.legacyWorktreesRoot ||

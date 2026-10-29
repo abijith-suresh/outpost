@@ -339,3 +339,9 @@ schema changes. `docs:generate` compiles the definitions, generates assets and
 the digest map, then recompiles so `dist describe` immediately uses the new map.
 Build and docs checks reject stale digest metadata as well as asset drift. Do not
 generate expected digests from installed assets at runtime.
+
+The native Windows focused matrix includes offline borrowed-clone registration,
+identity replacement and path-budget boundaries. Packed/global installed smoke
+checks bigint directory IDs and exact source preservation through unregister and
+restore using the installed `.cmd` entrypoint. Run full verification and packed
+smoke sequentially: subprocess tests compile/use `dist`, while smoke rebuilds it.

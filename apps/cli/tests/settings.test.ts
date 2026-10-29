@@ -719,7 +719,7 @@ describe("configuration, tags and future workspace guidance", () => {
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     const registry = readFileSync(registryPath, "utf8");
     for (const changed of [
-      { ...config, version: 3 },
+      { ...config, version: 4 },
       { ...config, version: "2" },
       { ...config, version: null },
       { ...config, futureOption: true },

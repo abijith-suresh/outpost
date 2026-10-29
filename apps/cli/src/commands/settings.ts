@@ -183,7 +183,7 @@ export function runRepoTag(id: string, add: readonly string[], remove: readonly 
     if (config.version === 1) yield* writeConfig(outpostHome, upgradeConfig(config));
     yield* writeRepoRegistry(outpostHome, {
       ...registry,
-      version: registry.version === 3 ? 3 : 2,
+      version: registry.version === 4 ? 4 : registry.version === 3 ? 3 : 2,
       repos: registry.repos.map((repo) => (repo.id === id ? { ...repo, tags } : repo)),
     });
     return { command: "repo tag", data: { id, tags } } satisfies CommandOutput<"repo tag">;
@@ -199,7 +199,7 @@ export function runGuidancePreview(args: readonly string[]) {
     const registry = yield* loadRepoRegistry(outpostHome);
     const content = yield* renderAgentsMarkdown(
       {
-        ...(config.version === 2
+        ...(config.version >= 2
           ? { version: 2 as const, worktreesRoot: config.worktreesRoot }
           : {}),
         ticket: plan.data.ticket,
