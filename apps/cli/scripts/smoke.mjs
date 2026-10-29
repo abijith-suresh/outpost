@@ -1,6 +1,14 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +17,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
+import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
+import { verifyInstalledRuntime } from "./runtime-dependencies.mjs";
 import { verifySettingsWorkflow } from "./settings-smoke.mjs";
 
 const require = createRequire(import.meta.url);
@@ -133,13 +143,20 @@ try {
   assert.equal(packOutput.length, 1, "npm pack should produce one tarball");
   const tarball = join(packDir, packOutput[0].filename);
 
-  console.log(`Installing ${tarball} to ${installPrefix}...`);
+  assert.ok(
+    !existsSync(join(smokeRoot, "empty-npm-cache")),
+    "Install must start with an empty npm cache"
+  );
+  console.log(`Installing ${tarball} to ${installPrefix} with an empty npm cache...`);
   const installResult = runNpm(
     [
       "install",
       "--global",
       tarball,
-      "--prefer-offline",
+      "--prefer-online",
+      "--offline=false",
+      "--cache",
+      join(smokeRoot, "empty-npm-cache"),
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
@@ -155,6 +172,9 @@ try {
   });
   assertSuccess(globalRootResult, "resolve global package root");
   const installedPackage = join(globalRootResult.stdout.trim(), "@abijith-suresh", "outpost");
+  console.log(
+    `Installed runtime tree: ${JSON.stringify(verifyInstalledRuntime(installedPackage))}`
+  );
 
   console.log("Test: importing packed package is side-effect-free");
   const importResult = run(process.execPath, [
@@ -192,7 +212,7 @@ try {
   const installedManifest = JSON.parse(
     readFileSync(join(installedPackage, "package.json"), "utf8")
   );
-  assert.equal(Object.keys(installedManifest.dependencies).length, 2);
+  assert.equal(Object.keys(installedManifest.dependencies).length, 3);
   assert.equal(installedManifest.dependencies.ajv, undefined);
   const locations = runInstalled(["skill", "path", "--json"]);
   assertSuccess(locations, "installed guidance paths");
@@ -206,6 +226,26 @@ try {
     const schema = JSON.parse(readFileSync(join(assets.schemasPath, entry.path), "utf8"));
     // Synchronous compilation has no remote loader, so unresolved references fail offline.
     new Ajv2020({ strict: true }).compile(schema);
+  }
+  const createInput = new Ajv2020({ strict: true }).compile(
+    JSON.parse(readFileSync(join(assets.schemasPath, "create.input.json"), "utf8"))
+  );
+  const createOptions = { "--ticket": ["SCHEMA-REUSE"], "--type": ["feat"], "--repo": ["id"] };
+  for (const [options, expected] of [
+    [createOptions, true],
+    [{ ...createOptions, "--reuse-branch": ["existing/work"] }, true],
+    [{ ...createOptions, "--base": ["main"], "--base-source": ["local"] }, true],
+    [{ ...createOptions, "--reuse-branch": ["existing/work"], "--base": ["main"] }, false],
+    [
+      { ...createOptions, "--reuse-branch": ["existing/work"], "--base-source": ["fresh-remote"] },
+      false,
+    ],
+  ]) {
+    assert.equal(
+      createInput({ arguments: {}, options }),
+      expected,
+      JSON.stringify(createInput.errors)
+    );
   }
   const validateInstalled = (command, output) => {
     const schema = JSON.parse(
@@ -335,7 +375,7 @@ try {
   assertSuccess(discovery, "installed describe");
   const contract = JSON.parse(discovery.stdout).data;
   assert.equal(contract.cliVersion, version);
-  assert.equal(contract.contractVersion, "3.1.0");
+  assert.equal(contract.contractVersion, "3.2.0");
   assert.equal(contract.network, "explicit");
   assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
   assert.ok(contract.outputSchema.anyOf.length >= 2);
@@ -417,6 +457,7 @@ try {
   verifySettingsWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyResumeWorkflow({ runInstalled, validateInstalled, smokeRoot });
+  verifyReuseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
   console.log("\nAll smoke tests passed.");
 } finally {

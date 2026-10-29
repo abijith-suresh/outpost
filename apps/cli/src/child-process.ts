@@ -1,7 +1,10 @@
+import type * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 /** Git must inherit PATH/HOME while refusing interactive credential prompts. */
@@ -82,6 +85,127 @@ function withTerminationPolicy(command: ChildProcess.Command): ChildProcess.Comm
     detached: process.platform !== "win32",
     killSignal: "SIGTERM",
     forceKillAfter: terminationGraceMs,
+  });
+}
+
+/** Hold a verify-only Git transaction. Aborting releases Git's own ref locks without writing refs. */
+export function acquireBranchVerification(repoPath: string, ref: string, commit: string) {
+  return Effect.gen(function* () {
+    const timeoutMs = Number(process.env.OUTPOST_GIT_TIMEOUT_MS ?? 120_000);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+      return yield* Effect.fail(executionError("Command timeout must be positive and finite."));
+    const prepared = yield* Deferred.make<void, PlatformError>();
+    const aborted = yield* Deferred.make<void, PlatformError>();
+    const input = yield* Queue.unbounded<Uint8Array, Cause.Done>();
+    const command = withTerminationPolicy(
+      noLazyFetchGitCommand("--git-dir", repoPath, "update-ref", "--no-deref", "--stdin")
+    );
+    if (command._tag !== "StandardCommand")
+      return yield* Effect.fail(executionError("Expected a single Git ref verification command."));
+    const child = yield* ChildProcess.make(command.command, command.args, {
+      ...command.options,
+      stdin: Stream.fromQueue(input),
+    });
+    let diagnostic = "";
+    yield* Stream.runForEach(child.stderr, (bytes) =>
+      Effect.sync(() => {
+        diagnostic = (diagnostic + new TextDecoder().decode(bytes)).slice(0, 8192);
+      })
+    ).pipe(Effect.forkScoped);
+    let protocol = "";
+    let wasPrepared = false;
+    yield* child.stdout.pipe(
+      Stream.runForEach((bytes) => {
+        if (protocol.length + bytes.byteLength > 8192)
+          return Deferred.fail(
+            prepared,
+            executionError("Git ref verification output exceeded its protocol bound.")
+          );
+        protocol += new TextDecoder().decode(bytes);
+        return Effect.gen(function* () {
+          if (protocol.split(/\r?\n/).includes("prepare: ok")) {
+            wasPrepared = true;
+            yield* Deferred.succeed(prepared, undefined);
+          }
+          if (protocol.split(/\r?\n/).includes("abort: ok"))
+            yield* Deferred.succeed(aborted, undefined);
+        });
+      }),
+      Effect.catch((error) => Deferred.fail(prepared, error)),
+      Effect.forkScoped
+    );
+    yield* child.exitCode.pipe(
+      Effect.flatMap((code) =>
+        Deferred.fail(
+          prepared,
+          executionError(`Cannot lock existing branch ${ref} (exit ${code}). ${diagnostic}`)
+        )
+      ),
+      Effect.catch((error) => Deferred.fail(prepared, error)),
+      Effect.forkScoped
+    );
+    let released = false;
+    const release = Effect.gen(function* () {
+      if (released) return;
+      if (!wasPrepared && !(yield* child.isRunning)) {
+        released = true;
+        return;
+      }
+      yield* Queue.offer(input, new TextEncoder().encode("abort\n"));
+      // Ordered EOF closes stdin after abort without depending on Windows signals.
+      yield* Queue.end(input);
+      const code = yield* child.exitCode;
+      if (code !== 0)
+        return yield* Effect.fail(
+          executionError(
+            `Existing branch lock cleanup failed for ${ref}. Preserve its lock and inspect the operation journal. ${diagnostic}`
+          )
+        );
+      yield* Deferred.await(aborted);
+      released = true;
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: "2 seconds",
+        orElse: () =>
+          child
+            .kill({ killSignal: "SIGTERM", forceKillAfter: terminationGraceMs })
+            .pipe(
+              Effect.andThen(
+                Effect.fail(
+                  executionError(
+                    `Existing branch lock cleanup was not confirmed for ${ref}; preserve state and inspect the operation journal.`
+                  )
+                )
+              )
+            ),
+      })
+    );
+    // Ordinary success explicitly checks release before admitting a manifest.
+    // This idempotent fallback also attempts release during failure/cancellation;
+    // a failed operation's recorded plan remains manual recovery evidence.
+    yield* Effect.acquireRelease(Effect.void, () => release.pipe(Effect.ignore));
+    yield* Queue.offer(
+      input,
+      new TextEncoder().encode(`start\nverify ${ref} ${commit}\nprepare\n`)
+    );
+    yield* Deferred.await(prepared).pipe(
+      Effect.timeoutOrElse({
+        duration: timeoutMs,
+        orElse: () => Effect.fail(executionError(`Timed out locking existing branch ${ref}.`)),
+      })
+    );
+    const verify = child.isRunning.pipe(
+      Effect.flatMap((running) =>
+        running
+          ? Effect.void
+          : Effect.fail(
+              executionError(
+                `Existing branch verification ended for ${ref}; preserve residual work and inspect outpost doctor --json.`
+              )
+            )
+      )
+    );
+    return { verify, release };
   });
 }
 

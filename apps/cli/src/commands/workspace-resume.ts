@@ -243,11 +243,18 @@ function requireNonRefreshingIndex(bytes: Uint8Array, objectHexLength: number) {
 /** Git status may execute conversion filters and recurse into arbitrary child
  * repositories. Inspect index/attributes first without conversion, and fail
  * honestly rather than execute those programs or describe uninspected work clean. */
-function statusPreflight(git: (...args: string[]) => ChildProcess.Command, repoId: string) {
+function statusPreflight(
+  git: (...args: string[]) => ChildProcess.Command,
+  repoId: string,
+  tree?: string
+) {
   return Effect.gen(function* () {
-    const indexed = yield* commandResult(git("ls-files", "--stage", "-z"), {
-      maxOutputBytes: RESUME_LIMITS.statusBytes,
-    });
+    const indexed = yield* commandResult(
+      tree ? git("ls-tree", "-r", "-z", tree) : git("ls-files", "--stage", "-z"),
+      {
+        maxOutputBytes: RESUME_LIMITS.statusBytes,
+      }
+    );
     if (
       indexed.exitCode !== 0 ||
       indexed.stdout.truncated ||
@@ -260,7 +267,11 @@ function statusPreflight(git: (...args: string[]) => ChildProcess.Command, repoI
       );
     const paths = new Set<string>();
     for (const entry of indexed.stdout.text.split("\0").filter(Boolean)) {
-      const match = /^([0-7]{6}) ([0-9a-f]+) [0-3]\t([\s\S]+)$/.exec(entry);
+      const match = (
+        tree
+          ? /^([0-7]{6}) (?:blob|commit) ([0-9a-f]+)\t([\s\S]+)$/
+          : /^([0-7]{6}) ([0-9a-f]+) [0-3]\t([\s\S]+)$/
+      ).exec(entry);
       if (!match || !oid(match[2]))
         return yield* problem(
           "status-unavailable",
@@ -274,7 +285,13 @@ function statusPreflight(git: (...args: string[]) => ChildProcess.Command, repoI
       paths.add(match[3]);
     }
     if (paths.size) {
-      const raw = git("check-attr", "--all", "-z", "--stdin");
+      const raw = git(
+        "check-attr",
+        ...(tree ? [`--source=${tree}`] : []),
+        "--all",
+        "-z",
+        "--stdin"
+      );
       if (raw._tag !== "StandardCommand")
         return yield* problem(
           "status-unavailable",
@@ -345,6 +362,49 @@ function statusPreflight(git: (...args: string[]) => ChildProcess.Command, repoI
         `Conversion-filter overrides exceed the safe invocation bound for ${repoId}.`
       );
     return overrides;
+  });
+}
+
+/** Existing branch reuse cannot run configured filters or recurse into tracked submodules. */
+export function preflightReusedTree(managed: string, commit: string, repoId: string) {
+  return statusPreflight((...args) => gitCommand("--git-dir", managed, ...args), repoId, commit);
+}
+
+/** Reuse shares resume's fail-closed status limits; this only inspects a newly owned checkout. */
+export function verifyNewWorktreeClean(checkout: string, repoId: string, commit: string) {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const fs = yield* FileSystem.FileSystem;
+    const git = (...args: string[]) =>
+      gitCommand(
+        "-C",
+        checkout,
+        "--git-dir",
+        ".git",
+        "--work-tree",
+        checkout,
+        "-c",
+        "core.bare=false",
+        ...args
+      );
+    const admin = (yield* commandString(git("rev-parse", "--absolute-git-dir"))).trim();
+    const index = yield* snapshot(path.join(admin, "index"), RESUME_LIMITS.indexBytes);
+    yield* requireNonRefreshingIndex(index.bytes, commit.length);
+    const overrides = yield* statusPreflight(git, repoId);
+    const status = yield* commandString(
+      git(
+        ...overrides,
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--ignore-submodules=all",
+        "--no-renames"
+      )
+    );
+    yield* unchanged([index]);
+    if (!(yield* fs.exists(checkout)))
+      return yield* problem("state-changed", `New checkout disappeared for ${repoId}.`);
+    return status;
   });
 }
 
@@ -674,6 +734,9 @@ export function runWorkspaceResume(ticket: string | undefined, extraArgs: Readon
                   requestedBase: repo.requestedBase,
                   baseRef: repo.baseRef,
                   baseCommit: repo.baseCommit,
+                  ...(repo.branchDisposition === undefined
+                    ? {}
+                    : { branchDisposition: repo.branchDisposition }),
                 }),
           },
           diagnostics: [],

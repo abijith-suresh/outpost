@@ -36,6 +36,18 @@ Read [commands](references/commands.md) for syntax and
   fetch. Fresh execution fails on unavailable refs/network/authentication instead
   of falling back to cache. Local mode cannot use source-only objects absent from
   owned managed storage. Preserve source work until targeted import is supported.
+- To attach an existing owned managed local branch to a new ticket, use
+  `create --ticket <new-ticket> --type <type> --repo <id> --reuse-branch <name> --dry-run --json`,
+  then remove `--dry-run` after inspecting the advisory plan. Do not combine reuse
+  with `--base` or `--base-source`. It never fetches or imports source branches.
+  All members must already contain the direct local branch and available objects,
+  with no other worktree attachment. External alternate pools or object/ref aliases
+  are refused; preserve their metadata and source rather than removing links to
+  make reuse pass. Results say `branchDisposition: existing`;
+  the immutable SHA records branch admission, not a newly created branch/base.
+  Existing branches remain user-owned through rollback, cancellation and removal.
+  Version 4 manifests preserve that distinction and older readers refuse them.
+  Do not delete branches or force a second checkout to resolve a conflict.
 - Continue an existing ticket with `outpost workspace resume <ticket> --json`.
   Use its verified paths, current branch/HEAD and working-state facts. Preserve
   `originalBase` as creation history even when current HEAD has advanced. Dirty,

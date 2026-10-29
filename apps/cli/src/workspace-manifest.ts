@@ -52,7 +52,7 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  version: Schema.optional(Schema.Literals([2, 3])),
+  version: Schema.optional(Schema.Literals([2, 3, 4])),
   worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
@@ -68,7 +68,7 @@ export const ManifestSchema = Schema.Struct({
         repo.requestedBase !== undefined ||
         repo.baseRef !== undefined ||
         repo.baseCommit !== undefined;
-      if (manifest.version === 3) {
+      if (manifest.version === 3 || manifest.version === 4) {
         if (
           !repo.baseSource ||
           repo.requestedBase === undefined ||
@@ -76,8 +76,19 @@ export const ManifestSchema = Schema.Struct({
           !repo.baseCommit ||
           (repo.requestedBase !== null && !repo.requestedBase.trim())
         )
-          return "Version 3 manifests require complete immutable base provenance for every repository.";
+          return "Version 3/4 manifests require complete immutable base provenance for every repository.";
       } else if (hasAny) return "Base provenance requires manifest version 3.";
+      if (manifest.version === 4) {
+        if (
+          repo.branchDisposition !== "existing" ||
+          repo.baseSource !== "local" ||
+          repo.requestedBase !== manifest.branch ||
+          repo.baseRef !== `refs/heads/${manifest.branch}` ||
+          repo.base !== manifest.branch
+        )
+          return "Version 4 manifests require existing local branch admission provenance matching the frozen branch.";
+      } else if (repo.branchDisposition !== undefined)
+        return "Branch disposition requires manifest version 4.";
     }
     return true;
   })
@@ -995,7 +1006,7 @@ export function getManifestWorktreesRoot(
   if (manifest.version === undefined && manifest.worktreesRoot === undefined)
     return Effect.succeed(config.legacyWorktreesRoot ?? config.worktreesRoot);
   if (
-    (manifest.version !== 2 && manifest.version !== 3) ||
+    (manifest.version !== 2 && manifest.version !== 3 && manifest.version !== 4) ||
     !manifest.worktreesRoot ||
     config.version !== 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)

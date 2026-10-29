@@ -91,7 +91,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 or 3 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
 
-Version 2 configuration saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. Version 2 and 3 manifests pin their root; unversioned manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
+Version 2 configuration saves `legacyWorktreesRoot`, the root used by unversioned manifests, and `trustedWorktreesRoots`, the roots available to versioned manifests. `config set worktreesRoot <absolute-path>` records the new future root without moving worktrees or rewriting manifests. Version 2, 3 and 4 manifests pin their root; unversioned manifests keep resolving against the saved original root. Inspection and removal use the manifest's validated root, rather than today's default. Root changes never replace `AGENTS.md`. This avoids a partially completed bulk-manifest migration and leaves an interruption after the config write as valid version 2 state. Old metadata backups cannot safely be restored over newly created workspaces; repair forward with the newer binary.
 
 `config show` exposes validated settings. `guidance set <file>` reads bounded UTF-8 plaintext into optional global `extraInstructions`; `guidance clear` removes it. `guidance preview` uses create preflight and the same factual `AGENTS.md` renderer without locks or writes. These settings affect future generation only. The command adapter and application operations remain in the CLI package, with Effect workflows and the existing filesystem/Git boundaries; there is no HTTP server or daemon in this phase.
 
@@ -177,11 +177,58 @@ receipt cleanup occurs before the manifest commit, while the created branch and
 tracking ref preserve the fetched object. Uncertain or changed receipts remain
 journaled for inspection. Retained repository records are unchanged.
 
+**Existing managed branch admission:**
+
+Contract version `3.2.0` adds explicit branch reuse and factual branch disposition.
+
+`create --reuse-branch <name>` is mutually exclusive with explicit `--base` and
+`--base-source`. The existing ticket/type/repository selection stays required;
+`--type` is a ticket category while the existing branch retains its exact name.
+Every selected repository is ownership-checked first. A direct existing
+`refs/heads/<name>` must resolve to an available commit and checkout objects;
+`worktree list --porcelain -z` must show no attachment. There is no source import,
+remote inference or fetch. Before resolving a reuse ref, bounded checks validate canonical object/ref storage and refuse alternate-pool metadata or filesystem aliases in selected object/ref paths. The same checks repeat under admission locks and before manifest admission. Git's ordinary object lookup through an external alternate pool is not treated as proof that objects are owned. The selected checkout object inventory is capped at 256 KiB and 8,192 object IDs. Metadata checks cover selected loose object fanouts/leaves and at most 1,024 pack metadata entries, including chained multi-pack indexes. Directory iteration stops at the bound rather than materializing an unbounded listing. Canonical paths and file identities are rechecked around traversal, under admission locks and before population/publication. Ordinary regular files, including surviving hardlinks, are supported. Replacement refs fail closed before traversal because replacement commit OIDs are absent from the normal selected-object inventory; their refs and source are preserved. No object-content scan, copy, repack or automatic repair occurs. Bounded tree/attribute preflight refuses tracked
+submodules and assigned filters before checkout mutation.
+
+After all-member preflight, the operation journals every borrowed ref/SHA and
+starts one checked `git update-ref --no-deref --stdin` verify-only transaction per
+member. `prepare` holds Git's ref locks. Direct symbolic identity and checkout
+conflicts are rechecked under all locks, because a verify of the same SHA alone
+can accept a symbolic ref. This is scoped Git transaction state, not an
+Outpost-created branch or permission to commit a ref update. On ordinary exit or
+fiber cancellation, ordered `abort` and stdin EOF must be acknowledged and the
+Git child must exit. Confirmed release is checked before atomic manifest
+publication, so later branch advancement remains current work rather than a new
+admission. Forced termination is only a failure fallback, never proof
+of successful release. Hard crashes leave recorded lock/artifact evidence for
+manual recovery, without automatic lock reaping.
+
+Ordinary `worktree add` attempts a HEAD ref update and conflicts with the prepared
+lock. Reuse therefore uses `worktree add --no-checkout --no-guess-remote`, records
+successful ownership, then populates only that new checkout with
+`read-tree -m -u --no-recurse-submodules <immutable-SHA>`. Unlike `--reset`, this
+one-way merge refuses untracked or modified files that would be overwritten.
+No reset, force checkout or branch update is used. Branch lock liveness, direct
+ref identity, checkout association/branch/HEAD and resume's bounded safe
+index/status rules are rechecked before admitting the manifest. External tools
+can bypass Git locks by overwriting files directly; raced or changed work is
+refused and preserved, never reset to make a check pass.
+
+Only reuse writes manifest version 4. Each member records
+`branchDisposition: existing` alongside `baseSource: local`, requested existing
+branch, full ref and immutable admission `baseCommit`. The schema requires these
+facts to match the frozen branch. Older strict version 3 loaders refuse the
+manifest before removing or rewriting it. Ordinary create keeps version 3 and
+reports `branchDisposition: created` in results. Show and resume preserve the
+existing-branch fact; resume's current HEAD remains separate. Existing branches
+never enter the in-memory rollback branch list, and no recovery journal grants
+branch deletion ownership. Removal already preserves every local branch.
+
 **Validation (pre-flight):**
 
 - Ticket, type, repository IDs, and an explicit base branch are validated as non-empty semantic identifiers without ASCII control characters before state or Git access
 - Ticket and type are also validated for path segment safety
-- Target branches must not already exist
+- Ordinary new-branch targets must not already exist; explicit reuse requires an existing unlinked direct local branch
 - Local/cached selections require an owned commit and its selected checkout objects; fresh execution validates fetched objects, while a fresh preview leaves remote existence unresolved
 - No two repos may produce colliding worktree paths
 - The ticket must not already have a manifest
@@ -414,7 +461,7 @@ network policy declares that explicit fresh selection can fetch; the default
 cached mode and all previews remain offline. Manifest version 3 independently
 protects stored provenance from incompatible older readers.
 
-Contract version `3.1.0` adds explicit safe workspace resume. Current branch/HEAD
+Contract version `3.1.0` added explicit safe workspace resume. Current branch/HEAD
 and working-state facts are separate from the manifest's original base
 provenance. The operation is offline and read-only, with partial/not-ready member
 diagnostics and no automatic repair. Package and persisted schema versions remain
@@ -471,6 +518,15 @@ and subprocess calls as development tooling, outside CLI command workflows.
 
 Package `files`, `man` and asset exports include guidance without postinstall
 hooks. Unix global npm installs link the scoped package's actual `outpost.1`.
+The CLI declares the shared Node adapter as an exact direct runtime dependency
+alongside Effect and the Node platform adapter. This consumer-visible pin aligns
+the runtime cohort without relying on a development lock or root-only override.
+Other transitive dependency ranges remain upstream-owned. A fresh empty-cache
+global installation resolves the shipped manifest; smoke verifies the adapter's
+actual nested resolution and shared Effect identity before exercising lifecycle
+commands. Deterministic resolution fixtures reject a missing shipped pin or a
+newer nested adapter even if the root versions look compatible.
+
 Installed tarball smoke tests read assets, compile every schema without a network
 loader, validate installed guidance/partial/error envelopes, export the portable
 skill, reject a second export and verify the man link resolves into the package.

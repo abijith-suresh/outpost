@@ -49,6 +49,27 @@ its actual ref/value and recorded ownership before making a recovery decision.
 Do not delete it merely to clear an error. Recovery records are
 inspection evidence, never automatic replay or deletion authority.
 
+## Existing branch admission
+
+`create --reuse-branch <name>` admits an existing direct branch already in each
+selected owned managed repository. It does not fetch, import source work, reset,
+rename or create that branch. Version 4 manifests record immutable admission
+provenance and `branchDisposition: existing`; previous readers refuse them.
+Current HEAD may later differ and remains separate from original provenance.
+
+All members are preflighted before workspace mutation. Prepared verify-only Git
+transactions hold branch locks during attachment. The journal records admission
+plans and lock intent before taking those locks. A hard crash can leave Git ref
+locks or unconfirmed worktree artifacts. Preserve them and verify the owner and
+actual Git state manually. Neither intent nor a matching path proves ownership,
+and no journal step grants permission to delete or reset an existing branch.
+Ordinary interruption aborts transactions and closes their input without ref
+updates. Dirty, advanced or uncertain residual work remains inspectable; never
+use force/prune or clear locks merely to make a retry pass. Missing/unsupported
+objects, external alternate pools or object/ref aliases, assigned filters, tracked submodules and unsupported status/index data
+require deliberate inspection, not a generic bypass. Existing ticket work uses
+explicit resume instead of creating over it.
+
 ## Operation failures
 
 `workspace resume <ticket>` reports an existing workspace without repairing it.
@@ -165,3 +186,5 @@ Re-run inspection after manual repair, then preview the intended lifecycle actio
 
 Do not hand-edit generated workspace guidance or Outpost-managed Git metadata as
 a shortcut. Repository application changes belong inside the child worktrees.
+
+Reuse object ownership includes selected loose commit/tree/blob files and fanout directories, plus bounded pack/index metadata. Preserve rejected symlinks, junctions and their targets. Do not copy, repack or unlink storage to make admission succeed; source-backed import remains a separate operation. Regular owned files and surviving hardlinks remain supported.

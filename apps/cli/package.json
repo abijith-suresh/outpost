@@ -57,12 +57,14 @@
     "test:smoke": "node scripts/smoke.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.typecheck.json",
-    "verify": "npm run typecheck && npm run docs:check && npm run test",
+    "verify": "npm run typecheck && npm run docs:check && npm run test && npm run test:runtime-dependencies",
     "docs:generate": "tsc -p tsconfig.json && node scripts/generate-docs.mjs && tsc -p tsconfig.json",
-    "docs:check": "tsc -p tsconfig.json && node scripts/generate-docs.mjs --check"
+    "docs:check": "tsc -p tsconfig.json && node scripts/generate-docs.mjs --check",
+    "test:runtime-dependencies": "node --test scripts/runtime-dependencies.test.mjs"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.6",
+    "@effect/platform-node-shared": "4.0.6",
     "effect": "4.0.6"
   },
   "devDependencies": {

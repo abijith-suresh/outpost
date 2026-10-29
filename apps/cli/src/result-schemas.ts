@@ -163,6 +163,7 @@ export const ResultSchemas = {
         repoName: Schema.String,
         path: Schema.String,
         branch: Schema.String,
+        branchDisposition: Schema.Literals(["created", "existing"]),
         base: Schema.String,
         baseSource: BaseSourceSchema,
         requestedBase: Schema.NullOr(Schema.String),

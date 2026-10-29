@@ -60,11 +60,43 @@
           "minItems": 1,
           "maxItems": 1
         },
+        "--reuse-branch": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
         "--dry-run": {
           "const": true
         }
       },
       "required": ["--ticket", "--type"],
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "--reuse-branch": {}
+            },
+            "required": ["--reuse-branch"],
+            "anyOf": [
+              {
+                "properties": {
+                  "--base": {}
+                },
+                "required": ["--base"]
+              },
+              {
+                "properties": {
+                  "--base-source": {}
+                },
+                "required": ["--base-source"]
+              }
+            ]
+          }
+        }
+      ],
       "anyOf": [
         {
           "properties": {

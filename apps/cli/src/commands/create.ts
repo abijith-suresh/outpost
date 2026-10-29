@@ -11,13 +11,17 @@ import {
   baseOutput,
   refreshBase,
   releaseBaseReceipt,
+  requireOwnedReuseStorage,
   resolveBase,
+  resolveExistingBranch,
 } from "../base-selection.js";
 import {
+  acquireBranchVerification,
   commandExitCode,
   commandResult,
   commandString,
   noLazyFetchGitCommand as gitCommand,
+  readOnlyGitCommand,
 } from "../child-process.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import type { RepoRecord } from "../config.js";
@@ -40,6 +44,7 @@ import {
   validateSemanticIdentifier,
   validateWorktreeGuidancePath,
 } from "../path-safety.js";
+import { requireOwnedReuseObjects } from "../reuse-object-storage.js";
 import type { CommandOutput } from "../types.js";
 import {
   validateWindowsInvocationCwd,
@@ -58,6 +63,7 @@ import {
   writeManifest,
 } from "../workspace-manifest.js";
 import * as CreatePrompt from "./create-prompt.js";
+import { preflightReusedTree, verifyNewWorktreeClean } from "./workspace-resume.js";
 
 export class CreateError extends Schema.TaggedError<CreateError>()("CreateError", {
   ...ErrorDetailFields,
@@ -65,7 +71,7 @@ export class CreateError extends Schema.TaggedError<CreateError>()("CreateError"
 }) {}
 
 const createUsage =
-  "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--dry-run]";
+  "Usage: outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run]";
 
 type CreateArgs = {
   ticket: string;
@@ -73,6 +79,7 @@ type CreateArgs = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  reuseBranch?: string;
   baseSource: BaseSource;
   dryRun: boolean;
 };
@@ -83,6 +90,7 @@ type CreateArgsInput = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  reuseBranch?: string;
   baseSource: BaseSource;
   dryRun: boolean;
 };
@@ -94,6 +102,8 @@ type CreatePlan = BaseSelection & {
   remoteName: string;
   worktreePath: string;
   branch: string;
+  verifyBranchLock?: Effect.Effect<void, CreateError>;
+  releaseBranchLock?: Effect.Effect<void, CreateError>;
 };
 
 type CreatedArtifacts = {
@@ -170,6 +180,7 @@ function parseCreateArgsInput(
         ticket: value("--ticket"),
         type: value("--type"),
         base: value("--base"),
+        reuseBranch: value("--reuse-branch"),
         baseSource: (() => {
           const source = value("--base-source") ?? "cached-remote";
           if (!["local", "cached-remote", "fresh-remote"].includes(source))
@@ -210,6 +221,7 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
     repoIds: parsedArgs.repoIds,
     tags: parsedArgs.tags,
     base: parsedArgs.base,
+    reuseBranch: parsedArgs.reuseBranch,
     baseSource: parsedArgs.baseSource,
     dryRun: parsedArgs.dryRun,
   });
@@ -282,6 +294,15 @@ function validateCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<void, Cr
         )
       );
     }
+    if (parsedArgs.reuseBranch !== undefined) {
+      yield* validateSemanticIdentifier("--reuse-branch", parsedArgs.reuseBranch).pipe(
+        Effect.mapError((error) => usageError(error.message))
+      );
+      if (parsedArgs.reuseBranch.startsWith("refs/"))
+        return yield* Effect.fail(
+          usageError("--reuse-branch accepts a local branch name without refs/heads/ prefix.")
+        );
+    }
   });
 }
 
@@ -326,6 +347,7 @@ function resolveCreateArgs(
 
     return yield* requireCreateArgs({
       ...promptedArgs,
+      reuseBranch: parsedArgs.reuseBranch,
       baseSource: parsedArgs.baseSource,
       dryRun: parsedArgs.dryRun,
     });
@@ -410,21 +432,34 @@ function buildCreatePlan(
   ticketDirectory: string,
   branchName: string,
   base: string | undefined,
-  source: BaseSource
-): Effect.Effect<CreatePlan, CreateError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> {
+  source: BaseSource,
+  reuse = false
+): Effect.Effect<
+  CreatePlan,
+  CreateError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
-    const selection = yield* resolveBase(repo, source, base).pipe(
+    const selection = yield* (
+      reuse ? resolveExistingBranch(repo, branchName) : resolveBase(repo, source, base)
+    ).pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
+    if (reuse)
+      yield* preflightReusedTree(repo.managedRepoPath, selection.startPoint ?? "", repo.id).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+        )
+      );
     const branchExists = yield* localBranchExists(repo, branchName).pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
 
-    if (branchExists) {
+    if (!reuse && branchExists) {
       return yield* Effect.fail(
         new CreateError({
           message: `Branch ${branchName} already exists for repo ${repo.id}.`,
@@ -477,7 +512,15 @@ function createWorktree(
   plan: CreatePlan
 ): Effect.Effect<void, CreateError, ChildProcessSpawner.ChildProcessSpawner> {
   return commandResult(
-    gitCommand("--git-dir", plan.managedRepoPath, "worktree", "add", plan.worktreePath, plan.branch)
+    gitCommand(
+      "--git-dir",
+      plan.managedRepoPath,
+      "worktree",
+      "add",
+      ...(plan.branchDisposition === "existing" ? ["--no-checkout", "--no-guess-remote"] : []),
+      plan.worktreePath,
+      plan.branch
+    )
   ).pipe(
     Effect.mapError(
       (error) =>
@@ -501,6 +544,29 @@ function createWorktree(
 function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
   return Effect.gen(function* () {
     for (const plan of plans) {
+      if (plan.verifyBranchLock) yield* plan.verifyBranchLock;
+      if (plan.branchDisposition === "existing") {
+        yield* requireOwnedReuseObjects(plan.managedRepoPath, plan.startPoint ?? "", plan.repoId);
+        yield* requireOwnedReuseStorage(
+          { id: plan.repoId, managedRepoPath: plan.managedRepoPath },
+          plan.branch
+        );
+        const symbolic = yield* commandExitCode(
+          gitCommand(
+            "--git-dir",
+            plan.managedRepoPath,
+            "symbolic-ref",
+            "--quiet",
+            `refs/heads/${plan.branch}`
+          )
+        );
+        if (symbolic !== 1)
+          return yield* Effect.fail(
+            new CreateError({
+              message: `Existing branch became symbolic or unavailable for ${plan.repoId}; preserve residual work instead of claiming admission provenance.`,
+            })
+          );
+      }
       const owned = yield* verifyWorktreeOwnership(plan.worktreePath, plan.managedRepoPath);
       if (!owned)
         return yield* Effect.fail(
@@ -517,21 +583,24 @@ function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
       )).trim();
       // Use the checkout gitfile so Git does not revalidate the longer linked
       // admin path as an explicit GIT_DIR when --work-tree is supplied.
-      const status = yield* commandString(
-        gitCommand(
-          "-C",
-          plan.worktreePath,
-          "--git-dir",
-          ".git",
-          "--work-tree",
-          plan.worktreePath,
-          "-c",
-          "core.bare=false",
-          "status",
-          "--porcelain",
-          "--untracked-files=all"
-        )
-      );
+      const status =
+        plan.branchDisposition === "existing"
+          ? yield* verifyNewWorktreeClean(plan.worktreePath, plan.repoId, plan.startPoint ?? "")
+          : yield* commandString(
+              gitCommand(
+                "-C",
+                plan.worktreePath,
+                "--git-dir",
+                ".git",
+                "--work-tree",
+                plan.worktreePath,
+                "-c",
+                "core.bare=false",
+                "status",
+                "--porcelain",
+                "--untracked-files=all"
+              )
+            );
       if (
         branch !== `refs/heads/${plan.branch}` ||
         head !== plan.startPoint ||
@@ -763,7 +832,8 @@ function prepareCreate(
   selectedRepos: ReadonlyArray<RepoRecord>,
   branchName: string,
   base: string | undefined,
-  source: BaseSource
+  source: BaseSource,
+  reuse = false
 ): Effect.Effect<
   ReadonlyArray<CreatePlan>,
   CreateError,
@@ -816,7 +886,7 @@ function prepareCreate(
       )
     );
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
-      buildCreatePlan(repo, ticketDirectory, branchName, base, source)
+      buildCreatePlan(repo, ticketDirectory, branchName, base, source, reuse)
     );
 
     yield* ensureUniqueWorktreePaths(plans);
@@ -908,8 +978,30 @@ export function runCreate(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
-    const branchName = `${parsedArgs.type}/${parsedArgs.ticket}`;
+    const branchName = parsedArgs.reuseBranch ?? `${parsedArgs.type}/${parsedArgs.ticket}`;
     yield* validateBranchName(branchName);
+    if (parsedArgs.reuseBranch !== undefined) {
+      const redirects = [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+        "GIT_SHALLOW_FILE",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_GRAFT_FILE",
+        "GIT_ATTR_SOURCE",
+      ].filter((name) => process.env[name] !== undefined);
+      if (redirects.length)
+        return yield* Effect.fail(
+          new CreateError({
+            ...reasonDetails("invalid-state"),
+            message: `Existing branch reuse refuses inherited repository redirection (${redirects.join(", ")}). Use an ordinary Git environment and preserve existing work; no variable values are emitted.`,
+          })
+        );
+    }
 
     const mutation = parsedArgs.dryRun
       ? undefined
@@ -983,7 +1075,8 @@ export function runCreate(
         selectedRepos,
         branchName,
         parsedArgs.base,
-        parsedArgs.baseSource
+        parsedArgs.baseSource,
+        parsedArgs.reuseBranch !== undefined
       );
 
       return {
@@ -1024,8 +1117,76 @@ export function runCreate(
         selectedRepos,
         branchName,
         parsedArgs.base,
-        parsedArgs.baseSource
+        parsedArgs.baseSource,
+        parsedArgs.reuseBranch !== undefined
       );
+      if (parsedArgs.reuseBranch !== undefined) {
+        yield* record({
+          action: "verify-existing-branches",
+          phase: "intent",
+          branchDisposition: "existing",
+          ticket: parsedArgs.ticket,
+          plans,
+        });
+        const locked: CreatePlan[] = [];
+        for (const plan of plans) {
+          const branchLock = yield* acquireBranchVerification(
+            plan.managedRepoPath,
+            `refs/heads/${plan.branch}`,
+            plan.startPoint ?? ""
+          ).pipe(
+            Effect.mapError(
+              (error) => new CreateError({ ...domainDetails(error), message: error.message })
+            )
+          );
+          // A live Effect is not journal data. Keep the scoped verifier off the
+          // enumerable immutable plan persisted for manual recovery.
+          Object.defineProperty(plan, "verifyBranchLock", {
+            value: branchLock.verify.pipe(
+              Effect.mapError(
+                (error) => new CreateError({ ...domainDetails(error), message: error.message })
+              )
+            ),
+          });
+          Object.defineProperty(plan, "releaseBranchLock", {
+            value: branchLock.release.pipe(
+              Effect.mapError(
+                (error) => new CreateError({ ...domainDetails(error), message: error.message })
+              )
+            ),
+          });
+          locked.push(plan);
+          yield* record({
+            action: "verify-existing-branch",
+            phase: "prepared",
+            repoId: plan.repoId,
+            managedRepoPath: plan.managedRepoPath,
+            branch: plan.branch,
+            admissionCommit: plan.startPoint,
+            branchDisposition: "existing",
+          });
+        }
+        plans = locked;
+        // Recheck symbolic attachment and checkout conflict under every prepared ref lock.
+        for (let index = 0; index < plans.length; index++) {
+          const selected = yield* resolveExistingBranch(
+            selectedRepos[index],
+            plans[index].branch
+          ).pipe(
+            Effect.mapError(
+              (error) => new CreateError({ ...domainDetails(error), message: error.message })
+            )
+          );
+          if (selected.startPoint !== plans[index].startPoint)
+            return yield* Effect.fail(
+              new CreateError({
+                message: `Existing branch changed for ${plans[index].repoId}; no workspace was created.`,
+              })
+            );
+          yield* plans[index].verifyBranchLock ??
+            Effect.fail(new CreateError({ message: "Missing existing branch admission lock." }));
+        }
+      }
       if (parsedArgs.baseSource === "fresh-remote") {
         // Validate every transport before the first fetch; local/cached modes never touch it.
         for (const repo of selectedRepos)
@@ -1091,16 +1252,29 @@ export function runCreate(
         );
 
         for (const plan of plans) {
-          yield* record({ action: "create-branch", phase: "intent", ...plan });
-          yield* Effect.uninterruptibleMask((restore) =>
-            Effect.gen(function* () {
-              // Git remains interruptible. Only a successful result confirms
-              // that this operation created the artifact; intent is not proof.
-              yield* restore(createBranch(plan));
-              created.branches.push(plan);
-            })
-          );
-          yield* record({ action: "create-branch", phase: "confirmed", ...plan });
+          if (plan.branchDisposition !== "existing") {
+            yield* record({ action: "create-branch", phase: "intent", ...plan });
+            yield* Effect.uninterruptibleMask((restore) =>
+              Effect.gen(function* () {
+                // Git remains interruptible. Only a successful result confirms
+                // that this operation created the artifact; intent is not proof.
+                yield* restore(createBranch(plan));
+                created.branches.push(plan);
+              })
+            );
+            yield* record({ action: "create-branch", phase: "confirmed", ...plan });
+          } else {
+            yield* plan.verifyBranchLock ??
+              Effect.fail(new CreateError({ message: "Missing existing branch admission lock." }));
+            yield* record({
+              action: "borrow-existing-branch",
+              phase: "verified",
+              repoId: plan.repoId,
+              branch: plan.branch,
+              admissionCommit: plan.startPoint,
+              branchDisposition: "existing",
+            });
+          }
           yield* record({ action: "create-worktree", phase: "intent", ...plan });
           yield* Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
@@ -1109,6 +1283,34 @@ export function runCreate(
             })
           );
           yield* record({ action: "create-worktree", phase: "confirmed", ...plan });
+          if (plan.branchDisposition === "existing") {
+            // Populate only this newly confirmed worktree. One-way merge refuses
+            // raced untracked/modified files; --reset and checkout force are forbidden.
+            yield* requireOwnedReuseObjects(
+              plan.managedRepoPath,
+              plan.startPoint ?? "",
+              plan.repoId
+            );
+            yield* plan.verifyBranchLock ??
+              Effect.fail(new CreateError({ message: "Missing existing branch admission lock." }));
+            yield* commandString(
+              readOnlyGitCommand(
+                "-C",
+                plan.worktreePath,
+                "--git-dir",
+                ".git",
+                "--work-tree",
+                plan.worktreePath,
+                "-c",
+                "core.bare=false",
+                "read-tree",
+                "-m",
+                "-u",
+                "--no-recurse-submodules",
+                plan.startPoint ?? ""
+              )
+            );
+          }
         }
 
         yield* verifyCreatedPlans(plans);
@@ -1125,6 +1327,9 @@ export function runCreate(
               requestedBase: plan.requestedBase,
               baseRef: plan.baseRef,
               baseCommit: plan.startPoint ?? undefined,
+              ...(plan.branchDisposition === "existing"
+                ? { branchDisposition: "existing" as const }
+                : {}),
               managedPath: pathModule.relative(config.reposRoot, repo.managedRepoPath),
               worktreePath: pathModule.relative(ticketDirectory, plan.worktreePath),
             } satisfies RepositoryEntry);
@@ -1133,7 +1338,7 @@ export function runCreate(
         );
 
         const manifest: Manifest = {
-          version: 3,
+          version: parsedArgs.reuseBranch === undefined ? 3 : 4,
           worktreesRoot: provenanceConfig.worktreesRoot,
           ticket: parsedArgs.ticket,
           type: parsedArgs.type,
@@ -1171,6 +1376,23 @@ export function runCreate(
         }
         yield* record({ action: "write-workspace-manifest", ticket: parsedArgs.ticket, manifest });
         yield* verifyCreatedPlans(plans);
+        for (const plan of plans) {
+          if (plan.releaseBranchLock) {
+            yield* record({
+              action: "release-existing-branch-lock",
+              phase: "intent",
+              repoId: plan.repoId,
+              branch: plan.branch,
+            });
+            yield* plan.releaseBranchLock;
+            yield* record({
+              action: "release-existing-branch-lock",
+              phase: "confirmed",
+              repoId: plan.repoId,
+              branch: plan.branch,
+            });
+          }
+        }
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             yield* writeManifest(outpostHome, manifest).pipe(
@@ -1202,6 +1424,9 @@ export function runCreate(
           },
         } satisfies CommandOutput<"create">;
       }).pipe(
+        Effect.mapError(
+          (error) => new CreateError({ ...domainDetails(error), message: error.message })
+        ),
         Effect.onInterrupt(() =>
           created.committed
             ? Effect.void

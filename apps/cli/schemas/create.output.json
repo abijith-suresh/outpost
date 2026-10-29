@@ -57,6 +57,10 @@
                   "branch": {
                     "type": "string"
                   },
+                  "branchDisposition": {
+                    "type": "string",
+                    "enum": ["created", "existing"]
+                  },
                   "base": {
                     "type": "string"
                   },
@@ -97,6 +101,7 @@
                   "repoName",
                   "path",
                   "branch",
+                  "branchDisposition",
                   "base",
                   "baseSource",
                   "requestedBase",
