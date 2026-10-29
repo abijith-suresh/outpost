@@ -648,6 +648,10 @@ identity, branch attachment, metadata parents and raw/canonical Windows budgets 
 checked for every member before effects. Prepared ref creation rejects symbolic
 branches; new checkouts attach only the captured SHA. Manifest v5 records the
 backend, stable common/created checkout/admin identities, root and provenance.
+Existing checkout and reciprocal pointer targets are compared by canonical filesystem
+identity, permitting equivalent parent aliases and Windows short-name spellings.
+Frozen device/inode identities, administrative containment, raw/canonical path
+budgets and leaf-alias refusal still apply; replacement or foreign targets fail.
 Resume/show/remove use frozen storage independently of a missing launch anchor;
 registration checks and unregister barriers never adopt a replacement source.
 

@@ -6,7 +6,11 @@ import * as Path from "effect/Path";
 import { BorrowedError, directoryIdentity } from "./borrowed-repo.js";
 import type { BorrowedRecord, WorkspaceStorage } from "./borrowed-schema.js";
 import { readOnlyGitCommand } from "./child-process.js";
-import { validateWindowsExistingWorktree } from "./windows-git-path.js";
+import {
+  validateWindowsCheckout,
+  validateWindowsExistingWorktree,
+  validateWindowsGitPath,
+} from "./windows-git-path.js";
 
 export function verifyDirectory(saved: BorrowedRecord["common"]) {
   return Effect.gen(function* () {
@@ -83,12 +87,13 @@ export function verifyWorkspaceStorage(storage: WorkspaceStorage, checkoutPath: 
     yield* validateWindowsExistingWorktree(storage.common.path, checkoutPath);
     for (const saved of [storage.common, storage.checkout, storage.administration])
       yield* verifyDirectory(saved);
+    const actualCheckout = yield* directoryIdentity(checkoutPath);
     if (
-      path.resolve(checkoutPath) !== storage.checkout.path ||
+      JSON.stringify(actualCheckout) !== JSON.stringify(storage.checkout) ||
       path.dirname(storage.administration.path) !== path.join(storage.common.path, "worktrees")
     )
       return yield* new BorrowedError({
-        message: "Frozen checkout/admin paths do not belong to the recorded storage.",
+        message: `Frozen checkout/admin paths do not belong to the recorded storage: requested ${checkoutPath}, resolved ${actualCheckout.path}, recorded ${storage.checkout.path}.`,
       });
     const gitfile = (yield* fs.readFileString(path.join(checkoutPath, ".git"))).trim();
     const back = (yield* fs.readFileString(
@@ -97,16 +102,47 @@ export function verifyWorkspaceStorage(storage: WorkspaceStorage, checkoutPath: 
     const common = (yield* fs.readFileString(
       path.join(storage.administration.path, "commondir")
     )).trim();
+    if (!gitfile.startsWith("gitdir: ") || !back || !common)
+      return yield* new BorrowedError({
+        message: "Frozen checkout/common reciprocal pointers are malformed.",
+      });
+    // Existing path spellings may differ through a parent junction or Windows
+    // short name. Match canonical targets AND lossless filesystem identity,
+    // never a lexical normalization or a replacement-directory fallback.
+    const pointedAdmin = yield* directoryIdentity(path.resolve(checkoutPath, gitfile.slice(8)));
+    const pointedCommon = yield* directoryIdentity(
+      path.resolve(storage.administration.path, common)
+    );
+    const backFile = path.resolve(storage.administration.path, back);
+    yield* validateWindowsCheckout(path.dirname(backFile));
+    yield* validateWindowsGitPath(path.resolve(storage.administration.path, common), "gitdir");
+    const actualBack = yield* fs.realPath(backFile);
+    const expectedBack = yield* fs.realPath(path.join(storage.checkout.path, ".git"));
+    const leaves = [
+      checkoutPath,
+      path.resolve(checkoutPath, gitfile.slice(8)),
+      backFile,
+      path.resolve(storage.administration.path, common),
+      path.join(checkoutPath, ".git"),
+    ];
+    yield* Effect.tryPromise({
+      try: async () => {
+        for (const leaf of leaves)
+          if ((await lstat(leaf)).isSymbolicLink())
+            throw new Error(`Unexpected leaf alias at ${leaf}`);
+      },
+      catch: (error) =>
+        new BorrowedError({
+          message: `${error instanceof Error ? error.message : "Cannot verify pointer leaves"}. Preserve source and checkout.`,
+        }),
+    });
     if (
-      !gitfile.startsWith("gitdir: ") ||
-      path.resolve(checkoutPath, gitfile.slice(8)) !== storage.administration.path ||
-      path.resolve(storage.administration.path, back) !==
-        path.join(storage.checkout.path, ".git") ||
-      path.resolve(storage.administration.path, common) !== storage.common.path
+      JSON.stringify(pointedAdmin) !== JSON.stringify(storage.administration) ||
+      actualBack !== expectedBack ||
+      JSON.stringify(pointedCommon) !== JSON.stringify(storage.common)
     )
       return yield* new BorrowedError({
-        message:
-          "Frozen checkout/common reciprocal pointers changed. Preserve source and checkout.",
+        message: `Frozen checkout/common reciprocal pointer identity changed: admin ${pointedAdmin.path}, recorded ${storage.administration.path}; back ${actualBack}, expected ${expectedBack}; common ${pointedCommon.path}, recorded ${storage.common.path}. Preserve source and checkout.`,
       });
   });
 }

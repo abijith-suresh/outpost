@@ -1,10 +1,22 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, lstatSync, readdirSync, realpathSync, renameSync, symlinkSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  ftruncateSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  symlinkSync,
+  writeSync,
+} from "node:fs";
 import { NodeServices } from "@effect/platform-node";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { describe, expect, it, vi } from "vitest";
 import { withAttributeIndex } from "../src/attribute-inspection.ts";
+import { captureWorkspaceStorage, verifyWorkspaceStorage } from "../src/borrowed-workspace.ts";
 import * as Adapter from "../src/child-process.ts";
 import { runCreate } from "../src/commands/create.ts";
 import * as Store from "../src/store.ts";
@@ -107,6 +119,71 @@ function args(id: string, ticket = "LOCAL", base = "refs/heads/main") {
 }
 
 describe("borrowed local NEW workspaces", () => {
+  it("accepts existing alias-parent spelling but rejects foreign pointers and replaced checkout identity", async () => {
+    const f = await fixture();
+    const outer = createTempDir("outpost-alias-parent-");
+    const actual = path.join(outer, "real");
+    const alias = path.join(outer, "alias");
+    mkdirSync(actual);
+    symlinkSync(actual, alias, process.platform === "win32" ? "junction" : "dir");
+    const checkout = path.join(alias, "checkout");
+    git(f.source, "worktree", "add", "-b", "feat/ALIAS", checkout, f.sha);
+    const storage = await Effect.runPromise(
+      captureWorkspaceStorage(f.repo, checkout).pipe(Effect.provide(NodeServices.layer))
+    );
+    expect(storage.checkout.path).toBe(realpathSync.native(checkout));
+    // Use r+ for Git-created hidden files on Windows, preserving the file identity.
+    const overwrite = (file: string, text: string) => {
+      const fd = openSync(file, "r+");
+      try {
+        ftruncateSync(fd, 0);
+        writeSync(fd, text);
+      } finally {
+        closeSync(fd);
+      }
+    };
+    const sourceAlias = path.join(outer, "source-alias");
+    symlinkSync(f.source, sourceAlias, process.platform === "win32" ? "junction" : "dir");
+    const admin = storage.administration.path;
+    overwrite(
+      path.join(checkout, ".git"),
+      `gitdir: ${path.join(sourceAlias, ".git", "worktrees", path.basename(admin))}\n`
+    );
+    overwrite(path.join(admin, "commondir"), `${path.join(sourceAlias, ".git")}\n`);
+    // Git's back-pointer already uses the aliased checkout spelling.
+    await Effect.runPromise(
+      verifyWorkspaceStorage(storage, checkout).pipe(Effect.provide(NodeServices.layer))
+    );
+    const back = path.join(admin, "gitdir");
+    const originalBack = readFileSync(back, "utf8");
+    const foreign = path.join(actual, "foreign");
+    git(f.source, "worktree", "add", "--detach", foreign, f.sha);
+    overwrite(back, `${path.join(foreign, ".git")}\n`);
+    const foreignBefore = snapshot(f.source);
+    const foreignResult = await Effect.runPromise(
+      Effect.exit(verifyWorkspaceStorage(storage, checkout)).pipe(
+        Effect.provide(NodeServices.layer)
+      )
+    );
+    expect(foreignResult._tag).toBe("Failure");
+    preserved(foreignBefore);
+    overwrite(back, originalBack);
+    const original = snapshot(f.source);
+    const realCheckout = path.join(actual, "checkout");
+    renameSync(realCheckout, `${realCheckout}-held`);
+    mkdirSync(realCheckout);
+    writeFileSync(
+      path.join(realCheckout, ".git"),
+      readFileSync(path.join(`${realCheckout}-held`, ".git"))
+    );
+    const result = await Effect.runPromise(
+      Effect.exit(verifyWorkspaceStorage(storage, checkout)).pipe(
+        Effect.provide(NodeServices.layer)
+      )
+    );
+    expect(result._tag).toBe("Failure");
+    preserved(original);
+  });
   it.each(["index", "alias"])(
     "preserves unexpected private inspection %s residue without deleting raced paths",
     async (kind) => {
@@ -469,7 +546,14 @@ describe("borrowed local NEW workspaces", () => {
     const fiber = Effect.runFork(
       runCreate(args(f.repo.id), { interactive: false }).pipe(Effect.provide(NodeServices.layer))
     );
-    await reached;
+    await Promise.race([
+      reached,
+      Effect.runPromise(Fiber.await(fiber)).then((exit) => {
+        throw new Error(
+          `Creation ended before the intended manifest pause: ${JSON.stringify(exit)}`
+        );
+      }),
+    ]);
     const checkout = path.join(f.home, "worktrees", "LOCAL", "app");
     git(checkout, "commit", "--allow-empty", "-m", "user advanced");
     const advanced = git(checkout, "rev-parse", "HEAD");
@@ -580,7 +664,14 @@ describe("borrowed local NEW workspaces", () => {
           Effect.provide(NodeServices.layer)
         )
       );
-      await reached;
+      await Promise.race([
+        reached,
+        Effect.runPromise(Fiber.await(fiber)).then((exit) => {
+          throw new Error(
+            `Creation ended before the intended manifest pause: ${JSON.stringify(exit)}`
+          );
+        }),
+      ]);
       const checkout = path.join(f.home, "worktrees", "ABA", "app");
       git(checkout, "commit", "--allow-empty", "-m", "unique B");
       const b = git(checkout, "rev-parse", "HEAD");
