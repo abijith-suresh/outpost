@@ -186,3 +186,5 @@ Re-run inspection after manual repair, then preview the intended lifecycle actio
 
 Do not hand-edit generated workspace guidance or Outpost-managed Git metadata as
 a shortcut. Repository application changes belong inside the child worktrees.
+
+Reuse object ownership includes selected loose commit/tree/blob files and fanout directories, plus bounded pack/index metadata. Preserve rejected symlinks, junctions and their targets. Do not copy, repack or unlink storage to make admission succeed; source-backed import remains a separate operation. Regular owned files and surviving hardlinks remain supported.

@@ -138,7 +138,7 @@ All selected members must pass ownership, local-object, direct-branch and
 checkout-conflict checks before workspace/configuration mutation. Reuse never
 fetches, imports source-only branches, resolves a remote default, resets or
 renames refs. Missing local objects and promisor objects fail without fetching.
-External object pools, aliased object directories and filesystem ref aliases are refused. Reuse validates canonical containment and never adopts objects or refs through another directory, even when Git can resolve them. Alternate metadata is preserved, never removed as a repair.
+External object pools, aliased object directories and filesystem ref aliases are refused. Reuse validates canonical containment and never adopts objects or refs through another directory, even when Git can resolve them. Alternate metadata is preserved, never removed as a repair. Selected commit/tree/blob loose files and their fanout directories, plus bounded pack/index metadata, must also be owned regular storage. Ordinary regular files and surviving hardlink clones remain supported. Replacement refs are refused because Git omits their replacement commit dependencies from the selected object inventory. Inspection never copies, repacks or repairs objects.
 Assigned content filters or tracked submodules are unsupported in reuse because
 creation cannot promise a safe, known working state for them. Resume's existing
 split-index, filter and submodule unknown-status limits remain in effect.

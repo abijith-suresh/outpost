@@ -44,6 +44,7 @@ import {
   validateSemanticIdentifier,
   validateWorktreeGuidancePath,
 } from "../path-safety.js";
+import { requireOwnedReuseObjects } from "../reuse-object-storage.js";
 import type { CommandOutput } from "../types.js";
 import {
   validateWindowsInvocationCwd,
@@ -545,6 +546,7 @@ function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
     for (const plan of plans) {
       if (plan.verifyBranchLock) yield* plan.verifyBranchLock;
       if (plan.branchDisposition === "existing") {
+        yield* requireOwnedReuseObjects(plan.managedRepoPath, plan.startPoint ?? "", plan.repoId);
         yield* requireOwnedReuseStorage(
           { id: plan.repoId, managedRepoPath: plan.managedRepoPath },
           plan.branch
@@ -1284,6 +1286,11 @@ export function runCreate(
           if (plan.branchDisposition === "existing") {
             // Populate only this newly confirmed worktree. One-way merge refuses
             // raced untracked/modified files; --reset and checkout force are forbidden.
+            yield* requireOwnedReuseObjects(
+              plan.managedRepoPath,
+              plan.startPoint ?? "",
+              plan.repoId
+            );
             yield* plan.verifyBranchLock ??
               Effect.fail(new CreateError({ message: "Missing existing branch admission lock." }));
             yield* commandString(

@@ -294,6 +294,11 @@ describe("explicit existing managed branch reuse", () => {
   it("attaches exact branch-only work offline, records admission separately, resumes advanced work and preserves refs on removal", async () => {
     const f = await fixture();
     const initial = borrow(f);
+    const originalSource = readFileSync(path.join(f.f.tempRepo, "README.md"));
+    // Synthetic repo contract: a Git-created checkout must use LF regardless
+    // of inherited Windows checkout settings. Product configuration is untouched.
+    git(["--git-dir", f.repo.managedRepoPath, "config", "--local", "core.autocrlf", "false"]);
+    git(["--git-dir", f.repo.managedRepoPath, "config", "--local", "core.eol", "lf"]);
     renameSync(f.f.tempRemote, `${f.f.tempRemote}.offline`);
     const created = await ok("create", ...args(f, "REUSE"));
     const member = created.worktrees[0];
@@ -308,8 +313,10 @@ describe("explicit existing managed branch reuse", () => {
     });
     expect(git(["-C", member.path, "rev-parse", "HEAD"])).toBe(initial);
     expect(git(["-C", member.path, "symbolic-ref", "HEAD"])).toBe("refs/heads/borrowed/work");
-    expect(readFileSync(path.join(member.path, "README.md"), "utf8")).toBe(
-      readFileSync(path.join(f.f.tempRepo, "README.md"), "utf8")
+    expect(readFileSync(path.join(member.path, "README.md"))).toEqual(originalSource);
+    expect(readFileSync(path.join(f.f.tempRepo, "README.md"))).toEqual(originalSource);
+    expect(git(["hash-object", "--no-filters", path.join(member.path, "README.md")])).toBe(
+      git(["--git-dir", f.repo.managedRepoPath, "rev-parse", `${initial}:README.md`])
     );
     const manifestPath = path.join(f.home, "workspaces", "REUSE.json");
     const raw = readFileSync(manifestPath, "utf8");

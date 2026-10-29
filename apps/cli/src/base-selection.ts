@@ -12,6 +12,7 @@ import {
 import type { RepoRecord } from "./config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { resolveCanonicalPath } from "./path-safety.js";
+import { requireOwnedReuseObjects } from "./reuse-object-storage.js";
 
 export const BaseSourceSchema = Schema.Literals(["local", "cached-remote", "fresh-remote"]);
 export type BaseSource = typeof BaseSourceSchema.Type;
@@ -103,6 +104,7 @@ export function resolveExistingBranch(repo: RepoRecord, branch: string) {
     );
     const commit = resolved.trim();
     if (!validOid(commit)) return yield* invalid(`Invalid existing branch commit for ${repo.id}.`);
+    yield* requireOwnedReuseObjects(repo.managedRepoPath, commit, repo.id);
     const actual = (yield* commandString(
       gitCommand(
         "--git-dir",

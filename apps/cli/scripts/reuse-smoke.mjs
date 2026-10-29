@@ -9,6 +9,8 @@ import {
   readFileSync,
   readlinkSync,
   renameSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
@@ -120,6 +122,47 @@ export function verifyReuseWorkflow({ runInstalled, validateInstalled, smokeRoot
     refsBeforeRefusal,
     "later member refusal changed an existing branch"
   );
+  // Fixture owner temporarily moves its own object outside storage. Reuse must
+  // refuse both leaf aliases and directory junctions without repairing either.
+  for (const kind of ["leaf", "fanout"]) {
+    const repo = repos[0];
+    const sha = originalHeads[0];
+    const fanout = join(repo.managedRepoPath, "objects", sha.slice(0, 2));
+    const loose = join(fanout, sha.slice(2));
+    const original = kind === "leaf" ? loose : fanout;
+    const held = join(fixture, `external-object-${kind}`);
+    const refBytes = readFileSync(
+      join(repo.managedRepoPath, "refs", "heads", ...branch.split("/"))
+    );
+    renameSync(original, held);
+    symlinkSync(
+      held,
+      original,
+      kind === "leaf" ? "file" : process.platform === "win32" ? "junction" : "dir"
+    );
+    const externalBefore = snapshot(held);
+    for (const dry of [true, false]) {
+      const ticket = `BORROW-OBJECT-${kind}-${dry ? "DRY" : "RUN"}`;
+      const refusedAlias = call([...reuseArgs(ticket), ...(dry ? ["--dry-run"] : [])], 1);
+      assert.match(refusedAlias.error.message, /alias|ownership|storage/i);
+      assert.ok(!existsSync(join(home, "worktrees", ticket)));
+      assert.ok(!existsSync(join(home, "workspaces", `${ticket}.json`)));
+      assert.deepEqual(
+        readFileSync(join(repo.managedRepoPath, "refs", "heads", ...branch.split("/"))),
+        refBytes
+      );
+      assert.deepEqual(snapshot(held), externalBefore);
+      assert.ok(lstatSync(original).isSymbolicLink());
+    }
+    renameSync(held, `${held}.absent`);
+    assert.throws(() =>
+      git(["--git-dir", repo.managedRepoPath, "cat-file", "-e", `${sha}^{commit}`])
+    );
+    renameSync(`${held}.absent`, held);
+    // Explicit fixture teardown, never an Outpost repair or source import.
+    unlinkSync(original);
+    renameSync(held, original);
+  }
   const beforePreview = snapshot(home);
   const preview = call([...reuseArgs("BORROW-NEW"), "--dry-run"]).data;
   assert.equal(preview.branch, branch);
