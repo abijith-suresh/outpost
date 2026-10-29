@@ -44,6 +44,8 @@ Commands:
                          Create worktrees for imported repositories
   doctor [--json]      Report local CLI environment status
   init [--json]        Initialize Outpost home and worktrees roots
+  repo register <checkout> --name NAME [--dry-run] [--json]
+                       Register borrowed clone storage offline, source unchanged
   repo add <path> [--remote <name>] [--json]
                        Validate a local repository for Outpost registration
   repo fetch --all [--json]
@@ -412,3 +414,26 @@ compiled with the CLI. Changed or stale schema assets fail with a structured
 `invalid-state` error instead of advertising a successful contract. Restore or
 reinstall the package rather than editing installed schemas. This check works
 offline and detects individual asset damage, not replacement of package code.
+
+### Register an existing clone offline
+
+`outpost repo register <checkout> --name NAME [--dry-run] --json` records borrowed
+storage without clone/fetch, credential-helper execution, source markers or Git
+changes. Ordinary local-only/unborn clones and verified linked checkouts work.
+The returned `local:<uuid>` identifies that common directory, independent of
+remote URLs. Aliases return the existing record; independent clones remain distinct.
+Registration is not ownership or backup. Stable filesystem identity must remain
+available; replacement storage is never automatically adopted.
+
+`repo list`, `repo show <id>`, `repo remove <id>`, retained inspection and
+`repo restore <id>` support these records offline. Remove reports
+`external-unchanged` and preserves all source files, branches, configuration,
+hooks and objects. Restore validates the original anchor/common/private identity.
+Read-only commands never upgrade metadata. Windows path budgets still apply.
+
+Borrowed workspace create/reuse and fetch are not supported in this increment.
+Explicit borrowed or mixed selections refuse before any selected repository's
+Git mutation or network access. `repo fetch --all` refuses when borrowed records
+are active. Managed-only workflows and historic workspace roots remain supported.
+Local workspace creation and explicit named-remote/auth support require later
+increments. No credentials are collected or copied by registration.

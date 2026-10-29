@@ -190,6 +190,11 @@ describe("semantic identifier command boundaries", () => {
       message: "--repo may not contain ASCII control characters.",
     },
     {
+      name: "borrowed repository id",
+      argv: ["create", "--ticket", "TICKET-1", "--type", "feat", "--repo", "local:bad\u001b"],
+      message: "--repo may not contain ASCII control characters.",
+    },
+    {
       name: "create base branch",
       argv: [
         "create",

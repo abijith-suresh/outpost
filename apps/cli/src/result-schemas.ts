@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { BaseSourceSchema, CommitSchema, ProvenanceFields } from "./base-selection.js";
+import { BorrowedRecordSchema } from "./borrowed-schema.js";
 
 const strings = Schema.Array(Schema.String);
 const optionalString = Schema.optional(Schema.String);
@@ -104,10 +105,32 @@ const removal = Schema.Struct({
   ),
   approvalRequired: optionalBoolean,
 });
+const borrowedInspection = Schema.Struct({
+  ...BorrowedRecordSchema.fields,
+  retainedAt: optionalString,
+  status: Schema.Literals(["ok", "unavailable"]),
+  storage: Schema.Literal("external-unchanged"),
+  diagnostics: strings,
+});
+const borrowedTransfer = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  kind: Schema.Literal("borrowed"),
+  commonDirectory: Schema.String,
+  storage: Schema.Literal("external-unchanged"),
+  action: Schema.Literals(["unregistered", "restored"]),
+  dryRun: Schema.Boolean,
+  recoveryCommand: Schema.String,
+});
 export const ResultSchemas = {
+  "repo register": Schema.Struct({
+    action: Schema.Literals(["registered", "already-registered"]),
+    repository: BorrowedRecordSchema,
+    dryRun: Schema.Boolean,
+  }),
   "config show": Schema.Struct({
-    version: Schema.Literals([1, 2]),
-    storedVersion: Schema.Literals([1, 2]),
+    version: Schema.Literals([1, 2, 3]),
+    storedVersion: Schema.Literals([1, 2, 3]),
     outpostHome: Schema.String,
     reposRoot: Schema.String,
     worktreesRoot: Schema.String,
@@ -218,8 +241,11 @@ export const ResultSchemas = {
     ready: Schema.Boolean,
     blockers: strings,
   }),
-  "repo list": Schema.Struct({ missingRepoCount: Schema.Natural, repos: Schema.Array(repo) }),
-  "repo show": repo,
+  "repo list": Schema.Struct({
+    missingRepoCount: Schema.Natural,
+    repos: Schema.Array(Schema.Union([repo, borrowedInspection])),
+  }),
+  "repo show": Schema.Union([repo, borrowedInspection]),
   "repo fetch": Schema.Struct({
     failedCount: Schema.Natural,
     fetchedCount: Schema.Natural,
@@ -243,27 +269,33 @@ export const ResultSchemas = {
       })
     ),
   }),
-  "repo restore": Schema.Struct({
-    id: Schema.String,
-    name: Schema.String,
-    managedRepoPath: Schema.String,
-    action: Schema.Literal("restored"),
-    storage: Schema.Literal("retained"),
-    dryRun: optionalBoolean,
-  }),
-  "repo remove": Schema.Struct({
-    id: Schema.String,
-    name: Schema.String,
-    managedRepoPath: Schema.String,
-    remoteUrl: Schema.String,
-    sourceRepoPath: Schema.String,
-    warnings: strings,
-    action: Schema.Literal("unregistered"),
-    storage: Schema.Literals(["retained", "missing"]),
-    retainedAt: Schema.String,
-    recoveryCommand: Schema.String,
-    dryRun: optionalBoolean,
-  }),
+  "repo restore": Schema.Union([
+    borrowedTransfer,
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      managedRepoPath: Schema.String,
+      action: Schema.Literal("restored"),
+      storage: Schema.Literal("retained"),
+      dryRun: optionalBoolean,
+    }),
+  ]),
+  "repo remove": Schema.Union([
+    borrowedTransfer,
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      managedRepoPath: Schema.String,
+      remoteUrl: Schema.String,
+      sourceRepoPath: Schema.String,
+      warnings: strings,
+      action: Schema.Literal("unregistered"),
+      storage: Schema.Literals(["retained", "missing"]),
+      retainedAt: Schema.String,
+      recoveryCommand: Schema.String,
+      dryRun: optionalBoolean,
+    }),
+  ]),
   "workspace list": Schema.Struct({ workspaces: Schema.Array(workspaceSummary) }),
   "workspace show": Schema.Struct({
     ticket: Schema.String,

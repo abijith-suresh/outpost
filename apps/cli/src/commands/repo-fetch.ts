@@ -168,6 +168,11 @@ export function runRepoFetch(
         (error) => new RepoFetchError({ message: error.message, ...domainDetails(error) })
       )
     );
+    if (registry.borrowedRepositories?.length)
+      return yield* new RepoFetchError({
+        message:
+          "Borrowed clone fetch is unsupported. No selected repository was fetched or mutated.",
+      });
     // Refuse an unsupported target before any repository's refspec or refs change.
     for (const repo of registry.repos) {
       yield* validateWindowsManagedGitDir(repo.managedRepoPath).pipe(

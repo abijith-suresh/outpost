@@ -254,6 +254,26 @@ Options:
   \-\-json  Output as JSON
 .fi
 Network: none. Retry: inspect-before-retry.
+.SS repo register
+.nf
+Usage:
+  outpost repo register <path> \-\-name <name> [\-\-dry\-run] [\-\-json]
+
+Register borrowed local clone storage offline without changing Git or source files
+
+  mutation: true
+  json output: yes
+  dry\-run: yes
+
+Arguments:
+  <path>  Existing checkout (required)
+
+Options:
+  \-\-name <name>  Portable member name (required)
+  \-\-dry\-run  Inspect without writing metadata
+  \-\-json  Output as JSON
+.fi
+Network: none. Retry: inspect-before-retry.
 .SS repo add
 .nf
 Usage:

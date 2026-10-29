@@ -3,6 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
+import { inspectBorrowed } from "../borrowed-repo.js";
 import { commandString, readOnlyGitCommand as gitCommand } from "../child-process.js";
 import {
   getRepoHealthDiagnostics,
@@ -60,6 +61,14 @@ export function runRepoShow(
         (error) => new RepoShowError({ message: error.message, ...domainDetails(error) })
       )
     );
+    const borrowed = (
+      retained ? registry.retainedBorrowedRepositories : registry.borrowedRepositories
+    )?.find((entry) => entry.id === repoId);
+    if (borrowed)
+      return {
+        command: "repo show",
+        data: yield* inspectBorrowed(borrowed),
+      } satisfies CommandOutput<"repo show">;
     const matches = (retained ? (registry.retainedRepositories ?? []) : registry.repos).filter(
       (repo) => repo.id === repoId
     );

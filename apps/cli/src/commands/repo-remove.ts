@@ -25,6 +25,7 @@ import {
   resolveManagedPath,
   scanWorktreesRoot,
 } from "../workspace-manifest.js";
+import { transferBorrowed } from "./repo-register.js";
 
 export class RepoRemoveError extends Schema.TaggedError<RepoRemoveError>()("RepoRemoveError", {
   ...ErrorDetailFields,
@@ -77,6 +78,13 @@ export function runRepoRemove(
             (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
           )
         );
+    if (mutation) yield* mutation.record({ action: "inspect-registration-transfer", repoId });
+    const borrowed = yield* transferBorrowed(outpostHome, repoId, "remove", dryRun);
+    if (borrowed) {
+      if (mutation && !dryRun)
+        yield* mutation.record({ action: "borrowed-registration-remove-completed", repoId });
+      return { command: "repo remove" as const, data: borrowed };
+    }
     const registry = yield* loadRepoRegistry(outpostHome).pipe(
       Effect.mapError(
         (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
@@ -262,7 +270,7 @@ export function runRepoRemove(
     );
     // Block v2 writers before retaining records they would otherwise strip. A
     // failed/interrupted write leaves the complete record active or retained.
-    if (compatible.version !== 3)
+    if (compatible.version !== 3 && compatible.version !== 4)
       yield* writeRepoRegistry(outpostHome, {
         ...compatible,
         version: 3,
@@ -286,7 +294,7 @@ export function runRepoRemove(
       );
     yield* writeRepoRegistry(outpostHome, {
       ...compatible,
-      version: 3,
+      version: compatible.version === 4 ? 4 : 3,
       repos: compatible.repos.filter((repo) => repo.id !== repoId),
       retainedRepositories: [
         ...(compatible.retainedRepositories ?? []),
@@ -302,5 +310,10 @@ export function runRepoRemove(
       command: "repo remove",
       data,
     } satisfies CommandOutput<"repo remove">;
-  }).pipe(Effect.scoped);
+  }).pipe(
+    Effect.scoped,
+    Effect.mapError(
+      (error) => new RepoRemoveError({ message: error.message, ...domainDetails(error) })
+    )
+  );
 }

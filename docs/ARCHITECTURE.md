@@ -65,7 +65,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 ```
 ~/.outpost/
   config.json           # OutpostConfig { version, outpostHome, reposRoot, worktreesRoot }
-  repos.json            # legacy { repos } or v2 { version: 2, repositories }
+  repos.json            # legacy/v2/v3 managed records or v4 tagged storage records
   .mutation.lock        # Exclusive home mutation owner metadata
   operations/
     <uuid>.json         # Intent and progress for an incomplete mutation
@@ -87,7 +87,7 @@ All state lives under `$OUTPOST_HOME` (default `~/.outpost`):
 
 ### Configuration (`apps/cli/src/config.ts`)
 
-`OutpostConfig` reads legacy version 1 and version 2. Read-only commands do not migrate files. Configuration, repository-tag and extra-guidance mutations acquire the home mutation lock and install version 2 default configuration before extended state is written. The config marker makes newly started version 1 binaries refuse the home. The persisted version 2 repository registry uses `{ version: 2, repositories: [...] }`, adapted to the existing in-memory `repos` model. Its missing legacy `repos` field also makes an older process that cached v1 config before taking the lock refuse the registry before mutation. Unknown future versions and malformed version fields fail closed.
+`OutpostConfig` reads legacy version 1, version 2 and version 3. Read-only commands do not migrate files. Configuration, repository-tag and extra-guidance mutations acquire the home mutation lock and install version 2 default configuration before extended state is written. The config marker makes newly started version 1 binaries refuse the home. The persisted version 2 repository registry uses `{ version: 2, repositories: [...] }`, adapted to the existing in-memory `repos` model. Its missing legacy `repos` field also makes an older process that cached v1 config before taking the lock refuse the registry before mutation. Unknown future versions and malformed version fields fail closed.
 
 Upgrading settings writes the default config barrier, then the incompatible registry barrier, then the requested root/instructions. Tag editing writes the default config barrier followed by the versioned tagged registry atomically. A failure before a requested setting commits leaves compatible defaults and an inspectable journal; retry repairs forward. Initialization refuses to recreate a missing config when a version 2 or 3 registry remains, because it cannot reconstruct historical roots or instructions from that registry.
 
@@ -605,3 +605,37 @@ Node crypto, without runtime Ajv or mutation handlers. This detects individual
 asset damage relative to compiled package code. It does not authenticate a
 package whose code and assets have both been replaced. Even formatting changes
 require restoring the shipped asset or regenerating the matching package code.
+
+## Borrowed registration, offline increment
+
+`repo register <checkout> --name NAME` registers ordinary/local-only/unborn clones
+or verified linked anchors without touching Git storage. The v4 registry is a
+strict tagged managed/borrowed union, adapted internally into separate collections.
+Managed ownership and containment remain unchanged. Borrowed records freeze an
+opaque local UUID, canonical anchor/private/common directories and lossless
+bigint device/inode strings. These directory identities exclude timestamps,
+config hashes and refs, and survive benign source evolution. Unavailable/replaced
+identities fail closed. Node `fs/promises` bigint `lstat`/`realpath` is a documented
+platform boundary because numeric Effect stat identifiers can lose file-ID bits.
+Read-only Git discovery validates main/linked registrations and back-pointers,
+disables optional writes and implicit promisor fetch, and inventories no objects.
+Unsupported submodule/separate-Git-directory layouts are refused.
+
+Registration writes only home metadata under the mutation lock/journal. Config v3
+blocks newly started older writers; strict registry v4 blocks cached-config old
+writers. The config barrier precedes the empty compatible tagged registry, then
+the registration commit. Interrupted writes preserve old records and repair
+forward. Reads never migrate. Managed manifests through v4 retain original roots;
+this increment writes no borrowed workspace manifest. All borrowed create/reuse
+and mixed/all fetch selections refuse before any member Git mutation/network.
+
+List/show inspect identity offline and distinguish unavailable from healthy
+registration without claiming object availability. Remove transfers the complete
+record to retained metadata, with `external-unchanged` storage; restore validates
+exact identity offline. Neither operation deletes or owns source data. Foreign
+source checkouts do not block forgetting registration, but unresolved/referencing
+Outpost manifests do. Source refs, config, hooks, files and object bytes/mtimes
+remain unchanged; no transport/helper/marker/worktree creation occurs. Native
+Windows verifies lossless directory identifiers and existing canonical/raw path
+budgets. Actual installed smoke runs through the native `.cmd` entrypoint and
+retains the fresh-cache runtime-cohort validation.

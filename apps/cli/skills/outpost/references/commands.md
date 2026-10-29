@@ -311,6 +311,30 @@ Options:
 Network: none. Retry: inspect-before-retry.
 Side effects: configuration, directories.
 
+## repo register
+
+```text
+Usage:
+  outpost repo register <path> --name <name> [--dry-run] [--json]
+
+Register borrowed local clone storage offline without changing Git or source files
+
+  mutation: true
+  json output: yes
+  dry-run: yes
+
+Arguments:
+  <path>  Existing checkout (required)
+
+Options:
+  --name <name>  Portable member name (required)
+  --dry-run  Inspect without writing metadata
+  --json  Output as JSON
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: configuration, registry.
+
 ## repo add
 
 ```text

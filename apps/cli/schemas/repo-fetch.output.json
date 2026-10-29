@@ -413,6 +413,7 @@
                 "DOCTOR_FAILED",
                 "INIT_FAILED",
                 "REPO_ADD_FAILED",
+                "REPO_REGISTER_FAILED",
                 "REPO_FETCH_FAILED",
                 "REPO_LIST_FAILED",
                 "REPO_REMOVE_FAILED",

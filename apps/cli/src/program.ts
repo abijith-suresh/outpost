@@ -20,6 +20,7 @@ import { runInit } from "./commands/init.js";
 import { runRepoAdd } from "./commands/repo-add.js";
 import { runRepoFetch } from "./commands/repo-fetch.js";
 import { runRepoList } from "./commands/repo-list.js";
+import { runRepoRegister } from "./commands/repo-register.js";
 import { runRepoRemove } from "./commands/repo-remove.js";
 import { runRepoRestore } from "./commands/repo-restore.js";
 import { runRepoShow } from "./commands/repo-show.js";
@@ -145,6 +146,7 @@ function resolveCommand(
     "repo show": "REPO_SHOW_FAILED",
     "repo remove": "REPO_REMOVE_FAILED",
     "repo restore": "REPO_RESTORE_FAILED",
+    "repo register": "REPO_REGISTER_FAILED",
     "workspace show": "WORKSPACE_SHOW_FAILED",
     "workspace resume": "WORKSPACE_RESUME_FAILED",
     "workspace remove": "WORKSPACE_REMOVE_FAILED",
@@ -245,6 +247,12 @@ function resolveCommand(
       }
       return runInit().pipe(
         Effect.mapError((error) => cliError("INIT_FAILED", error.message, undefined, error))
+      );
+    case "repo register":
+      return runRepoRegister(positionalArgs.slice(2)).pipe(
+        Effect.mapError((error) =>
+          cliError("REPO_REGISTER_FAILED", error.message, undefined, error)
+        )
       );
     case "repo add":
       return Effect.sync(() => {

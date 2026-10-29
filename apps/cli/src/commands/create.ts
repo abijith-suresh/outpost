@@ -980,6 +980,18 @@ export function runCreate(
     );
     const branchName = parsedArgs.reuseBranch ?? `${parsedArgs.type}/${parsedArgs.ticket}`;
     yield* validateBranchName(branchName);
+    if (parsedArgs.repoIds.some((id) => id.startsWith("local:"))) {
+      const admissionRegistry = yield* loadRepoRegistry(outpostHome).pipe(
+        Effect.mapError((error) => new CreateError({ message: error.message }))
+      );
+      if (
+        admissionRegistry.borrowedRepositories?.some((repo) => parsedArgs.repoIds.includes(repo.id))
+      )
+        return yield* new CreateError({
+          message:
+            "Borrowed clone workspace creation/reuse is unsupported in this version. No selected repository was fetched or mutated.",
+        });
+    }
     if (parsedArgs.reuseBranch !== undefined) {
       const redirects = [
         "GIT_DIR",

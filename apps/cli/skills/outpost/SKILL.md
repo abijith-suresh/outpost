@@ -112,3 +112,11 @@ Guidance ships offline. `outpost docs [topic]` reads it, `outpost skill path --j
 locates package assets, and `outpost skill export <directory> --json` explicitly
 copies this portable skill to `<directory>/outpost`. Export refuses an existing
 destination. It never installs into an agent's configuration automatically.
+
+For an existing local clone, use `repo register <checkout> --name NAME --json`.
+This is offline metadata attachment, not import, backup or ownership. Inspect the
+returned local ID with repo list/show; unregister/retained inspection/restore
+preserve external storage. Borrowed workspace create/reuse/fetch are unsupported
+and refuse before touching any member. Do not bypass those refusals by editing
+metadata, changing Git settings or using source object aliases. Existing repo add
+still imports the selected remote into managed storage.

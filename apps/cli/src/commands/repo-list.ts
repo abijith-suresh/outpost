@@ -1,7 +1,9 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
+import { inspectBorrowed } from "../borrowed-repo.js";
 import { parseCommandInput, requireCommand } from "../command-spec.js";
 import {
   getRepoHealthDiagnostics,
@@ -21,7 +23,11 @@ export class RepoListError extends Schema.TaggedError<RepoListError>()("RepoList
 
 export function runRepoList(
   args: readonly string[] = []
-): Effect.Effect<CommandOutput<"repo list">, RepoListError, FileSystem.FileSystem | Path.Path> {
+): Effect.Effect<
+  CommandOutput<"repo list">,
+  RepoListError,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> {
   return Effect.gen(function* () {
     const parsed = parseCommandInput(requireCommand(["repo", "list"]), args);
     const tagOption = parsed.options["--tag"];
@@ -51,11 +57,20 @@ export function runRepoList(
       ).filter((repo) => matchesTags(repo, tags))
     ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
 
+    const borrowed = tags.length
+      ? []
+      : yield* Effect.forEach(
+          (parsed.options["--retained"]
+            ? registry.retainedBorrowedRepositories
+            : registry.borrowedRepositories) ?? [],
+          inspectBorrowed
+        );
     return {
       command: "repo list",
       data: {
-        missingRepoCount,
-        repos,
+        missingRepoCount:
+          missingRepoCount + borrowed.filter((entry) => entry.status !== "ok").length,
+        repos: [...repos, ...borrowed],
       },
     } satisfies CommandOutput<"repo list">;
   });
