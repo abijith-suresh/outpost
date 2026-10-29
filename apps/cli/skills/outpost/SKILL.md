@@ -116,7 +116,20 @@ destination. It never installs into an agent's configuration automatically.
 For an existing local clone, use `repo register <checkout> --name NAME --json`.
 This is offline metadata attachment, not import, backup or ownership. Inspect the
 returned local ID with repo list/show; unregister/retained inspection/restore
-preserve external storage. Borrowed workspace create/reuse/fetch are unsupported
-and refuse before touching any member. Do not bypass those refusals by editing
-metadata, changing Git settings or using source object aliases. Existing repo add
-still imports the selected remote into managed storage.
+preserve external storage. For a new borrowed ticket use explicit `--base-source
+local --base refs/heads/NAME`, a full tags ref, or full commit SHA. No implicit
+fetch/default, source import or borrowed existing-branch reuse is supported.
+Explicit borrowed create, resume/status and normal remove trust configured Git
+clean/smudge/process/LFS tools, which may have effects or network access. Local
+means no implicit Outpost Git fetch, not a sandbox. Metadata-only registration/
+listing stays offline. Hooks/fsmonitor and lazy object fetch remain disabled.
+Do not silently invoke these content/status operations from UI polling.
+
+Manifest v5 freezes original provenance/root/membership and borrowed common plus
+owned checkout/admin identity. Advanced dirty work is resumable; removal requires
+safe clean owned work and preserves all branches. Failed/cancelled admission
+retains branches/reflogs and uncertain checkout/admin/guidance. Inspect doctor and
+journals manually, including original SHA and confirmation/unknown status. Do not
+reset/recreate/adopt residual paths or infer full rollback from an unchanged HEAD.
+Borrowed remote/auth/reuse remain unsupported. Existing repo add imports its
+selected remote into managed storage; managed-only semantics remain unchanged.

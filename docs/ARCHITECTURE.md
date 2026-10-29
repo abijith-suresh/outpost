@@ -324,7 +324,7 @@ probing unrelated canonical paths; selected members receive full canonical
 containment and ownership checks. Mutation callers keep their existing registry
 validation.
 
-Resume preflights bounded tracked entries and filter attributes before invoking
+Managed resume preflights bounded tracked entries and filter attributes before invoking
 status. Tracked gitlinks and assigned content filters produce unknown/not-ready
 diagnostics, preventing nested status/filter execution. Unused globally
 configured filters do not by themselves block resume. This conservative status
@@ -626,8 +626,9 @@ blocks newly started older writers; strict registry v4 blocks cached-config old
 writers. The config barrier precedes the empty compatible tagged registry, then
 the registration commit. Interrupted writes preserve old records and repair
 forward. Reads never migrate. Managed manifests through v4 retain original roots;
-this increment writes no borrowed workspace manifest. All borrowed create/reuse
-and mixed/all fetch selections refuse before any member Git mutation/network.
+borrowed-containing creation writes strict manifest v5 with tagged storage and frozen
+common/checkout/admin lossless identity. Managed-only manifests retain their formats.
+Borrowed reuse/remote modes and mixed/all fetch selections refuse before effects.
 
 List/show inspect identity offline and distinguish unavailable from healthy
 registration without claiming object availability. Remove transfers the complete
@@ -639,3 +640,36 @@ remain unchanged; no transport/helper/marker/worktree creation occurs. Native
 Windows verifies lossless directory identifiers and existing canonical/raw path
 budgets. Actual installed smoke runs through the native `.cmd` entrypoint and
 retains the fresh-cache runtime-cohort validation.
+
+## Borrowed local workspace lifecycle and trust
+
+Explicit local/full-ref-or-SHA selection resolves once under locks. Object ownership,
+identity, branch attachment, metadata parents and raw/canonical Windows budgets are
+checked for every member before effects. Prepared ref creation rejects symbolic
+branches; new checkouts attach only the captured SHA. Manifest v5 records the
+backend, stable common/created checkout/admin identities, root and provenance.
+Resume/show/remove use frozen storage independently of a missing launch anchor;
+registration checks and unregister barriers never adopt a replacement source.
+
+Borrowed content operations use normal trusted configured clean/smudge/process
+conversion. Unlike managed status, they do not reject filter attributes or enumerate
+and suppress drivers. Configured programs can have side effects/network, even if
+introduced after preflight. Local selection disables implicit Outpost fetch, not
+program effects. Hooks/fsmonitor, automatic maintenance and lazy object fetch remain
+disabled. Submodule and non-refreshing owned-index restrictions remain. Metadata-only
+registration/inspection does not execute conversions. UI polling must not invoke
+these explicit content operations silently.
+
+Only selected-tree check-attr receives a scoped nonexistent GIT_INDEX_FILE in private
+scratch outside source. Identity, ownership, path budgets, bounded emptiness and
+index absence are rechecked; cleanup removes only unchanged positively owned empty
+scratch. Unknown residue is preserved. No source index/config copy or repair exists.
+
+Borrowed-containing admission failure/cancellation retains all possible member
+branches/reflogs/checkout/admin/guidance. A current-OID match cannot detect A-B-A
+history. Journals record original pinned SHA, paths, confirmations and unknown
+survivor status, with doctor/manual recovery. Retry refuses residual paths. There
+is no automatic branch/reflog deletion or promise of full rollback. Normal successful
+remove checks frozen ownership and clean state and preserves branches. Managed-only
+rollback remains unchanged. Source byte/mtime preservation excludes trusted-program
+effects and is tested with inert synthetic drivers; native proof remains mandatory.

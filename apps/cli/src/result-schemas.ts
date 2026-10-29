@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { BaseSourceSchema, CommitSchema, ProvenanceFields } from "./base-selection.js";
-import { BorrowedRecordSchema } from "./borrowed-schema.js";
+import { BorrowedRecordSchema, WorkspaceStorageSchema } from "./borrowed-schema.js";
 
 const strings = Schema.Array(Schema.String);
 const optionalString = Schema.optional(Schema.String);
@@ -19,6 +19,7 @@ export const ResumeWorkingStateSchema = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export const ResumeWorktreeSchema = Schema.Struct({
+  storage: Schema.optional(WorkspaceStorageSchema),
   id: Schema.String,
   name: Schema.String,
   status: Schema.Literals(["ready", "not-ready"]),
@@ -73,7 +74,8 @@ export const WorkspaceWorktreeSchema = Schema.Struct({
   name: Schema.String,
   base: Schema.String,
   ...ProvenanceFields,
-  managedPath: Schema.String,
+  managedPath: optionalString,
+  storage: Schema.optional(WorkspaceStorageSchema),
   worktreePath: Schema.String,
   resolvedManagedPath: optionalString,
   resolvedWorktreePath: optionalString,
@@ -182,6 +184,8 @@ export const ResultSchemas = {
     workspacePath: optionalString,
     worktrees: Schema.Array(
       Schema.Struct({
+        storageKind: Schema.optional(Schema.Literals(["managed", "borrowed"])),
+        commonDirectory: optionalString,
         repoId: Schema.String,
         repoName: Schema.String,
         path: Schema.String,

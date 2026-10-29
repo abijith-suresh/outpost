@@ -89,16 +89,28 @@ function withTerminationPolicy(command: ChildProcess.Command): ChildProcess.Comm
 }
 
 /** Hold a verify-only Git transaction. Aborting releases Git's own ref locks without writing refs. */
-export function acquireBranchVerification(repoPath: string, ref: string, commit: string) {
+function acquireRefTransaction(
+  repoPath: string,
+  ref: string,
+  commit: string,
+  options: { create?: boolean; command?: typeof noLazyFetchGitCommand } = {}
+) {
   return Effect.gen(function* () {
     const timeoutMs = Number(process.env.OUTPOST_GIT_TIMEOUT_MS ?? 120_000);
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
       return yield* Effect.fail(executionError("Command timeout must be positive and finite."));
     const prepared = yield* Deferred.make<void, PlatformError>();
     const aborted = yield* Deferred.make<void, PlatformError>();
+    const committed = yield* Deferred.make<void, PlatformError>();
     const input = yield* Queue.unbounded<Uint8Array, Cause.Done>();
     const command = withTerminationPolicy(
-      noLazyFetchGitCommand("--git-dir", repoPath, "update-ref", "--no-deref", "--stdin")
+      (options.command ?? noLazyFetchGitCommand)(
+        "--git-dir",
+        repoPath,
+        "update-ref",
+        "--no-deref",
+        "--stdin"
+      )
     );
     if (command._tag !== "StandardCommand")
       return yield* Effect.fail(executionError("Expected a single Git ref verification command."));
@@ -127,6 +139,8 @@ export function acquireBranchVerification(repoPath: string, ref: string, commit:
             wasPrepared = true;
             yield* Deferred.succeed(prepared, undefined);
           }
+          if (protocol.split(/\r?\n/).includes("commit: ok"))
+            yield* Deferred.succeed(committed, undefined);
           if (protocol.split(/\r?\n/).includes("abort: ok"))
             yield* Deferred.succeed(aborted, undefined);
         });
@@ -145,48 +159,52 @@ export function acquireBranchVerification(repoPath: string, ref: string, commit:
       Effect.forkScoped
     );
     let released = false;
-    const release = Effect.gen(function* () {
-      if (released) return;
-      if (!wasPrepared && !(yield* child.isRunning)) {
+    const finish = (operation: "abort" | "commit") =>
+      Effect.gen(function* () {
+        if (released) return;
+        if (!wasPrepared && !(yield* child.isRunning)) {
+          released = true;
+          return;
+        }
+        yield* Queue.offer(input, new TextEncoder().encode(`${operation}\n`));
+        // Ordered EOF closes stdin after abort without depending on Windows signals.
+        yield* Queue.end(input);
+        const code = yield* child.exitCode;
+        if (code !== 0)
+          return yield* Effect.fail(
+            executionError(
+              `Existing branch lock cleanup failed for ${ref}. Preserve its lock and inspect the operation journal. ${diagnostic}`
+            )
+          );
+        yield* Deferred.await(operation === "commit" ? committed : aborted);
         released = true;
-        return;
-      }
-      yield* Queue.offer(input, new TextEncoder().encode("abort\n"));
-      // Ordered EOF closes stdin after abort without depending on Windows signals.
-      yield* Queue.end(input);
-      const code = yield* child.exitCode;
-      if (code !== 0)
-        return yield* Effect.fail(
-          executionError(
-            `Existing branch lock cleanup failed for ${ref}. Preserve its lock and inspect the operation journal. ${diagnostic}`
-          )
-        );
-      yield* Deferred.await(aborted);
-      released = true;
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: "2 seconds",
-        orElse: () =>
-          child
-            .kill({ killSignal: "SIGTERM", forceKillAfter: terminationGraceMs })
-            .pipe(
-              Effect.andThen(
-                Effect.fail(
-                  executionError(
-                    `Existing branch lock cleanup was not confirmed for ${ref}; preserve state and inspect the operation journal.`
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: "2 seconds",
+          orElse: () =>
+            child
+              .kill({ killSignal: "SIGTERM", forceKillAfter: terminationGraceMs })
+              .pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    executionError(
+                      `Existing branch lock cleanup was not confirmed for ${ref}; preserve state and inspect the operation journal.`
+                    )
                   )
                 )
-              )
-            ),
-      })
-    );
+              ),
+        })
+      );
+    const release = finish("abort");
     // Ordinary success explicitly checks release before admitting a manifest.
     // This idempotent fallback also attempts release during failure/cancellation;
     // a failed operation's recorded plan remains manual recovery evidence.
     yield* Effect.acquireRelease(Effect.void, () => release.pipe(Effect.ignore));
     yield* Queue.offer(
       input,
-      new TextEncoder().encode(`start\nverify ${ref} ${commit}\nprepare\n`)
+      new TextEncoder().encode(
+        `start\n${options.create ? "create" : "verify"} ${ref} ${commit}\nprepare\n`
+      )
     );
     yield* Deferred.await(prepared).pipe(
       Effect.timeoutOrElse({
@@ -205,8 +223,24 @@ export function acquireBranchVerification(repoPath: string, ref: string, commit:
             )
       )
     );
-    return { verify, release };
+    return { verify, release, commit: finish("commit") };
   });
+}
+
+export function acquireBranchVerification(repoPath: string, ref: string, commit: string) {
+  return acquireRefTransaction(repoPath, ref, commit).pipe(
+    Effect.map(({ verify, release }) => ({ verify, release }))
+  );
+}
+
+/** New refs are rechecked for symbolic identity under the prepared create lock. */
+export function acquireBranchCreation(
+  repoPath: string,
+  ref: string,
+  commit: string,
+  command: typeof noLazyFetchGitCommand
+) {
+  return acquireRefTransaction(repoPath, ref, commit, { create: true, command });
 }
 
 /**

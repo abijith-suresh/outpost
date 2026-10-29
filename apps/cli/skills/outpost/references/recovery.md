@@ -87,9 +87,9 @@ silently fetches missing promisor objects or calls that state clean. Retry only
 after inspecting the reason. If no complete manifest exists, use doctor and the
 existing operation journal; residual files alone do not establish ownership.
 
-Tracked submodules and assigned content filters also make resume status
-unsupported in this slice. Outpost refuses to run nested status or custom filter
-programs during a read-only operation. Preserve work and inspect the diagnostic;
+For managed workspaces, tracked submodules and assigned content filters make resume status
+unsupported in this slice. Managed inspection refuses nested status or custom filter
+programs. Borrowed status instead trusts configured conversions, as described below. Preserve work and inspect the diagnostic;
 do not clear global Git settings or add a bypass to make it report clean.
 Split indexes are likewise reported unknown/not-ready before Git can renew shared
 index timestamps. Resume does not convert or rewrite them.
@@ -188,3 +188,26 @@ Do not hand-edit generated workspace guidance or Outpost-managed Git metadata as
 a shortcut. Repository application changes belong inside the child worktrees.
 
 Reuse object ownership includes selected loose commit/tree/blob files and fanout directories, plus bounded pack/index metadata. Preserve rejected symlinks, junctions and their targets. Do not copy, repack or unlink storage to make admission succeed; source-backed import remains a separate operation. Regular owned files and surviving hardlinks remain supported.
+
+## Borrowed local workspace recovery
+
+New borrowed tickets require explicit local full heads/tags refs or commit SHAs.
+Manifest v5 freezes original common/owned checkout/admin identity and provenance.
+Missing source objects are not restored or fetched automatically; external storage
+is not a backup. Resume uses the frozen owned checkout and common identity, not a
+replacement source path. Unsupported legacy writers must refuse v5.
+
+Explicit borrowed population/status/normal removal trusts repository configured
+clean/smudge/process/LFS tools. These can have side effects or network access.
+Local means Outpost does not implicitly fetch. Metadata-only registration/listing
+remains offline. Do not interpret a failed status or removal as proof that no
+configured program ran. Hooks/fsmonitor remain disabled.
+
+Failed/cancelled borrowed-containing creation conservatively retains every
+possible branch/reflog and checkout/admin/guidance. An A-B-A ref history cannot be
+proved untouched from its current SHA. Inspect doctor and the journal's original
+SHA, expected member paths, confirmation flags and unknown surviving state.
+Do not force-remove, reset, adopt or repeat creation over residual ticket paths.
+No automatic rollback or clean retry is promised. Normal successful removal must
+validate owned clean work, and always preserves all branches. Managed-only
+rollback semantics are unchanged.

@@ -192,7 +192,7 @@ residual needs `outpost doctor --json` and manual inspection. A matching directo
 name is never permission to adopt or repair it. Resume does not clear locks or
 approve cleanup.
 
-Resume reports Git's working-state snapshot, not a filesystem audit. Status
+Resume reports Git's working-state snapshot, not a filesystem audit. Managed status
 inspection refuses tracked submodules or assigned content filters in this slice
 so it cannot run nested status commands or repository-configured filter programs.
 Those members report unknown/not-ready with an inspection diagnostic; their work
@@ -334,7 +334,7 @@ Fetch prunes remote branches only under `refs/remotes/origin`. Workspace branche
 - **Settings safety:** configuration, tag and guidance mutations use the same home lock. Root changes preserve existing workspace locations. Unsupported state versions fail closed; settings do not overwrite existing guidance or change workspace membership.
 - **Repository reference checks:** `repo remove` refuses repos still referenced by active workspaces.
 - **Existing branches:** explicit reuse never makes a borrowed branch eligible for rollback deletion. Removal preserves all local branches.
-- **Rollback:** failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
+- **Rollback:** managed-only failed or ordinarily cancelled create rolls back only branches and worktrees whose creation this operation confirmed from a successful Git result, plus matching generated files. Failed or interrupted Git mutations leave creation unconfirmed; any resulting or externally created artifact is preserved for manual inspection. Dirty worktrees, switched worktree branches, advanced branches, edited guidance, and unrecognized files are preserved. A committed workspace manifest survives a late cancellation.
 - **Partial success reporting:** `repo fetch` and `workspace remove` report partial failures rather than hiding them.
 
 ### Cancellation and crash recovery
@@ -431,9 +431,47 @@ available; replacement storage is never automatically adopted.
 hooks and objects. Restore validates the original anchor/common/private identity.
 Read-only commands never upgrade metadata. Windows path budgets still apply.
 
-Borrowed workspace create/reuse and fetch are not supported in this increment.
-Explicit borrowed or mixed selections refuse before any selected repository's
-Git mutation or network access. `repo fetch --all` refuses when borrowed records
-are active. Managed-only workflows and historic workspace roots remain supported.
-Local workspace creation and explicit named-remote/auth support require later
-increments. No credentials are collected or copied by registration.
+Borrowed new ticket workspaces require explicit local selection:
+
+```sh
+outpost create --ticket TASK-1 --type feat --repo local:ID --base-source local --base refs/heads/main --json
+outpost workspace resume TASK-1 --json
+outpost workspace remove TASK-1 --json
+```
+
+The base must be a full `refs/heads/*`, `refs/tags/*` or full commit SHA already
+available in the registered common store. No DWIM, source-HEAD default, implicit
+fetch, source copying, borrowed existing-branch reuse or remote selection is
+provided. Mixed selections preflight every member before workspace effects.
+Manifest v5 freezes storage/checkout/admin identity, original root/membership and
+requested/actual immutable starting commit. Older binaries refuse v5; managed-only
+workspaces retain their existing formats. Source storage remains an external
+dependency, not a backup. Resume/remove validate the frozen common and owned
+checkout even if the saved launch anchor is gone. Missing/replaced state requires
+manual inspection, never adoption or repair. Active or uncertain referenced
+workspaces block unregistration.
+
+Explicit borrowed create, resume/status and normal remove trust repository Git
+clean/smudge/process conversions, including LFS. Those programs may have side
+effects or network access, including drivers configured after preflight. Local
+base means no implicit Outpost Git fetch, not a sandbox. Outpost keeps hooks and
+fsmonitor disabled, refuses missing objects without lazy fetch, and does not
+itself edit source files/config/index or source/base refs. Source preservation
+excludes effects of trusted configured tools. Metadata-only registration/listing/
+inspection remains offline and does not invoke conversions. Future UI polling
+must not silently invoke content status.
+
+Tracked submodules and unsupported owned-checkout index modes still refuse;
+trusted filters do not authorize broader layout support. Selected-tree attribute
+inspection uses a nonexistent index in checked private scratch outside source,
+scoped only to that command, preserving main/linked source split indexes. Unknown
+scratch contents/identity changes are retained, never recursively cleaned up.
+
+Failed/cancelled borrowed-containing admission preserves branches, reflogs and
+confirmed/possible checkout/admin/guidance, even if HEAD returns to the original
+SHA. Inspect `doctor --json` and the operation record for original SHA, member
+paths and confirmation/unknown status. No full rollback or clean retry is promised.
+Do not reset/recreate/adopt residual ticket paths. Successful normal removal
+requires verified owned clean work and preserves every branch. Managed-only
+rollback is unchanged. Borrowed fetch/reuse/remote/auth modes remain unsupported;
+`repo fetch --all` refuses when borrowed records are active.

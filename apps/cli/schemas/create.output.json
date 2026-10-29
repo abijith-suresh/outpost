@@ -45,6 +45,27 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "storageKind": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["managed", "borrowed"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "commonDirectory": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "repoId": {
                     "type": "string"
                   },

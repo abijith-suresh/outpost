@@ -105,7 +105,7 @@ Network: none. Retry: inspect-before-retry.
 Usage:
   outpost create \-\-ticket <id> \-\-type <branch\-type> [\-\-repo <id> ...] [\-\-tag <tag> ...] [\-\-base\-source <source>] [\-\-base <ref>] [\-\-reuse\-branch <name>] [\-\-dry\-run] [\-\-json]
 
-Create worktrees for imported repositories
+Create worktrees; explicit local borrowed clones trust configured Git conversions
 
   mutation: true
   interactive: yes
@@ -412,13 +412,13 @@ Options:
   \-\-dry\-run  Preview removal without locks, writes or approval prompts
   \-\-json  Output as JSON
 .fi
-Network: none. Retry: inspect-before-retry.
+Network: explicit. Retry: inspect-before-retry.
 .SS workspace resume
 .nf
 Usage:
   outpost workspace resume <ticket> [\-\-json]
 
-Verify one existing workspace and report current work without fetching or changing it
+Verify one workspace; borrowed status trusts configured Git conversions, which may have side effects/network
 
   mutation: false
   json output: yes
@@ -429,7 +429,7 @@ Arguments:
 Options:
   \-\-json  Output as JSON
 .fi
-Network: none. Retry: safe.
+Network: explicit. Retry: inspect-before-retry.
 .SS workspace show
 .nf
 Usage:
@@ -450,7 +450,7 @@ Network: none. Retry: safe.
 .SH GLOBAL OPTIONS
 \-\-json opts into JSON. Help and version remain text. Duplicate global options fail before help/version short circuits.
 .SH SAFETY
-Removal refuses dirty worktrees and unproven ownership. Dry runs acquire no locks and perform no mutations; execution rechecks state. New workspaces record requested base source/ref and actual immutable starting commits. Fresh selection must fetch successfully; cached/local modes never fetch or silently fall back. Fresh previews report that fetching is required. Resume inspects one frozen workspace without fetching, optional Git writes, new base selection, ref changes, repair or metadata/guidance replacement. Dirty or advanced owned work is normal; wrong/detached, foreign, unavailable or inconsistent members produce partial/not-ready diagnostics. Missing manifests need doctor/manual recovery. Explicit create --reuse-branch admits an existing direct owned managed branch without fetch, reset or ref updates; it is incompatible with new-base options. Version 4 manifests preserve existing-branch admission provenance. Borrowed branches never become rollback-owned. All members are checked before mutation; absent objects, symbolic branches or existing checkouts fail closed. Workspace removal preserves local branches. Repository removal unregisters while retaining the mirror, all refs and objects. Inspect repo list or repo show with --retained, then explicitly repo restore after ownership validation. Restore never fetches or adopts arbitrary directories. No storage purge is provided; network operations require explicit authorization. Modified or foreign generated AGENTS.md requires explicit consent. Crash records require manual inspection, never automatic recovery.
+Removal refuses dirty worktrees and unproven ownership. Dry runs acquire no locks and perform no mutations; execution rechecks state. New workspaces record requested base source/ref and actual immutable starting commits. Fresh selection must fetch successfully; cached/local modes never fetch or silently fall back. Fresh previews report that fetching is required. Resume inspects one frozen workspace without fetching, optional Git writes, new base selection, ref changes, repair or metadata/guidance replacement. Dirty or advanced owned work is normal; wrong/detached, foreign, unavailable or inconsistent members produce partial/not-ready diagnostics. Missing manifests need doctor/manual recovery. Explicit create --reuse-branch admits an existing direct owned managed branch without fetch, reset or ref updates; it is incompatible with new-base options. Version 4 manifests preserve existing-branch admission provenance. Borrowed branches never become rollback-owned. All members are checked before mutation; absent objects, symbolic branches or existing checkouts fail closed. Workspace removal preserves local branches. Repository removal unregisters while retaining the mirror, all refs and objects. Inspect repo list or repo show with --retained, then explicitly repo restore after ownership validation. Restore never fetches or adopts arbitrary directories. No storage purge is provided; network operations require explicit authorization. Modified or foreign generated AGENTS.md requires explicit consent. Crash records require manual inspection, never automatic recovery. Borrowed new workspaces require explicit local full-ref-or-SHA bases and freeze external common/owned checkout identity in manifest v5. Explicit borrowed create, resume/status and normal remove trust configured clean/smudge/process/LFS tools, which may have side effects or network access. Local means no implicit Outpost Git fetch, not a sandbox. Metadata-only registration/listing stays offline. Hooks/fsmonitor and lazy fetch remain disabled. Failed/cancelled borrowed admission retains branches/reflogs and uncertain checkout/admin for doctor/manual recovery, never destructive retry.
 .SH EXIT STATUS
 0 means success. 1 means an error on stderr, or a partial result on stdout. Inspect structured results before retrying.
 .SH ENVIRONMENT

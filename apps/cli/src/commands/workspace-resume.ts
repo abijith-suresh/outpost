@@ -5,6 +5,8 @@ import * as Path from "effect/Path";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import type { AttributeInspection } from "../attribute-inspection.js";
+import { verifyDirectory, verifyWorkspaceStorage } from "../borrowed-workspace.js";
 import {
   commandResult,
   commandString,
@@ -37,8 +39,8 @@ import {
   type Manifest,
   type RepositoryEntry,
   readManifest,
-  resolveManagedPath,
   resolveManifestWorkspacePath,
+  resolveRepositoryStoragePath,
   resolveWorktreePath,
 } from "../workspace-manifest.js";
 
@@ -240,13 +242,15 @@ function requireNonRefreshingIndex(bytes: Uint8Array, objectHexLength: number) {
   });
 }
 
-/** Git status may execute conversion filters and recurse into arbitrary child
- * repositories. Inspect index/attributes first without conversion, and fail
- * honestly rather than execute those programs or describe uninspected work clean. */
+/** Bound tracked paths and refuse submodules. Managed status refuses filters;
+ * explicit borrowed content operations trust normal configured conversion. */
 function statusPreflight(
   git: (...args: string[]) => ChildProcess.Command,
   repoId: string,
-  tree?: string
+  tree?: string,
+  population = false,
+  inspection?: AttributeInspection,
+  trusted = false
 ) {
   return Effect.gen(function* () {
     const indexed = yield* commandResult(
@@ -285,13 +289,17 @@ function statusPreflight(
       paths.add(match[3]);
     }
     if (paths.size) {
-      const raw = git(
+      const candidate = git(
         "check-attr",
         ...(tree ? [`--source=${tree}`] : []),
         "--all",
         "-z",
         "--stdin"
       );
+      const raw = inspection
+        ? candidate.pipe(ChildProcess.setEnv({ GIT_INDEX_FILE: inspection.index }))
+        : candidate;
+      if (inspection) yield* inspection.check;
       if (raw._tag !== "StandardCommand")
         return yield* problem(
           "status-unavailable",
@@ -304,6 +312,7 @@ function statusPreflight(
         }),
         { maxOutputBytes: RESUME_LIMITS.statusBytes }
       );
+      if (inspection) yield* inspection.check;
       if (attributes.exitCode !== 0 || attributes.stdout.truncated || attributes.stderr.truncated)
         return yield* problem(
           "status-unavailable",
@@ -317,14 +326,22 @@ function statusPreflight(
           `Unexpected attribute records for ${repoId}; no working state is claimed.`
         );
       for (let index = 1; index < values.length; index += 3)
-        if (values[index] === "filter")
+        if (!trusted && values[index] === "filter")
           return yield* problem(
             "filter-status-unavailable",
             `Tracked filter attributes require explicit inspection outside resume for ${repoId}. Resume does not execute clean/process filters or claim their converted working state.`
           );
     }
+    // Explicit borrowed content operations trust normal Git conversion, including new drivers.
+    if (trusted) return [];
     const configured = yield* commandResult(
-      git("config", "--null", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|process)$"),
+      git(
+        "config",
+        "--null",
+        "--name-only",
+        "--get-regexp",
+        population ? "^filter\\..*\\.(clean|process|smudge)$" : "^filter\\..*\\.(clean|process)$"
+      ),
       { maxOutputBytes: RESUME_LIMITS.metadataBytes }
     );
     if (
@@ -341,7 +358,7 @@ function statusPreflight(
       configured.stdout.text
         .split("\0")
         .filter(Boolean)
-        .map((key) => /^filter\.(.+)\.(?:clean|process)$/.exec(key)?.[1])
+        .map((key) => /^filter\.(.+)\.(?:clean|process|smudge)$/.exec(key)?.[1])
     );
     if (drivers.has(undefined) || drivers.size > 64)
       return yield* problem(
@@ -355,6 +372,7 @@ function statusPreflight(
       `filter.${name}.process=`,
       "-c",
       `filter.${name}.required=false`,
+      ...(population ? ["-c", `filter.${name}.smudge=`] : []),
     ]);
     if (overrides.join(" ").length > 8192)
       return yield* problem(
@@ -366,12 +384,32 @@ function statusPreflight(
 }
 
 /** Existing branch reuse cannot run configured filters or recurse into tracked submodules. */
-export function preflightReusedTree(managed: string, commit: string, repoId: string) {
-  return statusPreflight((...args) => gitCommand("--git-dir", managed, ...args), repoId, commit);
+export function preflightReusedTree(
+  managed: string,
+  commit: string,
+  repoId: string,
+  population = false,
+  inspection?: AttributeInspection,
+  trusted = false
+) {
+  return statusPreflight(
+    (...args) => gitCommand("--git-dir", managed, ...args),
+    repoId,
+    commit,
+    population,
+    inspection,
+    trusted
+  );
 }
 
 /** Reuse shares resume's fail-closed status limits; this only inspects a newly owned checkout. */
-export function verifyNewWorktreeClean(checkout: string, repoId: string, commit: string) {
+export function verifyNewWorktreeClean(
+  checkout: string,
+  repoId: string,
+  commit: string,
+  onOverrides?: (overrides: readonly string[]) => void,
+  trusted = false
+) {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const fs = yield* FileSystem.FileSystem;
@@ -390,7 +428,8 @@ export function verifyNewWorktreeClean(checkout: string, repoId: string, commit:
     const admin = (yield* commandString(git("rev-parse", "--absolute-git-dir"))).trim();
     const index = yield* snapshot(path.join(admin, "index"), RESUME_LIMITS.indexBytes);
     yield* requireNonRefreshingIndex(index.bytes, commit.length);
-    const overrides = yield* statusPreflight(git, repoId);
+    const overrides = yield* statusPreflight(git, repoId, undefined, false, undefined, trusted);
+    onOverrides?.(overrides);
     const status = yield* commandString(
       git(
         ...overrides,
@@ -421,33 +460,61 @@ function inspectMember(
     const path = yield* Path.Path;
     const registered = registry.repos.find((entry) => entry.id === repo.id);
     const retained = registry.retainedRepositories?.find((entry) => entry.id === repo.id);
-    member.registration = registered ? "active" : retained ? "retained" : "unregistered";
-    if (!registered)
-      return yield* problem(
-        retained ? "repository-retained" : "repository-unregistered",
-        retained
-          ? `Repository ${repo.id} has retained registration. Inspect repo show ${repo.id} --retained and explicitly restore registration; no storage is adopted by resume.`
-          : `Repository ${repo.id} is not registered. Inspect saved registration and ownership; resume does not import or adopt storage.`
-      );
-    const managed = yield* resolveManagedPath(config.reposRoot, repo.managedPath);
+    const borrowed = registry.borrowedRepositories?.find((entry) => entry.id === repo.id);
+    const borrowedRetained = registry.retainedBorrowedRepositories?.find(
+      (entry) => entry.id === repo.id
+    );
+    const borrowedMember = repo.storage?.kind === "borrowed";
+    member.storage = repo.storage;
+    if (borrowedMember) {
+      member.registration = borrowed ? "active" : borrowedRetained ? "retained" : "unregistered";
+      if (!borrowed)
+        return yield* problem(
+          "repository-unregistered",
+          "Borrowed registration is unavailable; preserve frozen workspace storage."
+        );
+      if (
+        borrowed.name !== repo.name ||
+        JSON.stringify(borrowed.common) !==
+          JSON.stringify(repo.storage?.kind === "borrowed" ? repo.storage.common : undefined)
+      )
+        return yield* problem(
+          "registration-mismatch",
+          "Borrowed registration differs from frozen common identity."
+        );
+    }
+    if (!borrowedMember) {
+      member.registration = registered ? "active" : retained ? "retained" : "unregistered";
+      if (!registered)
+        return yield* problem(
+          retained ? "repository-retained" : "repository-unregistered",
+          retained
+            ? `Repository ${repo.id} has retained registration. Inspect repo show ${repo.id} --retained and explicitly restore registration; no storage is adopted by resume.`
+            : `Repository ${repo.id} is not registered. Inspect saved registration and ownership; resume does not import or adopt storage.`
+        );
+    }
+    const managed = yield* resolveRepositoryStoragePath(config.reposRoot, repo);
     const checkout = yield* resolveWorktreePath(workspace, repo.worktreePath);
     member.recordedPath = checkout;
     member.recordedManagedPath = managed;
-    if (
-      registered.name !== repo.name ||
-      (yield* getCanonicalPortablePathKey(registered.managedRepoPath)) !==
-        (yield* getCanonicalPortablePathKey(managed))
-    )
-      return yield* problem(
-        "registration-mismatch",
-        `Frozen manifest identity/path does not match active registration for ${repo.id}.`
-      );
-    const registeredIdentity = yield* resolveRecordedRemoteIdentity(registered.remoteUrl);
-    if (registeredIdentity.id !== repo.id || registeredIdentity.name !== repo.name)
-      return yield* problem(
-        "registration-mismatch",
-        `Saved repository URL identity does not match the frozen id/name for ${repo.id}.`
-      );
+    if (!borrowedMember && registered) {
+      if (
+        registered.name !== repo.name ||
+        (yield* getCanonicalPortablePathKey(registered.managedRepoPath)) !==
+          (yield* getCanonicalPortablePathKey(managed))
+      )
+        return yield* problem(
+          "registration-mismatch",
+          `Frozen manifest identity/path does not match active registration for ${repo.id}.`
+        );
+      const registeredIdentity = yield* resolveRecordedRemoteIdentity(registered.remoteUrl);
+      if (registeredIdentity.id !== repo.id || registeredIdentity.name !== repo.name)
+        return yield* problem(
+          "registration-mismatch",
+          `Saved repository URL identity does not match the frozen id/name for ${repo.id}.`
+        );
+    }
+    if (repo.storage?.kind === "borrowed") yield* verifyWorkspaceStorage(repo.storage, checkout);
     const canonicalManaged = yield* directory(managed);
     const canonicalCheckout = yield* directory(checkout);
     const gitfile = yield* snapshot(path.join(checkout, ".git"));
@@ -474,7 +541,8 @@ function inspectMember(
     const common = yield* snapshot(path.join(admin, "commondir"));
     const adminHead = yield* snapshot(path.join(admin, "HEAD"));
     const managedConfig = yield* snapshot(path.join(managed, "config"));
-    yield* verifyManagedRepository(config.reposRoot, registered, gitCommand);
+    if (repo.storage?.kind === "borrowed") yield* verifyDirectory(repo.storage.common);
+    else if (registered) yield* verifyManagedRepository(config.reposRoot, registered, gitCommand);
     if (
       !back.text.trim() ||
       !common.text.trim() ||
@@ -558,7 +626,14 @@ function inspectMember(
     };
     const index = yield* snapshot(path.join(admin, "index"), RESUME_LIMITS.indexBytes);
     yield* requireNonRefreshingIndex(index.bytes, head.length);
-    const filterOverrides = yield* statusPreflight(git, repo.id);
+    const filterOverrides = yield* statusPreflight(
+      git,
+      repo.id,
+      undefined,
+      false,
+      undefined,
+      borrowedMember
+    );
     const status = yield* commandResult(
       git(
         ...filterOverrides,
@@ -614,8 +689,9 @@ function inspectMember(
     // Recheck attachment and identities after status, without modifying or renewing them.
     const finalHead = (yield* commandString(git("rev-parse", "--verify", "HEAD^{commit}"))).trim();
     const finalBranch = (yield* commandString(git("symbolic-ref", "--quiet", "HEAD"))).trim();
-    yield* statusPreflight(git, repo.id);
+    yield* statusPreflight(git, repo.id, undefined, false, undefined, borrowedMember);
     yield* unchanged([gitfile, back, common, adminHead, managedConfig, index]);
+    if (repo.storage?.kind === "borrowed") yield* verifyWorkspaceStorage(repo.storage, checkout);
     if (
       head !== finalHead ||
       finalBranch !== `refs/heads/${manifest.branch}` ||

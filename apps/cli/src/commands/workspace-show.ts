@@ -17,8 +17,8 @@ import {
   deriveWorkspaceStatus,
   getManifestFilePath,
   readManifest,
-  resolveManagedPath,
   resolveManifestWorkspacePath,
+  resolveRepositoryStoragePath,
   resolveWorktreePath,
   type WorkspaceStatus,
 } from "../workspace-manifest.js";
@@ -87,10 +87,9 @@ export function runWorkspaceShow(
 
       const worktrees: Array<ResultData["workspace show"]["worktrees"][number]> = [];
       for (const repo of manifest.repositories) {
-        const managedPathResult = yield* resolveManagedPath(
-          config.reposRoot,
-          repo.managedPath
-        ).pipe(Effect.result);
+        const managedPathResult = yield* resolveRepositoryStoragePath(config.reposRoot, repo).pipe(
+          Effect.result
+        );
         const resolvedManagedPath = Result.isSuccess(managedPathResult)
           ? managedPathResult.success
           : undefined;
@@ -123,6 +122,7 @@ export function runWorkspaceShow(
                   : { branchDisposition: repo.branchDisposition }),
               }),
           managedPath: repo.managedPath,
+          storage: repo.storage,
           resolvedManagedPath,
           worktreePath: repo.worktreePath,
           resolvedWorktreePath,
