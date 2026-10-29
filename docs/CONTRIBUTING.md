@@ -299,6 +299,21 @@ After changing the command registry or result schemas, run
 `npm run docs:generate --workspace @abijith-suresh/outpost` and commit the updated
 command reference, man page and schemas. Both CLI build and verify reject drift.
 The assets are checked in so installed packages work offline with scripts disabled.
+The shipped CLI manifest pins the Effect runtime, Node platform adapter and shared
+Node adapter together. The shared adapter is an intentional direct dependency
+even though Outpost reaches it through the platform adapter. An upstream compatible
+range can otherwise select a newer shared adapter whose Effect peer needs APIs
+absent from the pinned runtime. A root override or development lock does not
+constrain a consumer's global tarball installation.
+
+This is a narrow runtime-cohort contract, not a lock of every transitive package.
+Update these pins together and verify actual consumer resolution. The installed
+smoke uses a new empty npm cache and registry resolution, logs resolved versions
+from the platform/shared import locations and checks that they share the pinned
+runtime. `npm run test:runtime-dependencies --workspace @abijith-suresh/outpost`
+adds deterministic Node-resolution fixtures, including the incompatible nested
+adapter case, to required verification. No publication is needed for these checks.
+
 Use `npm run test:smoke` to test the actual packed global install, including its
 scoped-package man link. Validate skill edits with the skill creator's
 `quick_validate.py` when available and review lifecycle/recovery decisions against

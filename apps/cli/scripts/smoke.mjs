@@ -1,6 +1,14 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,6 +18,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
 import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
+import { verifyInstalledRuntime } from "./runtime-dependencies.mjs";
 import { verifySettingsWorkflow } from "./settings-smoke.mjs";
 
 const require = createRequire(import.meta.url);
@@ -134,13 +143,20 @@ try {
   assert.equal(packOutput.length, 1, "npm pack should produce one tarball");
   const tarball = join(packDir, packOutput[0].filename);
 
-  console.log(`Installing ${tarball} to ${installPrefix}...`);
+  assert.ok(
+    !existsSync(join(smokeRoot, "empty-npm-cache")),
+    "Install must start with an empty npm cache"
+  );
+  console.log(`Installing ${tarball} to ${installPrefix} with an empty npm cache...`);
   const installResult = runNpm(
     [
       "install",
       "--global",
       tarball,
-      "--prefer-offline",
+      "--prefer-online",
+      "--offline=false",
+      "--cache",
+      join(smokeRoot, "empty-npm-cache"),
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
@@ -156,6 +172,9 @@ try {
   });
   assertSuccess(globalRootResult, "resolve global package root");
   const installedPackage = join(globalRootResult.stdout.trim(), "@abijith-suresh", "outpost");
+  console.log(
+    `Installed runtime tree: ${JSON.stringify(verifyInstalledRuntime(installedPackage))}`
+  );
 
   console.log("Test: importing packed package is side-effect-free");
   const importResult = run(process.execPath, [
@@ -193,7 +212,7 @@ try {
   const installedManifest = JSON.parse(
     readFileSync(join(installedPackage, "package.json"), "utf8")
   );
-  assert.equal(Object.keys(installedManifest.dependencies).length, 2);
+  assert.equal(Object.keys(installedManifest.dependencies).length, 3);
   assert.equal(installedManifest.dependencies.ajv, undefined);
   const locations = runInstalled(["skill", "path", "--json"]);
   assertSuccess(locations, "installed guidance paths");

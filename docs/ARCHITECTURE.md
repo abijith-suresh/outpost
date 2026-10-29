@@ -518,6 +518,15 @@ and subprocess calls as development tooling, outside CLI command workflows.
 
 Package `files`, `man` and asset exports include guidance without postinstall
 hooks. Unix global npm installs link the scoped package's actual `outpost.1`.
+The CLI declares the shared Node adapter as an exact direct runtime dependency
+alongside Effect and the Node platform adapter. This consumer-visible pin aligns
+the runtime cohort without relying on a development lock or root-only override.
+Other transitive dependency ranges remain upstream-owned. A fresh empty-cache
+global installation resolves the shipped manifest; smoke verifies the adapter's
+actual nested resolution and shared Effect identity before exercising lifecycle
+commands. Deterministic resolution fixtures reject a missing shipped pin or a
+newer nested adapter even if the root versions look compatible.
+
 Installed tarball smoke tests read assets, compile every schema without a network
 loader, validate installed guidance/partial/error envelopes, export the portable
 skill, reject a second export and verify the man link resolves into the package.
