@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { semanticIdentifierSchema } from "./path-safety.js";
 
-const IdentitySchema = Schema.Struct({
+export const IdentitySchema = Schema.Struct({
   path: Schema.String,
   device: Schema.String.check(Schema.isPattern(/^[0-9]+$/)),
   inode: Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/)),
@@ -21,3 +21,14 @@ export const RetainedBorrowedRecordSchema = Schema.Struct({
   retainedAt: Schema.String,
 });
 export type BorrowedRecord = typeof BorrowedRecordSchema.Type;
+
+export const WorkspaceStorageSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("managed") }),
+  Schema.Struct({
+    kind: Schema.Literal("borrowed"),
+    common: IdentitySchema,
+    checkout: IdentitySchema,
+    administration: IdentitySchema,
+  }),
+]);
+export type WorkspaceStorage = typeof WorkspaceStorageSchema.Type;

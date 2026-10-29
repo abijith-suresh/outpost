@@ -63,6 +63,83 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "storage": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["managed"]
+                          }
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["borrowed"]
+                          },
+                          "common": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          },
+                          "checkout": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          },
+                          "administration": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": ["kind", "common", "checkout", "administration"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "id": {
                     "type": "string"
                   },
@@ -375,6 +452,83 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "storage": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["managed"]
+                          }
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["borrowed"]
+                          },
+                          "common": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          },
+                          "checkout": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          },
+                          "administration": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "device": {
+                                "type": "string"
+                              },
+                              "inode": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["path", "device", "inode"],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": ["kind", "common", "checkout", "administration"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "id": {
                     "type": "string"
                   },

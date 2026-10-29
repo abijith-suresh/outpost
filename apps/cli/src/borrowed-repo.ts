@@ -26,7 +26,7 @@ const fail = (message: string) => new BorrowedError({ ...reasonDetails("invalid-
 
 // Node bigint stat is deliberate: Effect's numeric inode can lose Windows file-ID bits.
 // Identity excludes mutable timestamps, config, refs and administrative contents.
-function identity(value: string) {
+export function directoryIdentity(value: string) {
   return Effect.tryPromise({
     try: async () => {
       const canonical = await realpath(value);
@@ -58,6 +58,9 @@ export function discoverBorrowed(input: string, name: string) {
       "GIT_CONFIG_PARAMETERS",
       "GIT_SHALLOW_FILE",
       "GIT_REPLACE_REF_BASE",
+      "GIT_NAMESPACE",
+      "GIT_GRAFT_FILE",
+      "GIT_ATTR_SOURCE",
     ])
       if (process.env[key] !== undefined)
         return yield* fail(
@@ -66,15 +69,15 @@ export function discoverBorrowed(input: string, name: string) {
     const path = yield* Path.Path;
     yield* validateWindowsInvocationCwd();
     yield* validateWindowsGitPath(input, "cwd");
-    const invocation = yield* identity(input);
+    const invocation = yield* directoryIdentity(input);
     const git = (...args: string[]) =>
       commandString(readOnlyGitCommand(...args).pipe(ChildProcess.setCwd(invocation.path))).pipe(
         Effect.map((text) => text.trim())
       );
     const top = yield* git("rev-parse", "--show-toplevel");
-    const anchor = yield* identity(top);
-    const privateGit = yield* identity(yield* git("rev-parse", "--absolute-git-dir"));
-    const common = yield* identity(
+    const anchor = yield* directoryIdentity(top);
+    const privateGit = yield* directoryIdentity(yield* git("rev-parse", "--absolute-git-dir"));
+    const common = yield* directoryIdentity(
       yield* git("rev-parse", "--path-format=absolute", "--git-common-dir")
     );
     yield* validateWindowsGitPath(common.path, "gitdir");
@@ -88,15 +91,20 @@ export function discoverBorrowed(input: string, name: string) {
       .filter((field) => field.startsWith("worktree "))
       .map((field) => field.slice(9));
     if (!entries.length) return yield* fail("Missing main checkout registration.");
-    const main = yield* identity(entries[0]);
-    if (!equal(yield* identity(path.join(main.path, ".git")), common))
+    const main = yield* directoryIdentity(entries[0]);
+    if (!equal(yield* directoryIdentity(path.join(main.path, ".git")), common))
       return yield* fail("Separate Git-directory layouts are unsupported.");
-    const listed = yield* Effect.forEach(entries, (entry) => identity(entry).pipe(Effect.result));
+    const listed = yield* Effect.forEach(entries, (entry) =>
+      directoryIdentity(entry).pipe(Effect.result)
+    );
     if (!listed.some((entry) => entry._tag === "Success" && equal(entry.success, anchor)))
       return yield* fail("Checkout is not registered with its common directory.");
     const checkoutKind = equal(privateGit, common) ? ("main" as const) : ("linked" as const);
     if (checkoutKind === "main") {
-      if (!equal(anchor, main) || !equal(yield* identity(path.join(anchor.path, ".git")), common))
+      if (
+        !equal(anchor, main) ||
+        !equal(yield* directoryIdentity(path.join(anchor.path, ".git")), common)
+      )
         return yield* fail("Inconsistent main checkout identity.");
     } else {
       if (path.dirname(privateGit.path) !== path.join(common.path, "worktrees"))
@@ -111,7 +119,7 @@ export function discoverBorrowed(input: string, name: string) {
         return yield* fail("Linked checkout back-pointers do not match.");
     }
     for (const current of [anchor, privateGit, common])
-      if (!equal(current, yield* identity(current.path)))
+      if (!equal(current, yield* directoryIdentity(current.path)))
         return yield* fail("Repository identity changed during inspection.");
     return {
       kind: "borrowed" as const,
@@ -136,7 +144,7 @@ export function verifyBorrowed(record: BorrowedRecord) {
   return Effect.gen(function* () {
     // Check before Git as well as after, so replacement storage is never inspected as trusted.
     for (const saved of [record.anchor, record.privateGit, record.common])
-      if (!equal(saved, yield* identity(saved.path)))
+      if (!equal(saved, yield* directoryIdentity(saved.path)))
         return yield* fail(
           `Repository identity replaced at ${saved.path}. Preserve storage and inspect the retained record.`
         );

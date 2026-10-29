@@ -215,10 +215,13 @@ export function runGuidancePreview(args: readonly string[]) {
           requestedBase: worktree.requestedBase,
           baseRef: worktree.baseRef,
           baseCommit: worktree.baseCommit ?? undefined,
-          managedPath: path.relative(
-            config.reposRoot,
-            registry.repos.find((repo) => repo.id === worktree.repoId)?.managedRepoPath ?? ""
-          ),
+          managedPath:
+            worktree.storageKind === "borrowed"
+              ? undefined
+              : path.relative(
+                  config.reposRoot,
+                  registry.repos.find((repo) => repo.id === worktree.repoId)?.managedRepoPath ?? ""
+                ),
           worktreePath: path.relative(plan.data.ticketDirectory, worktree.path),
         })),
       },
@@ -226,7 +229,18 @@ export function runGuidancePreview(args: readonly string[]) {
     );
     return {
       command: "guidance preview",
-      data: { ticketDirectory: plan.data.ticketDirectory, content },
+      data: {
+        ticketDirectory: plan.data.ticketDirectory,
+        content:
+          content +
+          plan.data.worktrees
+            .filter((member) => member.storageKind === "borrowed")
+            .map(
+              (member) =>
+                `\nBorrowed registered storage for ${member.repoId}: ${member.commonDirectory}. External dependency, not a backup. Checkout/admin identities are established only during execution.\n`
+            )
+            .join(""),
+      },
     } satisfies CommandOutput<"guidance preview">;
   }).pipe(Effect.mapError(mapError));
 }

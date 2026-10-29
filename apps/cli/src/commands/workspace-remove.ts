@@ -5,7 +5,20 @@ import type * as Path from "effect/Path";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { commandExitCode, commandResult, gitCommand } from "../child-process.js";
+import {
+  checkedHooks,
+  emptyHooks,
+  safeBorrowedGit,
+  verifyDirectory,
+  verifyWorkspaceStorage,
+} from "../borrowed-workspace.js";
+import {
+  commandExitCode,
+  commandResult,
+  commandString,
+  gitCommand,
+  readOnlyGitCommand,
+} from "../child-process.js";
 import { knownWorktreesRoots, loadConfig, resolveOutpostHome } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
 import { acquireHomeMutationLock } from "../mutation-lock.js";
@@ -26,12 +39,13 @@ import {
   manifestExists,
   readManifest,
   releaseTicketLock,
-  resolveManagedPath,
   resolveManifestWorkspacePath,
+  resolveRepositoryStoragePath,
   resolveWorktreePath,
   verifyWorktreeOwnership,
 } from "../workspace-manifest.js";
 import { type AgentsRemovalPrompt, promptAgentsRemovalConsent } from "./workspace-remove-prompt.js";
+import { verifyNewWorktreeClean } from "./workspace-resume.js";
 
 export class WorkspaceRemoveError extends Schema.TaggedError<WorkspaceRemoveError>()(
   "WorkspaceRemoveError",
@@ -185,14 +199,31 @@ export function runWorkspaceRemove(
               Effect.mapError(toMapError)
             );
 
+            const filterOverrides = new Map<string, readonly string[]>();
+            const hooks =
+              !dryRun && manifest.repositories.some((repo) => repo.storage?.kind === "borrowed")
+                ? yield* emptyHooks(outpostHome).pipe(Effect.mapError(toMapError))
+                : undefined;
             // Validate every member before prompting or mutating any worktree/guidance.
             for (const repo of manifest.repositories) {
-              const managed = yield* resolveManagedPath(config.reposRoot, repo.managedPath).pipe(
+              const managed = yield* resolveRepositoryStoragePath(config.reposRoot, repo).pipe(
                 Effect.mapError(toMapError)
               );
               const checkout = yield* resolveWorktreePath(workspaceDir, repo.worktreePath).pipe(
                 Effect.mapError(toMapError)
               );
+              if (repo.storage?.kind === "borrowed") {
+                yield* verifyDirectory(repo.storage.common).pipe(Effect.mapError(toMapError));
+                if (yield* fs.exists(checkout))
+                  yield* verifyWorkspaceStorage(repo.storage, checkout).pipe(
+                    Effect.mapError(toMapError)
+                  );
+                else if (yield* fs.exists(repo.storage.administration.path))
+                  return yield* new WorkspaceRemoveError({
+                    message:
+                      "Missing borrowed checkout has residual administration; preserve manifest and inspect doctor recovery.",
+                  });
+              }
               yield* validateWindowsExistingWorktree(managed, checkout).pipe(
                 Effect.mapError(toMapError)
               );
@@ -246,9 +277,9 @@ export function runWorkspaceRemove(
             }
 
             for (const repo of manifest.repositories) {
-              const resolvedManagedPath = yield* resolveManagedPath(
+              const resolvedManagedPath = yield* resolveRepositoryStoragePath(
                 config.reposRoot,
-                repo.managedPath
+                repo
               ).pipe(Effect.mapError(toMapError));
 
               const resolvedWorktreePath = yield* resolveWorktreePath(
@@ -290,6 +321,34 @@ export function runWorkspaceRemove(
                 );
               }
 
+              if (repo.storage?.kind === "borrowed") {
+                yield* verifyWorkspaceStorage(repo.storage, resolvedWorktreePath).pipe(
+                  Effect.mapError(toMapError)
+                );
+                const head = (yield* commandString(
+                  readOnlyGitCommand(
+                    "-C",
+                    resolvedWorktreePath,
+                    "rev-parse",
+                    "--verify",
+                    "HEAD^{commit}"
+                  )
+                ).pipe(Effect.mapError(toMapError))).trim();
+                const status = yield* verifyNewWorktreeClean(
+                  resolvedWorktreePath,
+                  repo.id,
+                  head,
+                  (overrides) => {
+                    filterOverrides.set(repo.id, overrides);
+                  },
+                  true
+                ).pipe(Effect.mapError(toMapError));
+                if (status.trim())
+                  return yield* new WorkspaceRemoveError({
+                    message: `Borrowed checkout ${repo.id} has uncommitted changes. Preserve work before removal.`,
+                  });
+                continue;
+              }
               const statusCommand = gitCommand(
                 "--no-optional-locks",
                 "-C",
@@ -360,9 +419,9 @@ export function runWorkspaceRemove(
             const worktreeNames = manifest.repositories.map((repo) => repo.worktreePath);
 
             for (const repo of manifest.repositories) {
-              const resolvedManagedPath = yield* resolveManagedPath(
+              const resolvedManagedPath = yield* resolveRepositoryStoragePath(
                 config.reposRoot,
-                repo.managedPath
+                repo
               ).pipe(Effect.mapError(toMapError));
 
               const resolvedWorktreePath = yield* resolveWorktreePath(
@@ -387,14 +446,30 @@ export function runWorkspaceRemove(
                   worktreePath: resolvedWorktreePath,
                 })
                 .pipe(Effect.mapError(toMapError));
+              if (repo.storage?.kind === "borrowed") {
+                yield* verifyWorkspaceStorage(repo.storage, resolvedWorktreePath).pipe(
+                  Effect.mapError(toMapError)
+                );
+                yield* checkedHooks(hooks ?? "").pipe(Effect.mapError(toMapError));
+              }
               const removalResult = yield* commandExitCode(
-                gitCommand(
-                  "--git-dir",
-                  resolvedManagedPath,
-                  "worktree",
-                  "remove",
-                  resolvedWorktreePath
-                )
+                repo.storage?.kind === "borrowed"
+                  ? safeBorrowedGit(
+                      hooks ?? "",
+                      ...(filterOverrides.get(repo.id) ?? []),
+                      "--git-dir",
+                      resolvedManagedPath,
+                      "worktree",
+                      "remove",
+                      resolvedWorktreePath
+                    )
+                  : gitCommand(
+                      "--git-dir",
+                      resolvedManagedPath,
+                      "worktree",
+                      "remove",
+                      resolvedWorktreePath
+                    )
               ).pipe(Effect.result);
 
               if (Result.isSuccess(removalResult) && removalResult.success === 0) {
@@ -521,5 +596,5 @@ export function runWorkspaceRemove(
     );
 
     return result;
-  }).pipe(Effect.scoped);
+  }).pipe(Effect.scoped, Effect.mapError(toMapError));
 }

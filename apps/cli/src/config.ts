@@ -572,7 +572,7 @@ export function writeConfig(outpostHome: string, config: OutpostConfig) {
   });
 }
 
-export function matchesTags(repo: RepoRecord, tags: readonly string[]) {
+export function matchesTags(repo: { tags?: readonly string[] }, tags: readonly string[]) {
   return tags.every((tag) => repo.tags?.includes(tag));
 }
 

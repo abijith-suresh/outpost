@@ -127,7 +127,7 @@ Side effects: exported-guidance.
 Usage:
   outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run] [--json]
 
-Create worktrees for imported repositories
+Create worktrees; explicit local borrowed clones trust configured Git conversions
 
   mutation: true
   interactive: yes
@@ -147,7 +147,7 @@ Options:
 ```
 
 Network: explicit. Retry: inspect-before-retry.
-Side effects: explicit-fresh-remote-fetch, remote-tracking-refs, local-branches, worktrees, workspace-metadata.
+Side effects: explicit-fresh-remote-fetch, remote-tracking-refs, local-branches, worktrees, workspace-metadata, trusted-borrowed-git-programs.
 
 ## guidance preview
 
@@ -503,8 +503,8 @@ Options:
   --json  Output as JSON
 ```
 
-Network: none. Retry: inspect-before-retry.
-Side effects: worktrees, workspace-metadata.
+Network: explicit. Retry: inspect-before-retry.
+Side effects: worktrees, workspace-metadata, trusted-borrowed-git-programs.
 
 ## workspace resume
 
@@ -512,7 +512,7 @@ Side effects: worktrees, workspace-metadata.
 Usage:
   outpost workspace resume <ticket> [--json]
 
-Verify one existing workspace and report current work without fetching or changing it
+Verify one workspace; borrowed status trusts configured Git conversions, which may have side effects/network
 
   mutation: false
   json output: yes
@@ -524,8 +524,8 @@ Options:
   --json  Output as JSON
 ```
 
-Network: none. Retry: safe.
-Side effects: none.
+Network: explicit. Retry: inspect-before-retry.
+Side effects: trusted-borrowed-git-programs.
 
 ## workspace show
 

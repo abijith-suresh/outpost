@@ -121,6 +121,13 @@ export function renderAgentsMarkdown(
           `    name: ${jsonEncode(repo.name)}`,
           `    id: ${jsonEncode(repo.id)}`,
           `    worktree: ${jsonEncode(`./${relativeWorktree}`)}`,
+          ...(repo.storage?.kind === "borrowed"
+            ? [
+                "    storage: borrowed registered clone (external dependency, not a backup)",
+                `    commonDirectory: ${jsonEncode(repo.storage.common.path)}`,
+                "    checkoutOwnership: Outpost-created; source checkout is never adopted",
+              ]
+            : []),
           `    expectedBranch: ${jsonEncode(manifest.branch)}`,
           ...(repo.branchDisposition === "existing"
             ? [

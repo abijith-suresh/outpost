@@ -39,13 +39,14 @@ export type BaseSelection = {
 /** A named reuse must not adopt external object pools or filesystem ref aliases. */
 export function requireOwnedReuseStorage(
   repo: Pick<RepoRecord, "id" | "managedRepoPath">,
-  branch: string
+  branch: string,
+  selectedRef?: string
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* resolveCanonicalPath(repo.managedRepoPath).pipe(Effect.mapError(mapError));
-    const ref = `refs/heads/${branch}`;
+    const ref = selectedRef ?? `refs/heads/${branch}`;
     const refParts = ref.split("/");
     const storagePaths = [
       "objects",
@@ -149,7 +150,10 @@ const mapError = (error: { message: string }) =>
 const validOid = (value: string) => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
 
 /** Only the selected commit/tree is inspected; no ancestor history or promisor fetch is needed. */
-export function requireOwnedCheckoutObjects(repo: RepoRecord, commit: string) {
+export function requireOwnedCheckoutObjects(
+  repo: Pick<RepoRecord, "id" | "managedRepoPath">,
+  commit: string
+) {
   return commandExitCode(
     gitCommand(
       "--git-dir",
@@ -172,7 +176,11 @@ export function requireOwnedCheckoutObjects(repo: RepoRecord, commit: string) {
   );
 }
 
-export function resolveBase(repo: RepoRecord, source: BaseSource, requested: string | undefined) {
+export function resolveBase(
+  repo: Pick<RepoRecord, "id" | "managedRepoPath">,
+  source: BaseSource,
+  requested: string | undefined
+) {
   return Effect.gen(function* () {
     let base = requested;
     if (base === undefined) {

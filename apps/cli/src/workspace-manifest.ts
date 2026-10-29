@@ -7,6 +7,8 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { ProvenanceFields } from "./base-selection.js";
+import { WorkspaceStorageSchema } from "./borrowed-schema.js";
+import { verifyWorkspaceStorage } from "./borrowed-workspace.js";
 import { commandExitCode, readOnlyGitCommand as gitCommand } from "./child-process.js";
 import type { OutpostConfig } from "./config.js";
 import { knownWorktreesRoots, loadConfig } from "./config.js";
@@ -45,14 +47,15 @@ export const RepositoryEntrySchema = Schema.Struct({
   name: semanticIdentifierSchema("repository name"),
   base: semanticIdentifierSchema("base branch"),
   ...ProvenanceFields,
-  managedPath: Schema.String,
+  managedPath: Schema.optional(Schema.String),
+  storage: Schema.optional(WorkspaceStorageSchema),
   worktreePath: Schema.String,
 });
 
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  version: Schema.optional(Schema.Literals([2, 3, 4])),
+  version: Schema.optional(Schema.Literals([2, 3, 4, 5])),
   worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
@@ -62,13 +65,30 @@ export const ManifestSchema = Schema.Struct({
   repositories: Schema.Array(RepositoryEntrySchema),
 }).check(
   Schema.makeFilter((manifest) => {
+    if (
+      manifest.version === 5 &&
+      !manifest.repositories.some((repo) => repo.storage?.kind === "borrowed")
+    )
+      return "Version 5 requires borrowed storage.";
     for (const repo of manifest.repositories) {
+      if (manifest.version === 5 && (!repo.storage || repo.branchDisposition !== "created"))
+        return "Version 5 requires explicit backend and NEW branch disposition on every member.";
+      if (repo.storage && manifest.version !== 5)
+        return "Frozen storage requires manifest version 5.";
+      if (repo.storage?.kind === "borrowed") {
+        if (
+          repo.managedPath !== undefined ||
+          repo.baseSource !== "local" ||
+          repo.branchDisposition !== "created"
+        )
+          return "Borrowed entries require local NEW branch provenance and frozen storage, never managedPath.";
+      } else if (repo.managedPath === undefined) return "Managed entries require managedPath.";
       const hasAny =
         repo.baseSource !== undefined ||
         repo.requestedBase !== undefined ||
         repo.baseRef !== undefined ||
         repo.baseCommit !== undefined;
-      if (manifest.version === 3 || manifest.version === 4) {
+      if (manifest.version === 3 || manifest.version === 4 || manifest.version === 5) {
         if (
           !repo.baseSource ||
           repo.requestedBase === undefined ||
@@ -87,6 +107,9 @@ export const ManifestSchema = Schema.Struct({
           repo.base !== manifest.branch
         )
           return "Version 4 manifests require existing local branch admission provenance matching the frozen branch.";
+      } else if (manifest.version === 5) {
+        if (repo.branchDisposition !== undefined && repo.branchDisposition !== "created")
+          return "Version 5 cannot borrow existing branches.";
       } else if (repo.branchDisposition !== undefined)
         return "Branch disposition requires manifest version 4.";
     }
@@ -255,6 +278,31 @@ export function resolveWorkspacePath(
     );
 
     return yield* ensureCanonicalPathWithinRoot(worktreesRoot, resolvedPath);
+  });
+}
+
+/** Separate versioned backend resolver; managed containment is never relaxed. */
+export function resolveRepositoryStoragePath(
+  reposRoot: string,
+  repo: RepositoryEntry,
+  lexicalOnly = false
+) {
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    if (repo.storage?.kind === "borrowed") {
+      if (!path.isAbsolute(repo.storage.common.path))
+        return yield* new ManifestError({
+          message: "Frozen borrowed common directory must be absolute.",
+        });
+      return repo.storage.common.path;
+    }
+    if (repo.managedPath === undefined)
+      return yield* new ManifestError({ message: "Missing managed repository path." });
+    return yield* lexicalOnly
+      ? resolvePathWithinRoot(reposRoot, repo.managedPath).pipe(
+          Effect.mapError((error) => new ManifestError({ message: error.message }))
+        )
+      : resolveManagedPath(reposRoot, repo.managedPath);
   });
 }
 
@@ -470,7 +518,7 @@ export function readManifest(
         )
       );
 
-      if (path.isAbsolute(repo.managedPath)) {
+      if (repo.managedPath !== undefined && path.isAbsolute(repo.managedPath)) {
         return yield* Effect.fail(
           new ManifestError({
             message: `managedPath must not be an absolute path: ${repo.managedPath}`,
@@ -498,9 +546,11 @@ export function readManifest(
             (error) => new ManifestError({ message: error.message, ...domainDetails(error) })
           )
         );
-      const resolvedManagedPath = yield* lexicalOnly
-        ? lexicalPath(config.reposRoot, repo.managedPath)
-        : resolveManagedPath(config.reposRoot, repo.managedPath);
+      const resolvedManagedPath = yield* resolveRepositoryStoragePath(
+        config.reposRoot,
+        repo,
+        lexicalOnly
+      );
       const resolvedWorktreePath = yield* lexicalOnly
         ? lexicalPath(workspaceDir, repo.worktreePath)
         : resolveWorktreePath(workspaceDir, repo.worktreePath);
@@ -642,7 +692,7 @@ export function writeManifest(
     for (let i = 0; i < validatedManifest.repositories.length; i++) {
       const repo = validatedManifest.repositories[i];
 
-      if (path.isAbsolute(repo.managedPath)) {
+      if (repo.managedPath !== undefined && path.isAbsolute(repo.managedPath)) {
         return yield* Effect.fail(
           new ManifestError({
             message: `managedPath must not be an absolute path: ${repo.managedPath}`,
@@ -658,7 +708,7 @@ export function writeManifest(
         );
       }
 
-      yield* resolveManagedPath(config.reposRoot, repo.managedPath);
+      yield* resolveRepositoryStoragePath(config.reposRoot, repo);
       yield* resolveWorktreePath(workspaceDir, repo.worktreePath);
     }
 
@@ -828,7 +878,7 @@ export function deriveManifestStatus(
 
     for (const repo of manifest.repositories) {
       const resolvedManagedPathResult = yield* Effect.result(
-        resolveManagedPath(config.reposRoot, repo.managedPath)
+        resolveRepositoryStoragePath(config.reposRoot, repo)
       );
 
       if (Result.isFailure(resolvedManagedPathResult)) {
@@ -854,6 +904,12 @@ export function deriveManifestStatus(
         continue;
       }
 
+      if (repo.storage?.kind === "borrowed") {
+        const frozen = yield* verifyWorkspaceStorage(repo.storage, resolvedWorktree).pipe(
+          Effect.result
+        );
+        if (frozen._tag === "Failure") return "invalid";
+      }
       const ownershipValid = yield* verifyWorktreeOwnership(
         resolvedWorktree,
         resolvedManagedPath
@@ -1006,7 +1062,10 @@ export function getManifestWorktreesRoot(
   if (manifest.version === undefined && manifest.worktreesRoot === undefined)
     return Effect.succeed(config.legacyWorktreesRoot ?? config.worktreesRoot);
   if (
-    (manifest.version !== 2 && manifest.version !== 3 && manifest.version !== 4) ||
+    (manifest.version !== 2 &&
+      manifest.version !== 3 &&
+      manifest.version !== 4 &&
+      manifest.version !== 5) ||
     !manifest.worktreesRoot ||
     config.version < 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)

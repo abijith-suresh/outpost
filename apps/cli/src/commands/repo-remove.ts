@@ -22,7 +22,7 @@ import { validateWindowsInvocationCwd, validateWindowsManagedGitDir } from "../w
 import {
   listManifestTickets,
   readManifest,
-  resolveManagedPath,
+  resolveRepositoryStoragePath,
   scanWorktreesRoot,
 } from "../workspace-manifest.js";
 import { transferBorrowed } from "./repo-register.js";
@@ -134,7 +134,7 @@ export function runRepoRemove(
         }
 
         const resolvedManagedPathResult = yield* Effect.result(
-          resolveManagedPath(config.reposRoot, repo.managedPath)
+          resolveRepositoryStoragePath(config.reposRoot, repo)
         );
 
         if (Result.isSuccess(resolvedManagedPathResult)) {

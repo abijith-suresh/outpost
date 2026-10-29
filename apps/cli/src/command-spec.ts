@@ -158,7 +158,8 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     path: ["create"],
-    description: "Create worktrees for imported repositories",
+    description:
+      "Create worktrees; explicit local borrowed clones trust configured Git conversions",
     options: CREATE_OPTIONS,
     mutation: true,
     interactive: true,
@@ -422,7 +423,7 @@ export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
     path: ["workspace", "resume"],
     description:
-      "Verify one existing workspace and report current work without fetching or changing it",
+      "Verify one workspace; borrowed status trusts configured Git conversions, which may have side effects/network",
     arguments: [
       { name: "ticket", description: "Existing ticket workspace identifier", required: true },
     ],
@@ -588,7 +589,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "4.0.0";
+export const CONTRACT_VERSION = "4.1.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;
@@ -732,13 +733,19 @@ export function commandInputSchema(spec: CommandSpec) {
 export function commandPolicy(spec: CommandSpec) {
   const name = spec.path.join(" ");
   return {
-    network:
-      name === "repo add" || name === "repo fetch" || name === "create"
-        ? ("explicit" as const)
-        : ("none" as const),
-    retry: spec.mutation ? ("inspect-before-retry" as const) : ("safe" as const),
+    network: ["repo add", "repo fetch", "create", "workspace resume", "workspace remove"].includes(
+      name
+    )
+      ? ("explicit" as const)
+      : ("none" as const),
+    retry:
+      spec.mutation || name === "workspace resume"
+        ? ("inspect-before-retry" as const)
+        : ("safe" as const),
     sideEffects: !spec.mutation
-      ? []
+      ? name === "workspace resume"
+        ? ["trusted-borrowed-git-programs"]
+        : []
       : name === "create"
         ? [
             "explicit-fresh-remote-fetch",
@@ -746,9 +753,10 @@ export function commandPolicy(spec: CommandSpec) {
             "local-branches",
             "worktrees",
             "workspace-metadata",
+            "trusted-borrowed-git-programs",
           ]
         : name === "workspace remove"
-          ? ["worktrees", "workspace-metadata"]
+          ? ["worktrees", "workspace-metadata", "trusted-borrowed-git-programs"]
           : name === "skill export"
             ? ["exported-guidance"]
             : name === "init"
