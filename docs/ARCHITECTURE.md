@@ -628,7 +628,7 @@ the registration commit. Interrupted writes preserve old records and repair
 forward. Reads never migrate. Managed manifests through v4 retain original roots;
 borrowed-containing creation writes strict manifest v5 with tagged storage and frozen
 common/checkout/admin lossless identity. Managed-only manifests retain their formats.
-Borrowed reuse/fresh modes and mixed/all fetch selections refuse before effects.
+Borrowed reuse and generic mixed/all repo fetch selections refuse before effects; explicit named fresh creation uses the separate receipt protocol below.
 
 List/show inspect identity offline and distinguish unavailable from healthy
 registration without claiming object availability. Remove transfers the complete
@@ -706,3 +706,52 @@ operations may remain safe; their unknown-manifest unregister barrier must hold.
 Resume/show/remove use frozen state and never require current remote/anchor or
 resolve the cache again. Receipt fetch/auth, arbitrary mappings and borrowed reuse
 are not part of this increment.
+
+
+## Borrowed named fresh selection and retained receipts
+
+`fresh-base.ts` prepares all borrowed members offline, then applies one deadline
+across their advertisement/fetch/receipt sequence. It validates one exact heads
+advertisement in the saved anchor context, destination-free fetches that SHA with
+empty refmap/no tags/prune/FETCH_HEAD/maintenance, and validates owned objects.
+It never updates conventional tracking refs. Named fresh with any managed member
+refuses before transport; existing omitted managed semantics remain unchanged.
+Configured helpers are trusted noninteractive programs, not sandboxed services.
+Observed endpoint changes fail; mutable configuration A-B-A cannot be excluded.
+Git trace2 is disabled at the shared child boundary, because global trace2 targets
+can emit configuration during discovery. Fresh refuses inherited transport tracing
+and unsets presence-enabled GIT_CURL_VERBOSE in its children. Trace suppression is
+command-scoped and never changes source/global settings.
+
+Receipt names use the operation ID/member index but UUIDs do not establish ownership.
+Prepared no-deref CREATE locks, under-lock absence/parent/identity checks and strict
+bounded protocol acknowledgements establish admission. Confirmation also requires
+exit0, full stream completion, direct receipt and owned objects. Lost/nonzero/truncated
+responses retain unknown state; observing a matching ref never promotes ownership.
+No automatic receipt/branch/reflog/object/lock deletion or transport replay exists.
+
+Manifest7 requires borrowed fresh members with consistent requested heads/remote,
+original SHA and strict receipt metadata. Old formats remain strict. Receipt observation
+is read-only and separate from frozen original provenance/current work readiness.
+Completed fresh inventory is validated, bounded and retained in operations/<id>.json
+before success. The mutation-lock finalizer opts out of ordinary success journal
+removal only after confirmed retention. Failed retention reports failure while
+preserving any published manifest. Doctor identifies completed inventory as healthy,
+reports bounded receipt observations and never treats it as a lock. Creation inspects
+prior journals without scanning receipts; only failed matching-ticket records block
+blind retry. Successful removal preserves inventory and all receipts/branches.
+Older readers reject v7; their generic doctor may call completed records incomplete.
+No config/registry migration or new storage architecture is introduced.
+
+
+Incoming borrowed fresh objects use `fetch --keep` to select Git's packed route,
+even for small transfers. Before the first selected-member transport and immediately
+before each fetch, Outpost checks bounded pack/MIDX/file metadata, every possible
+loose fanout directory, known replacement/alternate views and any advertised commit
+leaf already present. It never scans all loose object contents. Existing selected
+commit/tree/blob ownership guards still apply after fetch. Source refs/config/index
+and original files are preserved separately from authorized new owned packs/metadata
+and effects of trusted programs. New packs, metadata and any remaining keep/temp files
+may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
+automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
+same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.

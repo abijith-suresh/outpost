@@ -26,6 +26,7 @@ import {
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../path-safety.js";
+import { observeReceipt } from "../receipt-observation.js";
 import { resolveRecordedRemoteIdentity } from "../remote-identity.js";
 import type { ResultData } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
@@ -809,6 +810,7 @@ export function runWorkspaceResume(ticket: string | undefined, extraArgs: Readon
                   baseSource: repo.baseSource,
                   requestedBase: repo.requestedBase,
                   baseRef: repo.baseRef,
+                  ...(repo.fetchReceipt ? { fetchReceipt: repo.fetchReceipt } : {}),
                   ...(repo.baseRemote
                     ? { baseRemote: repo.baseRemote, remoteRef: repo.remoteRef }
                     : {}),
@@ -818,6 +820,9 @@ export function runWorkspaceResume(ticket: string | undefined, extraArgs: Readon
                     : { branchDisposition: repo.branchDisposition }),
                 }),
           },
+          ...(repo.fetchReceipt && repo.storage?.kind === "borrowed"
+            ? { receiptObservation: yield* observeReceipt(repo.storage.common, repo.fetchReceipt) }
+            : {}),
           diagnostics: [],
         };
         const result = yield* inspectMember(

@@ -77,6 +77,7 @@ export function inspectCachedRemote(record: BorrowedRecord, remote: string) {
         )
       )
     );
+    return urls[0];
   });
 }
 

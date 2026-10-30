@@ -227,5 +227,22 @@ report v6 show as invalid and refuse resume/removal/reference inspection. Curren
 frozen state even if remote config changes or the saved linked launch anchor is
 gone. Normal owned removal preserves all branches. Failed/cancelled admission still
 retains exact branches/reflogs and uncertain checkout/admin/guidance for doctor;
-no destructive retry or clean rollback is promised. Borrowed fresh/auth/reuse remain
-unsupported, and trusted content conversion programs may have effects/network.
+no destructive retry or clean rollback is promised. Borrowed existing-branch reuse and generic repo fetch remain unsupported; explicit named fresh creation follows the retained receipt protocol below. Trusted content conversion programs may have effects/network.
+
+
+### Explicit borrowed fresh receipt recovery
+
+Fresh named selection leaves tracking refs unchanged. Objects/receipts from earlier
+members may remain when a later member fails. Inspect the operation ID/path and
+per-member last confirmed stage in doctor. Lost acknowledgements, timeouts, nonzero
+or truncated output remain unconfirmed even when a current ref matches the SHA.
+Never infer permission to delete/reset a receipt, branch, reflog, checkout/admin,
+object or lock from an intent record or UUID. Resolve manually before a new explicit
+invocation; no automatic replay or cleanup is supported.
+
+Completed retained receipt inventory is healthy history, not an unfinished ticket
+or live lock. It remains discoverable after normal workspace removal. Missing or
+moved historical receipts do not rewrite original provenance or automatically make
+an independently verified owned checkout unusable. Older doctor versions may call
+completed inventory incomplete; their diagnostics never grant destructive authority.
+Strict v7 manifests must not be downgraded to restore old writer compatibility.

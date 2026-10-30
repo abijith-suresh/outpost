@@ -109,7 +109,7 @@ jobs:
         run: npm run build --workspace @abijith-suresh/outpost
 
       - name: Settings and path regressions on native platform
-        run: npm run test --workspace @abijith-suresh/outpost -- tests/settings.test.ts tests/path-safety.test.ts tests/windows-git-path.test.ts tests/repo-retain.test.ts tests/repo-remove.test.ts tests/create-bases.test.ts tests/workspace-resume.test.ts tests/create-reuse-branch.test.ts tests/reuse-object-storage.test.ts tests/repo-register.test.ts tests/borrowed-workspace.test.ts tests/cached-base.test.ts --testTimeout=30000
+        run: npm run test --workspace @abijith-suresh/outpost -- tests/settings.test.ts tests/path-safety.test.ts tests/windows-git-path.test.ts tests/repo-retain.test.ts tests/repo-remove.test.ts tests/create-bases.test.ts tests/workspace-resume.test.ts tests/create-reuse-branch.test.ts tests/reuse-object-storage.test.ts tests/repo-register.test.ts tests/borrowed-workspace.test.ts tests/cached-base.test.ts tests/fresh-borrowed.test.ts --testTimeout=30000
 
       - name: Installed-package smoke test
         run: npm run test:smoke --workspace @abijith-suresh/outpost

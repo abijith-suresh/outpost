@@ -11,6 +11,7 @@ import {
   validatePathSegment,
   validateSemanticIdentifier,
 } from "../path-safety.js";
+import { observeReceipt } from "../receipt-observation.js";
 import type { ResultData } from "../result-schemas.js";
 import type { CommandOutput } from "../types.js";
 import {
@@ -116,6 +117,7 @@ export function runWorkspaceShow(
                 baseSource: repo.baseSource,
                 requestedBase: repo.requestedBase,
                 baseRef: repo.baseRef,
+                ...(repo.fetchReceipt ? { fetchReceipt: repo.fetchReceipt } : {}),
                 ...(repo.baseRemote
                   ? { baseRemote: repo.baseRemote, remoteRef: repo.remoteRef }
                   : {}),
@@ -124,6 +126,9 @@ export function runWorkspaceShow(
                   ? {}
                   : { branchDisposition: repo.branchDisposition }),
               }),
+          ...(repo.fetchReceipt && repo.storage?.kind === "borrowed"
+            ? { receiptObservation: yield* observeReceipt(repo.storage.common, repo.fetchReceipt) }
+            : {}),
           managedPath: repo.managedPath,
           storage: repo.storage,
           resolvedManagedPath,

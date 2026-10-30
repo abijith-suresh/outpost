@@ -131,7 +131,7 @@ safe clean owned work and preserves all branches. Failed/cancelled admission
 retains branches/reflogs and uncertain checkout/admin/guidance. Inspect doctor and
 journals manually, including original SHA and confirmation/unknown status. Do not
 reset/recreate/adopt residual paths or infer full rollback from an unchanged HEAD.
-Borrowed fresh/auth/reuse remain unsupported. Existing repo add imports its
+Borrowed existing-branch reuse and generic repo fetch remain unsupported. Existing repo add imports its
 selected remote into managed storage; managed-only semantics remain unchanged.
 
 
@@ -145,5 +145,38 @@ Manifest6 preserves original named cache/branch/SHA with frozen ownership/root;
 local borrowed5 and managed formats remain unchanged. Do not downgrade versions.
 Explicit borrowed conversions still trust configured programs and their effects.
 Only actual managed origin is accepted explicitly; omitted managed options stay.
-Borrowed fresh/auth/reuse remain unsupported; retain interrupted admission and
+Retain interrupted borrowed admission and
 use doctor instead of a destructive retry.
+
+
+For explicit borrowed fresh NEW creation use `--base-source fresh-remote --remote
+NAME --base branch-or-full-heads-ref`. All selected members must be borrowed.
+Outpost advertises that exact heads ref, fetches the advertised immutable SHA with
+no destination, and creates a checked retained receipt. Tracking refs stay unchanged.
+Server SHA retrieval failure has no cache/branch/auth fallback. Fresh means observed
+advertisement during this invocation, not latest-at-completion or endpoint immutability.
+Saved-anchor helpers may run noninteractively and affect networks/shared credential
+services; Outpost never copies credentials. Dry-run invokes no helper/transport.
+One deadline spans all selected members. No raw URLs/helper output/credentials are
+persisted; do not turn on transport tracing or infer arbitrary program isolation.
+
+Manifest7 and completed `receiptInventory` preserve original fresh receipt/SHA facts.
+Doctor distinguishes healthy retained inventory from failed/unknown work; inventory
+survives successful removal. Missing/moved receipts are observations, not permission
+to rewrite provenance or delete work. Lost acknowledgements remain unknown even if
+current SHA matches. Partial fetch effects and borrowed branch/reflog/checkout history
+are retained; never automatically replay, reset, prune or remove uncertain artifacts.
+Older binaries refuse7 and may mislabel healthy inventory in doctor; do not downgrade.
+
+
+Incoming borrowed fresh objects use `fetch --keep` to select Git's packed route,
+even for small transfers. Before the first selected-member transport and immediately
+before each fetch, Outpost checks bounded pack/MIDX/file metadata, every possible
+loose fanout directory, known replacement/alternate views and any advertised commit
+leaf already present. It never scans all loose object contents. Existing selected
+commit/tree/blob ownership guards still apply after fetch. Source refs/config/index
+and original files are preserved separately from authorized new owned packs/metadata
+and effects of trusted programs. New packs, metadata and any remaining keep/temp files
+may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
+automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
+same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.

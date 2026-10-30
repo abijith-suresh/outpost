@@ -33,7 +33,8 @@ export function runDoctor(): Effect.Effect<
     const repoRegistryFilePath = yield* getRepoRegistryFilePath(outpostHome);
     const initialized = yield* fs.exists(configFilePath).pipe(Effect.orElseSucceed(() => false));
 
-    const operationRecords = yield* inspectMutationState(outpostHome);
+    const operationRecords = yield* inspectMutationState(outpostHome, { observeReceipts: true });
+    const pendingOperations = operationRecords.filter((entry) => entry.kind !== "completed-fresh");
     if (!initialized) {
       return {
         command: "doctor",
@@ -46,7 +47,7 @@ export function runDoctor(): Effect.Effect<
           outpostHome,
           platform: process.platform,
           diagnostics:
-            operationRecords.length > 0
+            pendingOperations.length > 0
               ? [
                   "Incomplete operations or held locks require inspection before retrying initialization.",
                 ]
@@ -113,11 +114,11 @@ export function runDoctor(): Effect.Effect<
     const status =
       diagnostics.length > 0
         ? formatErrorStatus(diagnostics)
-        : missingRepoCount > 0 || unhealthyWorkspaces.length > 0 || operationRecords.length > 0
+        : missingRepoCount > 0 || unhealthyWorkspaces.length > 0 || pendingOperations.length > 0
           ? "degraded"
           : "ok";
 
-    if (operationRecords.length > 0)
+    if (pendingOperations.length > 0)
       diagnostics.push(
         "Incomplete operations or held locks require inspection. Metadata records intent only; verify the owner process, Git worktrees, branches, and files before manual recovery. No locks or artifacts were removed."
       );

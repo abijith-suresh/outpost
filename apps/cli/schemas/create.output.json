@@ -15,6 +15,26 @@
         "data": {
           "type": "object",
           "properties": {
+            "receiptInventory": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "operationId": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["operationId", "path"],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "ticket": {
               "type": "string"
             },
@@ -101,6 +121,33 @@
                   },
                   "baseRef": {
                     "type": "string"
+                  },
+                  "fetchReceipt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operationId": {
+                            "type": "string"
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": "string"
+                          },
+                          "selection": {
+                            "type": "string",
+                            "enum": ["advertised-branch-sha"]
+                          }
+                        },
+                        "required": ["operationId", "ref", "commit", "selection"],
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "baseRemote": {
                     "anyOf": [

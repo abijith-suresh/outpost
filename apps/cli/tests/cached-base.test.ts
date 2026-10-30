@@ -414,10 +414,10 @@ describe("explicit borrowed cached bases", () => {
     await ok("workspace", "remove", "LINK");
     noSecret(process.env.OUTPOST_HOME!);
   });
-  it("refuses borrowed fresh/local with remote and incompatible managed member before mutation", async () => {
+  it("refuses borrowed local with remote and incompatible managed member before mutation", async () => {
     const f = await cachedFixture();
     const before = snapshot(f.source);
-    for (const source of ["local", "fresh-remote"]) {
+    for (const source of ["local"]) {
       const a = cached(f.repo.id);
       a[a.indexOf("cached-remote")] = source;
       expect((await cli("create", ...a)).code).toBe(1);
