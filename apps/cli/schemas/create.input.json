@@ -14,6 +14,14 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "--remote": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
         "--ticket": {
           "type": "array",
           "items": {

@@ -55,7 +55,7 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  version: Schema.optional(Schema.Literals([2, 3, 4, 5])),
+  version: Schema.optional(Schema.Literals([2, 3, 4, 5, 6])),
   worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
@@ -66,29 +66,85 @@ export const ManifestSchema = Schema.Struct({
 }).check(
   Schema.makeFilter((manifest) => {
     if (
-      manifest.version === 5 &&
+      (manifest.version === 5 || manifest.version === 6) &&
       !manifest.repositories.some((repo) => repo.storage?.kind === "borrowed")
     )
       return "Version 5 requires borrowed storage.";
+    if (
+      manifest.version === 6 &&
+      !manifest.repositories.some(
+        (repo) => repo.storage?.kind === "borrowed" && repo.baseSource === "cached-remote"
+      )
+    )
+      return "Version 6 requires borrowed cached members.";
     for (const repo of manifest.repositories) {
-      if (manifest.version === 5 && (!repo.storage || repo.branchDisposition !== "created"))
+      if (
+        (manifest.version === 5 || manifest.version === 6) &&
+        (!repo.storage || repo.branchDisposition !== "created")
+      )
         return "Version 5 requires explicit backend and NEW branch disposition on every member.";
-      if (repo.storage && manifest.version !== 5)
+      if (repo.storage && manifest.version !== 5 && manifest.version !== 6)
         return "Frozen storage requires manifest version 5.";
       if (repo.storage?.kind === "borrowed") {
         if (
           repo.managedPath !== undefined ||
-          repo.baseSource !== "local" ||
+          (repo.baseSource !== "local" &&
+            !(manifest.version === 6 && repo.baseSource === "cached-remote")) ||
           repo.branchDisposition !== "created"
         )
           return "Borrowed entries require local NEW branch provenance and frozen storage, never managedPath.";
       } else if (repo.managedPath === undefined) return "Managed entries require managedPath.";
+      const named = repo.baseRemote !== undefined || repo.remoteRef !== undefined;
+      if (repo.storage?.kind === "borrowed" && repo.baseSource === "cached-remote") {
+        if (
+          manifest.version !== 6 ||
+          !repo.baseRemote ||
+          !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(repo.baseRemote) ||
+          repo.baseRemote.includes("..") ||
+          repo.baseRemote.endsWith(".lock") ||
+          !repo.requestedBase ||
+          !repo.remoteRef
+        )
+          return "Borrowed cached provenance requires version6, named remote and requested server ref.";
+        const branch = repo.requestedBase.startsWith("refs/heads/")
+          ? repo.requestedBase.slice(11)
+          : repo.requestedBase;
+        if (
+          !branch ||
+          ["HEAD", "default", "@"].includes(branch) ||
+          branch.startsWith("refs/") ||
+          branch.startsWith("-") ||
+          branch.startsWith("/") ||
+          [...branch].some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127) ||
+          ["~", "^", ":", "?", "*", "[", "\\"].some((char) => branch.includes(char)) ||
+          branch.includes("..") ||
+          branch.includes("@{") ||
+          branch.includes("//") ||
+          branch.endsWith("/") ||
+          branch.endsWith(".") ||
+          branch.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock")) ||
+          /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(branch)
+        )
+          return "Invalid cached branch provenance.";
+        if (
+          repo.base !== branch ||
+          repo.remoteRef !== `refs/heads/${branch}` ||
+          repo.baseRef !== `refs/remotes/${repo.baseRemote}/${branch}`
+        )
+          return "Inconsistent cached remote provenance.";
+      } else if (named)
+        return "Named provenance is only supported for borrowed cached version6 members.";
       const hasAny =
         repo.baseSource !== undefined ||
         repo.requestedBase !== undefined ||
         repo.baseRef !== undefined ||
         repo.baseCommit !== undefined;
-      if (manifest.version === 3 || manifest.version === 4 || manifest.version === 5) {
+      if (
+        manifest.version === 3 ||
+        manifest.version === 4 ||
+        manifest.version === 5 ||
+        manifest.version === 6
+      ) {
         if (
           !repo.baseSource ||
           repo.requestedBase === undefined ||
@@ -107,7 +163,7 @@ export const ManifestSchema = Schema.Struct({
           repo.base !== manifest.branch
         )
           return "Version 4 manifests require existing local branch admission provenance matching the frozen branch.";
-      } else if (manifest.version === 5) {
+      } else if (manifest.version === 5 || manifest.version === 6) {
         if (repo.branchDisposition !== undefined && repo.branchDisposition !== "created")
           return "Version 5 cannot borrow existing branches.";
       } else if (repo.branchDisposition !== undefined)
@@ -1065,7 +1121,8 @@ export function getManifestWorktreesRoot(
     (manifest.version !== 2 &&
       manifest.version !== 3 &&
       manifest.version !== 4 &&
-      manifest.version !== 5) ||
+      manifest.version !== 5 &&
+      manifest.version !== 6) ||
     !manifest.worktreesRoot ||
     config.version < 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)

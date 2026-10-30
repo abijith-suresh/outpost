@@ -27,6 +27,7 @@ import {
   verifyMutationParents,
   verifyWorkspaceStorage,
 } from "../borrowed-workspace.js";
+import { cachedError, inspectCachedRemote, resolveBorrowedCache } from "../cached-base.js";
 import {
   acquireBranchCreation,
   acquireBranchVerification,
@@ -92,6 +93,7 @@ type CreateArgs = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  remote?: string;
   reuseBranch?: string;
   baseSource: BaseSource;
   dryRun: boolean;
@@ -103,6 +105,7 @@ type CreateArgsInput = {
   repoIds: ReadonlyArray<string>;
   tags?: ReadonlyArray<string>;
   base?: string;
+  remote?: string;
   reuseBranch?: string;
   baseSource: BaseSource;
   dryRun: boolean;
@@ -214,6 +217,7 @@ function parseCreateArgsInput(
         ticket: value("--ticket"),
         type: value("--type"),
         base: value("--base"),
+        remote: value("--remote"),
         reuseBranch: value("--reuse-branch"),
         baseSource: (() => {
           const source = value("--base-source") ?? "cached-remote";
@@ -255,6 +259,7 @@ function requireCreateArgs(parsedArgs: CreateArgsInput): Effect.Effect<CreateArg
     repoIds: parsedArgs.repoIds,
     tags: parsedArgs.tags,
     base: parsedArgs.base,
+    remote: parsedArgs.remote,
     reuseBranch: parsedArgs.reuseBranch,
     baseSource: parsedArgs.baseSource,
     dryRun: parsedArgs.dryRun,
@@ -382,6 +387,7 @@ function resolveCreateArgs(
     return yield* requireCreateArgs({
       ...promptedArgs,
       reuseBranch: parsedArgs.reuseBranch,
+      remote: parsedArgs.remote,
       baseSource: parsedArgs.baseSource,
       dryRun: parsedArgs.dryRun,
     });
@@ -467,7 +473,8 @@ function buildCreatePlan(
   branchName: string,
   base: string | undefined,
   source: BaseSource,
-  reuse = false
+  reuse = false,
+  remote?: string
 ): Effect.Effect<
   CreatePlan,
   CreateError,
@@ -475,17 +482,39 @@ function buildCreatePlan(
 > {
   return Effect.gen(function* () {
     const borrowed = "borrowed" in repo ? repo.borrowed : undefined;
+    if (remote !== undefined && (source !== "cached-remote" || reuse))
+      return yield* cachedError(
+        "--remote is only supported for cached-remote NEW selection, not local, fresh or reuse."
+      );
+    if (!borrowed && remote !== undefined) {
+      if (remote !== "origin")
+        return yield* cachedError(
+          "Managed mirrors support explicit actual origin only; no configuration is remapped."
+        );
+      const actual = yield* commandExitCode(
+        gitCommand("--git-dir", repo.managedRepoPath, "config", "--get", "remote.origin.url")
+      );
+      if (actual !== 0)
+        return yield* cachedError("The managed mirror has no actual origin remote.");
+    }
     if (borrowed) {
       if (
         reuse ||
-        source !== "local" ||
+        (source !== "local" && source !== "cached-remote") ||
         !base ||
-        !/^(?:refs\/(?:heads|tags)\/.+|[0-9a-f]{40}|[0-9a-f]{64})$/.test(base)
+        (source === "local" &&
+          !/^(?:refs\/(?:heads|tags)\/.+|[0-9a-f]{40}|[0-9a-f]{64})$/.test(base))
       )
         return yield* usageError(
-          "Borrowed NEW workspaces require explicit --base-source local and --base full refs/heads/*, refs/tags/* or commit SHA. Borrowed branch reuse/remote selection is unsupported."
+          "Borrowed NEW workspaces require local full heads/tags/SHA or named cached-remote selection. Borrowed fresh/reuse is unsupported."
         );
-      yield* verifyBorrowed(borrowed);
+      yield* source === "cached-remote"
+        ? verifyBorrowed(borrowed).pipe(
+            Effect.mapError(() =>
+              cachedError("Saved borrowed anchor identity/configuration is unavailable.")
+            )
+          )
+        : verifyBorrowed(borrowed);
       yield* verifyMutationParents(borrowed, branchName);
       yield* requireOwnedReuseStorage(repo, branchName);
       const symbolicTarget = yield* commandExitCode(
@@ -504,27 +533,39 @@ function buildCreatePlan(
       yield* requireOwnedReuseStorage(
         repo,
         branchName,
-        base.startsWith("refs/") ? base : undefined
+        source === "cached-remote"
+          ? `refs/remotes/${remote}/${base.replace(/^refs\/heads\//, "")}`
+          : base.startsWith("refs/")
+            ? base
+            : undefined
       );
-      const raw = (yield* commandString(
-        gitCommand(
-          "--git-dir",
-          repo.managedRepoPath,
-          "rev-parse",
-          "--verify",
-          "--end-of-options",
-          base
-        )
-      )).trim();
-      yield* requireOwnedReuseObjects(repo.managedRepoPath, raw, repo.id);
+      if (source === "local") {
+        const raw = (yield* commandString(
+          gitCommand(
+            "--git-dir",
+            repo.managedRepoPath,
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            base
+          )
+        )).trim();
+        yield* requireOwnedReuseObjects(repo.managedRepoPath, raw, repo.id);
+      }
     }
     if (reuse && "borrowed" in repo)
       return yield* usageError("Borrowed existing branch reuse is unsupported.");
-    const selection = yield* (
-      reuse && !("borrowed" in repo)
-        ? resolveExistingBranch(repo, branchName)
-        : resolveBase(repo, source, base)
-    ).pipe(
+    const selectionEffect: Effect.Effect<
+      BaseSelection,
+      { message: string },
+      FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+    > =
+      borrowed && source === "cached-remote"
+        ? resolveBorrowedCache(borrowed, remote, base)
+        : reuse && !("borrowed" in repo)
+          ? resolveExistingBranch(repo, branchName)
+          : resolveBase(repo, source, base);
+    const selection = yield* selectionEffect.pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
@@ -1095,7 +1136,8 @@ function prepareCreate(
   branchName: string,
   base: string | undefined,
   source: BaseSource,
-  reuse = false
+  reuse = false,
+  remote?: string
 ): Effect.Effect<
   ReadonlyArray<CreatePlan>,
   CreateError,
@@ -1140,9 +1182,22 @@ function prepareCreate(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
+    if (selectedRepos.some((repo) => "borrowed" in repo) && (reuse || source === "fresh-remote"))
+      return yield* cachedError(
+        "Borrowed fresh transport and existing-branch reuse remain unsupported. No selected member was changed."
+      );
+    if (remote !== undefined && (reuse || source !== "cached-remote"))
+      return yield* cachedError("--remote is only supported for cached-remote NEW selection.");
     yield* Effect.forEach(selectedRepos, (repo) =>
       Effect.gen(function* () {
-        if ("borrowed" in repo) yield* verifyBorrowed(repo.borrowed);
+        if ("borrowed" in repo)
+          yield* source === "cached-remote"
+            ? verifyBorrowed(repo.borrowed).pipe(
+                Effect.mapError(() =>
+                  cachedError("Saved borrowed anchor identity/configuration is unavailable.")
+                )
+              )
+            : verifyBorrowed(repo.borrowed);
         else yield* verifyManagedRepository(config.reposRoot, repo, gitCommand);
       }).pipe(
         Effect.mapError(
@@ -1151,12 +1206,14 @@ function prepareCreate(
       )
     );
     const plans = yield* Effect.forEach(selectedRepos, (repo) =>
-      buildCreatePlan(repo, ticketDirectory, branchName, base, source, reuse)
+      buildCreatePlan(repo, ticketDirectory, branchName, base, source, reuse, remote)
     );
 
     yield* ensureUniqueWorktreePaths(plans);
     return plans;
-  });
+  }).pipe(
+    Effect.mapError((error) => new CreateError({ message: error.message, ...domainDetails(error) }))
+  );
 }
 
 export function runCreate(
@@ -1348,7 +1405,8 @@ export function runCreate(
         branchName,
         parsedArgs.base,
         parsedArgs.baseSource,
-        parsedArgs.reuseBranch !== undefined
+        parsedArgs.reuseBranch !== undefined,
+        parsedArgs.remote
       );
 
       return {
@@ -1393,7 +1451,8 @@ export function runCreate(
         branchName,
         parsedArgs.base,
         parsedArgs.baseSource,
-        parsedArgs.reuseBranch !== undefined
+        parsedArgs.reuseBranch !== undefined,
+        parsedArgs.remote
       );
       if (parsedArgs.reuseBranch !== undefined) {
         yield* record({
@@ -1538,7 +1597,14 @@ export function runCreate(
 
         for (const plan of plans) {
           if (plan.borrowed) {
-            yield* verifyBorrowed(plan.borrowed);
+            yield* plan.baseRemote
+              ? verifyBorrowed(plan.borrowed).pipe(
+                  Effect.mapError(() =>
+                    cachedError("Saved borrowed identity/configuration changed before mutation.")
+                  )
+                )
+              : verifyBorrowed(plan.borrowed);
+            if (plan.baseRemote) yield* inspectCachedRemote(plan.borrowed, plan.baseRemote);
             yield* checkedHooks(plan.hooks ?? "");
             yield* requireOwnedReuseObjects(
               plan.managedRepoPath,
@@ -1627,6 +1693,9 @@ export function runCreate(
               requestedBase: plan.requestedBase,
               baseRef: plan.baseRef,
               baseCommit: plan.startPoint ?? undefined,
+              ...(plan.baseRemote
+                ? { baseRemote: plan.baseRemote, remoteRef: plan.remoteRef }
+                : {}),
               ...(plan.branchDisposition === "existing"
                 ? { branchDisposition: "existing" as const }
                 : {}),
@@ -1648,11 +1717,13 @@ export function runCreate(
         );
 
         const manifest: Manifest = {
-          version: plans.some((plan) => plan.borrowed)
-            ? 5
-            : parsedArgs.reuseBranch === undefined
-              ? 3
-              : 4,
+          version: plans.some((plan) => plan.borrowed && plan.baseRemote)
+            ? 6
+            : plans.some((plan) => plan.borrowed)
+              ? 5
+              : parsedArgs.reuseBranch === undefined
+                ? 3
+                : 4,
           worktreesRoot: provenanceConfig.worktreesRoot,
           ticket: parsedArgs.ticket,
           type: parsedArgs.type,
@@ -1771,6 +1842,16 @@ export function runCreate(
     return result;
   }).pipe(
     Effect.scoped,
-    Effect.mapError((error) => new CreateError({ message: error.message, ...domainDetails(error) }))
+    Effect.mapError(
+      (error) =>
+        new CreateError({
+          ...domainDetails(error),
+          message:
+            args.some((arg) => arg === "--remote" || arg.startsWith("--remote=")) &&
+            !error.message.startsWith("Cached base: ")
+              ? "Cached base: creation could not complete safely. Preserve all state and run outpost doctor --json; inspect the saved clone configuration outside Outpost. Raw Git diagnostics are withheld. Existing tickets require explicit workspace resume."
+              : error.message,
+        })
+    )
   );
 }

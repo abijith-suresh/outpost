@@ -116,6 +116,9 @@ export function runWorkspaceShow(
                 baseSource: repo.baseSource,
                 requestedBase: repo.requestedBase,
                 baseRef: repo.baseRef,
+                ...(repo.baseRemote
+                  ? { baseRemote: repo.baseRemote, remoteRef: repo.remoteRef }
+                  : {}),
                 baseCommit: repo.baseCommit,
                 ...(repo.branchDisposition === undefined
                   ? {}

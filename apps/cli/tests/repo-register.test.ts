@@ -117,7 +117,7 @@ describe("offline borrowed registration", () => {
         "main"
       );
       expect(r.code, r.text).toBe(1);
-      expect(r.text).toContain("unsupported");
+      expect(r.text).toContain(mode === "cached-remote" ? "--remote" : "unsupported");
     }
     const fetch = await cli("repo", "fetch", "--all");
     expect(fetch.code, fetch.text).toBe(1);

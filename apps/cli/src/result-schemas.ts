@@ -195,6 +195,8 @@ export const ResultSchemas = {
         baseSource: BaseSourceSchema,
         requestedBase: Schema.NullOr(Schema.String),
         baseRef: Schema.String,
+        baseRemote: optionalString,
+        remoteRef: optionalString,
         baseCommit: Schema.NullOr(CommitSchema),
         baseResolution: Schema.Literals(["resolved", "fetch-required"]),
       })

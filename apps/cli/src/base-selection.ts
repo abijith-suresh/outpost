@@ -20,6 +20,8 @@ export const CommitSchema = Schema.String.check(
   Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 );
 export const ProvenanceFields = {
+  baseRemote: Schema.optional(Schema.String),
+  remoteRef: Schema.optional(Schema.String),
   branchDisposition: Schema.optional(Schema.Literals(["created", "existing"])),
   baseSource: Schema.optional(BaseSourceSchema),
   requestedBase: Schema.optional(Schema.NullOr(Schema.String)),
@@ -34,6 +36,8 @@ export type BaseSelection = {
   baseRef: string;
   startPoint: string | null;
   receiptRef?: string;
+  baseRemote?: string;
+  remoteRef?: string;
 };
 
 /** A named reuse must not adopt external object pools or filesystem ref aliases. */
@@ -415,6 +419,9 @@ export function baseOutput(selection: BaseSelection) {
     baseSource: selection.baseSource,
     requestedBase: selection.requestedBase,
     baseRef: selection.baseRef,
+    ...(selection.baseRemote
+      ? { baseRemote: selection.baseRemote, remoteRef: selection.remoteRef }
+      : {}),
     baseCommit: selection.startPoint,
     baseResolution:
       selection.startPoint === null ? ("fetch-required" as const) : ("resolved" as const),

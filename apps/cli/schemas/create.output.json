@@ -102,6 +102,26 @@
                   "baseRef": {
                     "type": "string"
                   },
+                  "baseRemote": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "remoteRef": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "baseCommit": {
                     "anyOf": [
                       {

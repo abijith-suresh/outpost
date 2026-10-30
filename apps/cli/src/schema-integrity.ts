@@ -6,7 +6,7 @@ export const SCHEMA_ASSET_SHA256: Readonly<Record<string, string>> = {
   "skill-show.output.json": "5bf0dca56c6c7cf4b8afa4348ea79692f0c590fe7b641a3b0be0c56ab2d1c108",
   "skill-path.output.json": "d1f1c1b2ffc84cea7a0bc60d365376bf3808ead97d0848aca8907b4247b3bfbb",
   "skill-export.output.json": "04ecfe6647ff59daa6ae76693d123238e2f6208be75ac17c6fe89d6c360ca122",
-  "create.output.json": "5cd73a022749164de59a31afff12b393c30b61e97f664c87b4577b3119a9ba17",
+  "create.output.json": "c409c045df3fedfaa18527c9c0d2a9274f12d2de282bffadff3142f47a4cd55a",
   "guidance-preview.output.json":
     "0cb588a68e50b0a4c9ee4416a3aff8a522973518076b779f4054400f81234eb2",
   "config-show.output.json": "99a7498caf4f511a5a94ca6f982a85d35501722d6a84036a7639b5961825b334",
@@ -27,6 +27,6 @@ export const SCHEMA_ASSET_SHA256: Readonly<Record<string, string>> = {
   "workspace-remove.output.json":
     "6fd20a8d78f86fd3cd7ad5caf84c599e01201d3e325d25ac5fe288a2771d0a4e",
   "workspace-resume.output.json":
-    "1165915afa079b99c167b74368d3584dbae9d0320f3c10380c0080c1448dd959",
-  "workspace-show.output.json": "f0b72c89cea848b1abdecac1805527f4d728517ab732bee5cb0be1253364b0c0",
+    "6c50121fb5e3af1a685a64ab1bf097f8ae6c8575d4da1a716e33d576922da0cb",
+  "workspace-show.output.json": "7cbc0ced1f352f42e7d45c6d3b0bfbd42780744369360413f097d59ca1810940",
 };

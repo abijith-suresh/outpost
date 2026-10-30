@@ -131,5 +131,19 @@ safe clean owned work and preserves all branches. Failed/cancelled admission
 retains branches/reflogs and uncertain checkout/admin/guidance. Inspect doctor and
 journals manually, including original SHA and confirmation/unknown status. Do not
 reset/recreate/adopt residual paths or infer full rollback from an unchanged HEAD.
-Borrowed remote/auth/reuse remain unsupported. Existing repo add imports its
+Borrowed fresh/auth/reuse remain unsupported. Existing repo add imports its
 selected remote into managed storage; managed-only semantics remain unchanged.
+
+
+For a named borrowed cache use `create --base-source cached-remote --remote NAME
+--base branch-or-full-heads-ref` with the usual ticket/type/repo flags. Selection
+uses only direct refs/remotes/NAME/BRANCH and available owned objects. No custom
+refspec inference, local/default fallback, helper or fetch. Cache is unverified,
+possibly stale/manual, not server freshness. Saved-anchor metadata must name one
+bounded effective URL; never copy/paste endpoint/helper values into Outpost state.
+Manifest6 preserves original named cache/branch/SHA with frozen ownership/root;
+local borrowed5 and managed formats remain unchanged. Do not downgrade versions.
+Explicit borrowed conversions still trust configured programs and their effects.
+Only actual managed origin is accepted explicitly; omitted managed options stay.
+Borrowed fresh/auth/reuse remain unsupported; retain interrupted admission and
+use doctor instead of a destructive retry.

@@ -125,7 +125,7 @@ Side effects: exported-guidance.
 
 ```text
 Usage:
-  outpost create --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run] [--json]
+  outpost create [--remote <name>] --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--reuse-branch <name>] [--dry-run] [--json]
 
 Create worktrees; explicit local borrowed clones trust configured Git conversions
 
@@ -135,6 +135,7 @@ Create worktrees; explicit local borrowed clones trust configured Git conversion
   dry-run: yes
 
 Options:
+  --remote <name>  Explicit named cached remote for borrowed clones; managed mirrors accept actual origin only
   --ticket <id>  Ticket identifier (required)
   --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
   --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)
@@ -153,7 +154,7 @@ Side effects: explicit-fresh-remote-fetch, remote-tracking-refs, local-branches,
 
 ```text
 Usage:
-  outpost guidance preview --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--json]
+  outpost guidance preview [--remote <name>] --ticket <id> --type <branch-type> [--repo <id> ...] [--tag <tag> ...] [--base-source <source>] [--base <ref>] [--json]
 
 Preview factual workspace AGENTS.md using current settings without writing files
 
@@ -161,6 +162,7 @@ Preview factual workspace AGENTS.md using current settings without writing files
   json output: yes
 
 Options:
+  --remote <name>  Explicit named cached remote for borrowed clones; managed mirrors accept actual origin only
   --ticket <id>  Ticket identifier (required)
   --type <branch-type>  Branch type prefix (e.g. feat, fix) (required)
   --repo <id>  Repository identifier (repeatable; optional with --tag) (repeatable)

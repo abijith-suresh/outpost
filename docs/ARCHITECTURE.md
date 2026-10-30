@@ -628,7 +628,7 @@ the registration commit. Interrupted writes preserve old records and repair
 forward. Reads never migrate. Managed manifests through v4 retain original roots;
 borrowed-containing creation writes strict manifest v5 with tagged storage and frozen
 common/checkout/admin lossless identity. Managed-only manifests retain their formats.
-Borrowed reuse/remote modes and mixed/all fetch selections refuse before effects.
+Borrowed reuse/fresh modes and mixed/all fetch selections refuse before effects.
 
 List/show inspect identity offline and distinguish unavailable from healthy
 registration without claiming object availability. Remove transfers the complete
@@ -677,3 +677,32 @@ is no automatic branch/reflog deletion or promise of full rollback. Normal succe
 remove checks frozen ownership and clean state and preserves branches. Managed-only
 rollback remains unchanged. Source byte/mtime preservation excludes trusted-program
 effects and is tested with inert synthetic drivers; native proof remains mandatory.
+
+
+## Explicit borrowed cached selection
+
+`cached-base.ts` inspects a bounded single-component named remote in the saved
+verified anchor context, never the common directory alone. Configured URL presence
+and one effective rewritten URL are metadata-only checks; values/causes are not
+returned or journaled. Git's missing-URL name fallback is not accepted as a URL.
+Local selection and existing managed defaults retain their earlier semantics.
+
+The selected ref is exactly refs/remotes/NAME/BRANCH, independent of configured
+fetch mappings. Direct refs and owned available objects resolve once to immutable
+SHA. No helper/transport/askpass, default branch, source fallback or fetch occurs.
+Trusted borrowed content conversions retain their disclosed effects/network.
+Named create errors withhold raw Git diagnostics, including malformed config races;
+locally constructed cached diagnostics identify safe ref requirements. Journals
+contain validated names/refs/SHAs, never endpoint/config data.
+
+Manifest6 is written only when a borrowed cached member requires it. It freezes
+baseRemote and normalized remoteRef alongside requestedBase/baseRef/baseCommit and
+existing storage/root/NEW disposition. Manifest5 remains borrowed-local only;
+managed legacy/v2/v3/v4 stay unchanged. Mixed local members do not acquire named
+remote fields. Strict filters reject inconsistent named provenance or future
+versions. No config/registry migration is needed: earlier readers refuse v6 and
+cannot interpret it as legacy removable workspace state. Old independent local
+operations may remain safe; their unknown-manifest unregister barrier must hold.
+Resume/show/remove use frozen state and never require current remote/anchor or
+resolve the cache again. Receipt fetch/auth, arbitrary mappings and borrowed reuse
+are not part of this increment.

@@ -214,6 +214,9 @@ export function runGuidancePreview(args: readonly string[]) {
           baseSource: worktree.baseSource,
           requestedBase: worktree.requestedBase,
           baseRef: worktree.baseRef,
+          ...(worktree.baseRemote
+            ? { baseRemote: worktree.baseRemote, remoteRef: worktree.remoteRef }
+            : {}),
           baseCommit: worktree.baseCommit ?? undefined,
           managedPath:
             worktree.storageKind === "borrowed"
