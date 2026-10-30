@@ -94,7 +94,9 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
           : []),
         ...(Array.isArray(output.data.operationRecords)
           ? output.data.operationRecords.map((record: unknown) =>
-              Console.log(`recovery record: ${JSON.stringify(record)}`)
+              Console.log(
+                `${typeof record === "object" && record !== null && "kind" in record && record.kind === "completed-fresh" ? "retained receipt inventory" : "recovery record"}: ${JSON.stringify(record)}`
+              )
             )
           : []),
         ...(Array.isArray(output.data.workspaceHealth)
@@ -121,6 +123,13 @@ export function printCommandOutput(output: CommandOutput, asJson: boolean): Effe
           ? [Console.log("dry run: true")]
           : []),
         Console.log(`workspace directory: ${String(output.data.ticketDirectory)}`),
+        ...(output.data.receiptInventory
+          ? [
+              Console.log(
+                `receipt inventory: ${output.data.receiptInventory.path} (operation: ${output.data.receiptInventory.operationId})`
+              ),
+            ]
+          : []),
         Console.log(
           `worktrees: ${Array.isArray(output.data.worktrees) ? output.data.worktrees.length : 0}`
         ),

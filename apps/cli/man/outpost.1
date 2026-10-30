@@ -113,7 +113,7 @@ Create worktrees; explicit local borrowed clones trust configured Git conversion
   dry\-run: yes
 
 Options:
-  \-\-remote <name>  Explicit named cached remote for borrowed clones; managed mirrors accept actual origin only
+  \-\-remote <name>  Explicit borrowed cached/fresh named remote; named fresh leaves tracking refs unchanged and requires borrowed\-only membership
   \-\-ticket <id>  Ticket identifier (required)
   \-\-type <branch\-type>  Branch type prefix (e.g. feat, fix) (required)
   \-\-repo <id>  Repository identifier (repeatable; optional with \-\-tag) (repeatable)
@@ -136,7 +136,7 @@ Preview factual workspace AGENTS.md using current settings without writing files
   json output: yes
 
 Options:
-  \-\-remote <name>  Explicit named cached remote for borrowed clones; managed mirrors accept actual origin only
+  \-\-remote <name>  Explicit borrowed cached/fresh named remote; named fresh leaves tracking refs unchanged and requires borrowed\-only membership
   \-\-ticket <id>  Ticket identifier (required)
   \-\-type <branch\-type>  Branch type prefix (e.g. feat, fix) (required)
   \-\-repo <id>  Repository identifier (repeatable; optional with \-\-tag) (repeatable)

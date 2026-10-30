@@ -33,7 +33,7 @@ const CREATE_OPTIONS: readonly CommandOption[] = [
     name: "--remote",
     valueName: "name",
     description:
-      "Explicit named cached remote for borrowed clones; managed mirrors accept actual origin only",
+      "Explicit borrowed cached/fresh named remote; named fresh leaves tracking refs unchanged and requires borrowed-only membership",
     required: false,
   },
   {
@@ -596,7 +596,7 @@ export function formatCommandDetail(spec: CommandSpec): string {
 }
 
 /** Version of the machine contract, independent of the npm package version. */
-export const CONTRACT_VERSION = "4.2.0";
+export const CONTRACT_VERSION = "4.3.0";
 
 export type ParsedCommandInput = {
   arguments: Readonly<Record<string, readonly string[]>>;

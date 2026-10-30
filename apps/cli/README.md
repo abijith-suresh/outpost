@@ -431,7 +431,7 @@ available; replacement storage is never automatically adopted.
 hooks and objects. Restore validates the original anchor/common/private identity.
 Read-only commands never upgrade metadata. Windows path budgets still apply.
 
-Borrowed new ticket workspaces require explicit local selection:
+Borrowed local ticket workspaces require explicit local selection:
 
 ```sh
 outpost create --ticket TASK-1 --type feat --repo local:ID --base-source local --base refs/heads/main --json
@@ -473,7 +473,7 @@ SHA. Inspect `doctor --json` and the operation record for original SHA, member
 paths and confirmation/unknown status. No full rollback or clean retry is promised.
 Do not reset/recreate/adopt residual ticket paths. Successful normal removal
 requires verified owned clean work and preserves every branch. Managed-only
-rollback is unchanged. Borrowed fetch/reuse/fresh/auth modes remain unsupported;
+rollback is unchanged. Generic borrowed repo fetch and existing-branch reuse remain unsupported;
 `repo fetch --all` refuses when borrowed records are active.
 
 
@@ -519,7 +519,81 @@ Changing cache/URL/settings/tags does not change the original starting commit.
 Mixed selections preflight every member. Explicit managed `--remote origin` is
 accepted only for its existing actual mirror origin and cached semantics; other
 managed names refuse without remapping configuration. Managed omitted options
-retain their defaults. `--remote` is incompatible with local/reuse/fresh modes.
-Borrowed fresh transport/auth, custom cache mapping and existing branch/checkout
-reuse remain unsupported. Failed/cancelled admission retains all branch/reflog and
+retain their defaults. `--remote` is incompatible with local/reuse modes.
+Custom cache mapping and borrowed existing branch/checkout reuse remain unsupported. Failed/cancelled admission retains all branch/reflog and
 uncertain checkout/admin history; inspect doctor before any retry.
+
+
+### Select an explicit borrowed fresh base
+
+```sh
+outpost create --ticket TASK-3 --type feat --repo local:ID --base-source fresh-remote --remote team --base refs/heads/topic/sub --json
+```
+
+Fresh uses the same explicit remote/heads selector syntax as cached mode. Only
+borrowed-only named fresh selections are supported; a managed member refuses
+all-member preflight before any helper or transport. Managed omitted-option
+behavior remains unchanged. No default, refspec inference or auth fallback exists.
+
+Outpost advertises the exact server branch, fetches that immutable advertised SHA
+without a destination ref, then uses a checked prepared CREATE-only receipt.
+Conventional tracking refs are **unchanged**, even if configured fetch mappings
+would target user heads. A server that cannot provide the advertised SHA fails
+honestly, without using cached objects or another branch as fallback. Fresh means
+this invocation's advertisement, not latest-at-completion or immutable authenticated
+endpoint identity. Configuration/includes may change outside Outpost; observed
+changes refuse, but configuration A-B-A cannot be excluded.
+
+The saved verified anchor supplies normal worktree config/includes/URL rewrites,
+SSH/proxy/TLS and existing credential helpers. Explicit helpers may contact networks,
+refresh shared credential stores or have other effects. Outpost does not copy
+credentials, configure authentication or kill pre-existing/shared credential services.
+Built-in askpass/terminal fallback is disabled, with one finite selection deadline
+across all members. Only operation-owned synthetic descendants are covered by
+termination tests; arbitrary detached trusted programs are not sandboxed. Git trace2
+is disabled in Outpost Git children to prevent configured targets exposing sensitive
+metadata, and explicit fresh refuses inherited transport tracing. No raw process
+output, URL, helper value or credential is emitted/persisted by Outpost.
+
+Dry-run never contacts helpers/transport and reports fetch-required with null SHA.
+Success requires a complete bounded advertisement, successful destination-free fetch,
+owned objects, create-only prepare/commit acknowledgements, exit0 and direct receipt
+confirmation. Missing/truncated/lost acknowledgements never become success just
+because a matching ref exists. Shallow/unsupported layouts refuse before transport.
+
+Manifest v7 records the original advertisement/SHA and retained receipt separately
+from current HEAD/status, while preserving v6 cached and v5 local semantics.
+`receiptInventory` returns the completed record ID/path; doctor distinguishes healthy
+completed inventory from held locks or failed/unknown operations. Inventory remains
+after workspace removal. Receipt disappearance/movement is reported without changing
+original provenance or independently verified workspace usability. Older binaries
+refuse v7 and may describe healthy retained inventory as incomplete; never downgrade
+state or use old diagnostics as deletion authority.
+
+Earlier member objects/receipts survive later failures. Failed/cancelled admission
+retains branches/reflogs and uncertain checkout/admin/guidance, including A-B-A.
+Unknown operations block blind replay for the ticket; inspect doctor and resolve
+manually. No receipt/ref/object/lock pruning or destructive retry is provided.
+If completed inventory cannot be confirmed after manifest publication, the command
+fails with preserved bookkeeping/workspace evidence instead of reporting success.
+Source/index/config/dirty-file preservation excludes effects of trusted configured
+programs, as for other borrowed content operations. External storage is not a backup.
+
+
+Incoming borrowed fresh objects use `fetch --keep` to select Git's packed route,
+even for small transfers. Before the first selected-member transport and immediately
+before each fetch, Outpost checks bounded pack/MIDX/file metadata, every possible
+loose fanout directory, known replacement/alternate views and any advertised commit
+leaf already present. It never scans all loose object contents. Existing selected
+commit/tree/blob ownership guards still apply after fetch. Source refs/config/index
+and original files are preserved separately from authorized new owned packs/metadata
+and effects of trusted programs. New packs, metadata and any remaining keep/temp files
+may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
+automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
+same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.
+
+
+On Windows, borrowed fresh checks configured network transports independently of
+repository import identity validation. Existing HTTP/HTTPS/SSH configuration is
+used as-is; local transport paths retain the supported raw/canonical path budgets.
+This does not add HTTP repository import identities or an authentication fallback.

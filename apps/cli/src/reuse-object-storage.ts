@@ -26,7 +26,8 @@ const fingerprint = (stat: Awaited<ReturnType<typeof lstat>>) =>
 function inspectStorage(
   managed: string,
   ids: readonly string[] | undefined,
-  previous: readonly Metadata[] = []
+  previous: readonly Metadata[] = [],
+  incoming = false
 ) {
   return Effect.tryPromise({
     try: async (signal) => {
@@ -54,6 +55,26 @@ function inspectStorage(
         return true;
       };
       await check(join(managed, "objects"), true);
+      if (incoming) {
+        await check(join(managed, "objects", "info"), true, true);
+        for (const name of ["alternates", "http-alternates"]) {
+          try {
+            await lstat(join(managed, "objects", "info", name));
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
+          }
+          throw new Error("Incoming objects cannot use alternate object views");
+        }
+        try {
+          await lstat(join(managed, "info", "grafts"));
+          throw new Error("Incoming objects cannot use graft views");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        for (let i = 0; i < 256; i++)
+          await check(join(managed, "objects", i.toString(16).padStart(2, "0")), true, true);
+      }
       const pack = join(managed, "objects", "pack");
       let entries = 0;
       const inspectPack = async (directory: string, chained: boolean) => {
@@ -111,8 +132,16 @@ function inspectStorage(
   });
 }
 
-/** Check only selected checkout object paths and bounded pack metadata, never object content. */
-export function requireOwnedReuseObjects(managed: string, commit: string, repoId: string) {
+/** Incoming fetches use pack storage only. Check bounded writable metadata, never loose contents. */
+export function requireOwnedIncomingStorage(managed: string, repoId: string, selectedOid?: string) {
+  return Effect.gen(function* () {
+    yield* requireNoReplacementView(managed, repoId);
+    const ids = selectedOid ? [selectedOid] : undefined;
+    const before = yield* inspectStorage(managed, ids, [], true);
+    yield* inspectStorage(managed, ids, before, true);
+  });
+}
+function requireNoReplacementView(managed: string, repoId: string) {
   return Effect.gen(function* () {
     // Replacement commit objects are omitted from rev-list's emitted OIDs.
     // Refuse this unsupported view rather than silently miss a dependency or
@@ -140,6 +169,13 @@ export function requireOwnedReuseObjects(managed: string, commit: string, repoId
           message: `Replacement refs are unsupported for existing-branch reuse of ${repoId}. Preserve refs and source; the selected checkout object inventory cannot establish their complete dependencies.`,
         })
       );
+  });
+}
+
+/** Check only selected checkout object paths and bounded pack metadata, never object content. */
+export function requireOwnedReuseObjects(managed: string, commit: string, repoId: string) {
+  return Effect.gen(function* () {
+    yield* requireNoReplacementView(managed, repoId);
     const before = yield* inspectStorage(managed, [commit]);
     const inventory = yield* commandResult(
       readOnlyGitCommand(

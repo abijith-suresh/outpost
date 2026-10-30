@@ -12,7 +12,15 @@ export function gitCommand(...args: ReadonlyArray<string>): ChildProcess.Command
   const platformOptions = process.platform === "win32" ? ["-c", "core.longpaths=true"] : [];
   return ChildProcess.make("git", [...platformOptions, ...args], {
     extendEnv: true,
-    env: { GCM_INTERACTIVE: "never", GIT_TERMINAL_PROMPT: "0" },
+    env: {
+      GCM_INTERACTIVE: "never",
+      GIT_TERMINAL_PROMPT: "0",
+      // Trace2 can read global targets/configParams before repository discovery and expose URLs.
+      // Disable it for Outpost-owned Git children, including metadata-only verification children.
+      GIT_TRACE2: "0",
+      GIT_TRACE2_EVENT: "0",
+      GIT_TRACE2_PERF: "0",
+    },
   });
 }
 
@@ -93,7 +101,7 @@ function acquireRefTransaction(
   repoPath: string,
   ref: string,
   commit: string,
-  options: { create?: boolean; command?: typeof noLazyFetchGitCommand } = {}
+  options: { create?: boolean; command?: typeof noLazyFetchGitCommand; strict?: boolean } = {}
 ) {
   return Effect.gen(function* () {
     const timeoutMs = Number(process.env.OUTPOST_GIT_TIMEOUT_MS ?? 120_000);
@@ -102,6 +110,8 @@ function acquireRefTransaction(
     const prepared = yield* Deferred.make<void, PlatformError>();
     const aborted = yield* Deferred.make<void, PlatformError>();
     const committed = yield* Deferred.make<void, PlatformError>();
+    const stdoutEnded = yield* Deferred.make<void, PlatformError>();
+    const stderrEnded = yield* Deferred.make<void, PlatformError>();
     const input = yield* Queue.unbounded<Uint8Array, Cause.Done>();
     const command = withTerminationPolicy(
       (options.command ?? noLazyFetchGitCommand)(
@@ -119,16 +129,29 @@ function acquireRefTransaction(
       stdin: Stream.fromQueue(input),
     });
     let diagnostic = "";
+    let diagnosticOverflow = false;
+    let diagnosticBytes = 0;
     yield* Stream.runForEach(child.stderr, (bytes) =>
       Effect.sync(() => {
-        diagnostic = (diagnostic + new TextDecoder().decode(bytes)).slice(0, 8192);
+        const available = Math.max(0, 8192 - diagnosticBytes);
+        diagnosticBytes += bytes.byteLength;
+        diagnosticOverflow ||= diagnosticBytes > 8192;
+        diagnostic += new TextDecoder().decode(bytes.subarray(0, available));
       })
-    ).pipe(Effect.forkScoped);
+    ).pipe(
+      Effect.andThen(Deferred.succeed(stderrEnded, undefined)),
+      Effect.catch((error) => Deferred.fail(stderrEnded, error)),
+      Effect.forkScoped
+    );
     let protocol = "";
+    let protocolBytes = 0;
+    let protocolOverflow = false;
     let wasPrepared = false;
     yield* child.stdout.pipe(
       Stream.runForEach((bytes) => {
-        if (protocol.length + bytes.byteLength > 8192)
+        protocolBytes += bytes.byteLength;
+        protocolOverflow ||= protocolBytes > 8192;
+        if (protocolOverflow)
           return Deferred.fail(
             prepared,
             executionError("Git ref verification output exceeded its protocol bound.")
@@ -145,7 +168,10 @@ function acquireRefTransaction(
             yield* Deferred.succeed(aborted, undefined);
         });
       }),
-      Effect.catch((error) => Deferred.fail(prepared, error)),
+      Effect.andThen(Deferred.succeed(stdoutEnded, undefined)),
+      Effect.catch((error) =>
+        Effect.all([Deferred.fail(prepared, error), Deferred.fail(stdoutEnded, error)])
+      ),
       Effect.forkScoped
     );
     yield* child.exitCode.pipe(
@@ -177,6 +203,17 @@ function acquireRefTransaction(
             )
           );
         yield* Deferred.await(operation === "commit" ? committed : aborted);
+        if (options.strict)
+          yield* Effect.all([Deferred.await(stdoutEnded), Deferred.await(stderrEnded)]);
+        if (
+          options.strict &&
+          (diagnosticOverflow ||
+            protocolOverflow ||
+            protocol.replaceAll("\r\n", "\n") !== `start: ok\nprepare: ok\n${operation}: ok\n`)
+        )
+          return yield* Effect.fail(
+            executionError("Incomplete strict ref transaction acknowledgement; preserve state.")
+          );
         released = true;
       }).pipe(
         Effect.timeoutOrElse({
@@ -212,6 +249,13 @@ function acquireRefTransaction(
         orElse: () => Effect.fail(executionError(`Timed out locking existing branch ${ref}.`)),
       })
     );
+    if (
+      options.strict &&
+      (diagnosticOverflow ||
+        protocolOverflow ||
+        protocol.replaceAll("\r\n", "\n") !== "start: ok\nprepare: ok\n")
+    )
+      return yield* Effect.fail(executionError("Incomplete strict prepared transaction response."));
     const verify = child.isRunning.pipe(
       Effect.flatMap((running) =>
         running
@@ -238,9 +282,10 @@ export function acquireBranchCreation(
   repoPath: string,
   ref: string,
   commit: string,
-  command: typeof noLazyFetchGitCommand
+  command: typeof noLazyFetchGitCommand,
+  strict = false
 ) {
-  return acquireRefTransaction(repoPath, ref, commit, { create: true, command });
+  return acquireRefTransaction(repoPath, ref, commit, { create: true, command, strict });
 }
 
 /**

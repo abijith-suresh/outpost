@@ -115,3 +115,24 @@ if (args[0] === 'fetch') {
     omittedLineCount: expect.any(Number),
   });
 });
+
+it.each([8192, 9000])(
+  "counts cumulative UTF8 stderr bytes for strict ref protocol (%i bytes)",
+  async (bytes) => {
+    const { acquireBranchCreation } = await import("../src/child-process.ts");
+    const script = `let input='';process.stdin.on('data',b=>{input+=b;while(input.includes('\\n')){const i=input.indexOf('\\n');const line=input.slice(0,i);input=input.slice(i+1);if(line==='start')process.stdout.write('start: ok\\n');if(line==='prepare'){process.stderr.write('é'.repeat(1500));setTimeout(()=>process.stderr.write('é'.repeat(1500)),30);setTimeout(()=>{process.stderr.write('é'.repeat(${(bytes - 6000) / 2}));process.stdout.write('prepare: ok\\n');},60);}if(line==='commit')process.stdout.write('commit: ok\\n');if(line==='abort')process.stdout.write('abort: ok\\n');}});`;
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const transaction = yield* acquireBranchCreation(
+          "unused",
+          "refs/outpost/protocol-test",
+          "1".repeat(40),
+          () => node(script),
+          true
+        );
+        yield* transaction.commit;
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.result)
+    );
+    expect(result._tag).toBe(bytes > 8192 ? "Failure" : "Success");
+  }
+);

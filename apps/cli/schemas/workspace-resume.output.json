@@ -262,11 +262,49 @@
                       }
                     ]
                   },
+                  "receiptObservation": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["matching", "missing", "moved", "symbolic", "unavailable"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "originalBase": {
                     "type": "object",
                     "properties": {
                       "base": {
                         "type": "string"
+                      },
+                      "fetchReceipt": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "operationId": {
+                                "type": "string"
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "commit": {
+                                "type": "string"
+                              },
+                              "selection": {
+                                "type": "string",
+                                "enum": ["advertised-branch-sha"]
+                              }
+                            },
+                            "required": ["operationId", "ref", "commit", "selection"],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "baseRemote": {
                         "anyOf": [
@@ -671,11 +709,49 @@
                       }
                     ]
                   },
+                  "receiptObservation": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["matching", "missing", "moved", "symbolic", "unavailable"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "originalBase": {
                     "type": "object",
                     "properties": {
                       "base": {
                         "type": "string"
+                      },
+                      "fetchReceipt": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "operationId": {
+                                "type": "string"
+                              },
+                              "ref": {
+                                "type": "string"
+                              },
+                              "commit": {
+                                "type": "string"
+                              },
+                              "selection": {
+                                "type": "string",
+                                "enum": ["advertised-branch-sha"]
+                              }
+                            },
+                            "required": ["operationId", "ref", "commit", "selection"],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "baseRemote": {
                         "anyOf": [

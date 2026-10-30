@@ -6,7 +6,7 @@ export const SCHEMA_ASSET_SHA256: Readonly<Record<string, string>> = {
   "skill-show.output.json": "5bf0dca56c6c7cf4b8afa4348ea79692f0c590fe7b641a3b0be0c56ab2d1c108",
   "skill-path.output.json": "d1f1c1b2ffc84cea7a0bc60d365376bf3808ead97d0848aca8907b4247b3bfbb",
   "skill-export.output.json": "04ecfe6647ff59daa6ae76693d123238e2f6208be75ac17c6fe89d6c360ca122",
-  "create.output.json": "c409c045df3fedfaa18527c9c0d2a9274f12d2de282bffadff3142f47a4cd55a",
+  "create.output.json": "207f38d905a37b680d3372e0e54bd137e28668a36fdd5b475e9092e09e410b27",
   "guidance-preview.output.json":
     "0cb588a68e50b0a4c9ee4416a3aff8a522973518076b779f4054400f81234eb2",
   "config-show.output.json": "99a7498caf4f511a5a94ca6f982a85d35501722d6a84036a7639b5961825b334",
@@ -14,7 +14,7 @@ export const SCHEMA_ASSET_SHA256: Readonly<Record<string, string>> = {
   "guidance-set.output.json": "d28d37b92cea1265c732dcb96163a0c26fcae8cc9d0489a8534e9b9df3a5418c",
   "guidance-clear.output.json": "10ed6515a2d1f3c3f7144e15a679375896037ccc1c561b0bb1aa873841925980",
   "repo-tag.output.json": "9dc6a53af8ddc771bd5a1e21c579666768a30936cc066b0ae93c6c95547fd18a",
-  "doctor.output.json": "646507d53c8a104cee3ab96ef3267dd6c15ee1bb01c5222fad899bcf94993762",
+  "doctor.output.json": "a43558cc77c4983a6a92e62addcdd3d068e43895d59d6d2ad61cdb136cacf415",
   "init.output.json": "511d97c861bedd206ad5734ac1dad4549c019e499596fae6f0368a40610fa9c3",
   "repo-register.output.json": "b0fadd22a751995b98b9f87ae8c1f755353c10365c992c35c0984a562db63168",
   "repo-add.output.json": "37d69a9769da98cd6d29883010d85d062540945b009407085a6d2b50ba7e461c",
@@ -27,6 +27,6 @@ export const SCHEMA_ASSET_SHA256: Readonly<Record<string, string>> = {
   "workspace-remove.output.json":
     "6fd20a8d78f86fd3cd7ad5caf84c599e01201d3e325d25ac5fe288a2771d0a4e",
   "workspace-resume.output.json":
-    "6c50121fb5e3af1a685a64ab1bf097f8ae6c8575d4da1a716e33d576922da0cb",
-  "workspace-show.output.json": "7cbc0ced1f352f42e7d45c6d3b0bfbd42780744369360413f097d59ca1810940",
+    "16bad6d703ec06396f35bdc3651d1b9d94bc09395db8dceea3840e9f6e9bea29",
+  "workspace-show.output.json": "53db902ccfc4e709ce3eb70b45f518f7a0848fb576402e7368fa88f036bf1865",
 };

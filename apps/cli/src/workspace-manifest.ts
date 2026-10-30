@@ -55,7 +55,7 @@ export const RepositoryEntrySchema = Schema.Struct({
 export type RepositoryEntry = Schema.Schema.Type<typeof RepositoryEntrySchema>;
 
 export const ManifestSchema = Schema.Struct({
-  version: Schema.optional(Schema.Literals([2, 3, 4, 5, 6])),
+  version: Schema.optional(Schema.Literals([2, 3, 4, 5, 6, 7])),
   worktreesRoot: Schema.optional(Schema.String),
   ticket: semanticIdentifierSchema("ticket"),
   type: semanticIdentifierSchema("branch type"),
@@ -66,38 +66,74 @@ export const ManifestSchema = Schema.Struct({
 }).check(
   Schema.makeFilter((manifest) => {
     if (
-      (manifest.version === 5 || manifest.version === 6) &&
+      (manifest.version === 5 || manifest.version === 6 || manifest.version === 7) &&
       !manifest.repositories.some((repo) => repo.storage?.kind === "borrowed")
     )
       return "Version 5 requires borrowed storage.";
     if (
       manifest.version === 6 &&
       !manifest.repositories.some(
-        (repo) => repo.storage?.kind === "borrowed" && repo.baseSource === "cached-remote"
+        (repo) =>
+          repo.storage?.kind === "borrowed" &&
+          (repo.baseSource === "cached-remote" || repo.baseSource === "fresh-remote")
       )
     )
       return "Version 6 requires borrowed cached members.";
-    for (const repo of manifest.repositories) {
+    if (
+      manifest.version === 7 &&
+      !manifest.repositories.every(
+        (repo) => repo.storage?.kind === "borrowed" && repo.baseSource === "fresh-remote"
+      )
+    )
+      return "Version7 requires borrowed fresh NEW members.";
+    for (const [index, repo] of manifest.repositories.entries()) {
+      if (repo.baseSource === "fresh-remote" && repo.storage?.kind === "borrowed") {
+        const receipt = repo.fetchReceipt;
+        if (
+          manifest.version !== 7 ||
+          !receipt ||
+          receipt.commit !== repo.baseCommit ||
+          receipt.ref !== `refs/outpost/base-fetch/${receipt.operationId}/${index}` ||
+          repo.baseRef !== receipt.ref ||
+          manifest.repositories.some(
+            (other) => other.fetchReceipt?.operationId !== receipt.operationId
+          )
+        )
+          return "Fresh receipt provenance is inconsistent.";
+      } else if (repo.fetchReceipt) return "Receipt metadata requires borrowed fresh version7.";
+
       if (
-        (manifest.version === 5 || manifest.version === 6) &&
+        (manifest.version === 5 || manifest.version === 6 || manifest.version === 7) &&
         (!repo.storage || repo.branchDisposition !== "created")
       )
         return "Version 5 requires explicit backend and NEW branch disposition on every member.";
-      if (repo.storage && manifest.version !== 5 && manifest.version !== 6)
+      if (
+        repo.storage &&
+        manifest.version !== 5 &&
+        manifest.version !== 6 &&
+        manifest.version !== 7
+      )
         return "Frozen storage requires manifest version 5.";
       if (repo.storage?.kind === "borrowed") {
         if (
           repo.managedPath !== undefined ||
           (repo.baseSource !== "local" &&
-            !(manifest.version === 6 && repo.baseSource === "cached-remote")) ||
+            !(
+              (manifest.version === 6 || manifest.version === 7) &&
+              repo.baseSource === "cached-remote"
+            ) &&
+            !(manifest.version === 7 && repo.baseSource === "fresh-remote")) ||
           repo.branchDisposition !== "created"
         )
           return "Borrowed entries require local NEW branch provenance and frozen storage, never managedPath.";
       } else if (repo.managedPath === undefined) return "Managed entries require managedPath.";
       const named = repo.baseRemote !== undefined || repo.remoteRef !== undefined;
-      if (repo.storage?.kind === "borrowed" && repo.baseSource === "cached-remote") {
+      if (
+        repo.storage?.kind === "borrowed" &&
+        (repo.baseSource === "cached-remote" || repo.baseSource === "fresh-remote")
+      ) {
         if (
-          manifest.version !== 6 ||
+          (manifest.version !== 6 && manifest.version !== 7) ||
           !repo.baseRemote ||
           !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(repo.baseRemote) ||
           repo.baseRemote.includes("..") ||
@@ -129,7 +165,8 @@ export const ManifestSchema = Schema.Struct({
         if (
           repo.base !== branch ||
           repo.remoteRef !== `refs/heads/${branch}` ||
-          repo.baseRef !== `refs/remotes/${repo.baseRemote}/${branch}`
+          (repo.baseSource === "cached-remote" &&
+            repo.baseRef !== `refs/remotes/${repo.baseRemote}/${branch}`)
         )
           return "Inconsistent cached remote provenance.";
       } else if (named)
@@ -143,7 +180,8 @@ export const ManifestSchema = Schema.Struct({
         manifest.version === 3 ||
         manifest.version === 4 ||
         manifest.version === 5 ||
-        manifest.version === 6
+        manifest.version === 6 ||
+        manifest.version === 7
       ) {
         if (
           !repo.baseSource ||
@@ -163,7 +201,7 @@ export const ManifestSchema = Schema.Struct({
           repo.base !== manifest.branch
         )
           return "Version 4 manifests require existing local branch admission provenance matching the frozen branch.";
-      } else if (manifest.version === 5 || manifest.version === 6) {
+      } else if (manifest.version === 5 || manifest.version === 6 || manifest.version === 7) {
         if (repo.branchDisposition !== undefined && repo.branchDisposition !== "created")
           return "Version 5 cannot borrow existing branches.";
       } else if (repo.branchDisposition !== undefined)
@@ -1122,7 +1160,8 @@ export function getManifestWorktreesRoot(
       manifest.version !== 3 &&
       manifest.version !== 4 &&
       manifest.version !== 5 &&
-      manifest.version !== 6) ||
+      manifest.version !== 6 &&
+      manifest.version !== 7) ||
     !manifest.worktreesRoot ||
     config.version < 2 ||
     !config.trustedWorktreesRoots?.includes(manifest.worktreesRoot)

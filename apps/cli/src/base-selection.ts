@@ -19,7 +19,16 @@ export type BaseSource = typeof BaseSourceSchema.Type;
 export const CommitSchema = Schema.String.check(
   Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 );
+export const FetchReceiptSchema = Schema.Struct({
+  operationId: Schema.String.check(
+    Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  ),
+  ref: Schema.String,
+  commit: CommitSchema,
+  selection: Schema.Literal("advertised-branch-sha"),
+});
 export const ProvenanceFields = {
+  fetchReceipt: Schema.optional(FetchReceiptSchema),
   baseRemote: Schema.optional(Schema.String),
   remoteRef: Schema.optional(Schema.String),
   branchDisposition: Schema.optional(Schema.Literals(["created", "existing"])),
@@ -36,6 +45,7 @@ export type BaseSelection = {
   baseRef: string;
   startPoint: string | null;
   receiptRef?: string;
+  fetchReceipt?: typeof FetchReceiptSchema.Type;
   baseRemote?: string;
   remoteRef?: string;
 };
@@ -422,6 +432,7 @@ export function baseOutput(selection: BaseSelection) {
     ...(selection.baseRemote
       ? { baseRemote: selection.baseRemote, remoteRef: selection.remoteRef }
       : {}),
+    ...(selection.fetchReceipt ? { fetchReceipt: selection.fetchReceipt } : {}),
     baseCommit: selection.startPoint,
     baseResolution:
       selection.startPoint === null ? ("fetch-required" as const) : ("resolved" as const),

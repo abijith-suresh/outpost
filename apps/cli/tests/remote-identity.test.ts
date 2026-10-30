@@ -183,3 +183,9 @@ describe("remote identity", () => {
     expect(isWindowsLocalPath("x:group/repo.git", "linux")).toBe(false);
   });
 });
+
+it("keeps repository import identity HTTP refusal distinct from configured borrowed transport", async () => {
+  await expect(resolveIdentity("http://127.0.0.1:12345/app.git")).rejects.toThrow(
+    "unsupported scheme http"
+  );
+});

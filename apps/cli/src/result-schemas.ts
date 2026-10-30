@@ -1,7 +1,19 @@
 import * as Schema from "effect/Schema";
-import { BaseSourceSchema, CommitSchema, ProvenanceFields } from "./base-selection.js";
+import {
+  BaseSourceSchema,
+  CommitSchema,
+  FetchReceiptSchema,
+  ProvenanceFields,
+} from "./base-selection.js";
 import { BorrowedRecordSchema, WorkspaceStorageSchema } from "./borrowed-schema.js";
 
+export const ReceiptObservationSchema = Schema.Literals([
+  "matching",
+  "missing",
+  "moved",
+  "symbolic",
+  "unavailable",
+]);
 const strings = Schema.Array(Schema.String);
 const optionalString = Schema.optional(Schema.String);
 const optionalBoolean = Schema.optional(Schema.Boolean);
@@ -32,6 +44,7 @@ export const ResumeWorktreeSchema = Schema.Struct({
   currentBranch: Schema.optional(Schema.NullOr(Schema.String)),
   currentHead: Schema.optional(CommitSchema),
   workingState: Schema.optional(ResumeWorkingStateSchema),
+  receiptObservation: Schema.optional(ReceiptObservationSchema),
   originalBase: Schema.Struct({ base: Schema.String, ...ProvenanceFields }),
   diagnostics: Schema.Array(ResumeDiagnosticSchema),
 });
@@ -74,6 +87,7 @@ export const WorkspaceWorktreeSchema = Schema.Struct({
   name: Schema.String,
   base: Schema.String,
   ...ProvenanceFields,
+  receiptObservation: Schema.optional(ReceiptObservationSchema),
   managedPath: optionalString,
   storage: Schema.optional(WorkspaceStorageSchema),
   worktreePath: Schema.String,
@@ -176,6 +190,9 @@ export const ResultSchemas = {
     initialized: Schema.Boolean,
   }),
   create: Schema.Struct({
+    receiptInventory: Schema.optional(
+      Schema.Struct({ operationId: Schema.String, path: Schema.String })
+    ),
     ticket: Schema.String,
     ticketDirectory: Schema.String,
     type: Schema.String,
@@ -195,6 +212,7 @@ export const ResultSchemas = {
         baseSource: BaseSourceSchema,
         requestedBase: Schema.NullOr(Schema.String),
         baseRef: Schema.String,
+        fetchReceipt: Schema.optional(FetchReceiptSchema),
         baseRemote: optionalString,
         remoteRef: optionalString,
         baseCommit: Schema.NullOr(CommitSchema),
@@ -228,6 +246,9 @@ export const ResultSchemas = {
           kind: Schema.String,
           path: optionalString,
           metadata: Schema.optional(Schema.Unknown),
+          receiptObservations: Schema.optional(
+            Schema.Array(Schema.Struct({ ref: Schema.String, status: ReceiptObservationSchema }))
+          ),
           error: optionalString,
         })
       )

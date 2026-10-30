@@ -166,6 +166,36 @@
                           }
                         ]
                       },
+                      "receiptObservations": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "matching",
+                                    "missing",
+                                    "moved",
+                                    "symbolic",
+                                    "unavailable"
+                                  ]
+                                }
+                              },
+                              "required": ["ref", "status"],
+                              "additionalProperties": true
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "error": {
                         "anyOf": [
                           {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { rmdir } from "node:fs/promises";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -48,8 +49,15 @@ import {
   validateTag,
 } from "../config.js";
 import { domainDetails, ErrorDetailFields, reasonDetails } from "../error-details.js";
+import {
+  freshDeadline,
+  freshError,
+  prepareBorrowedFresh,
+  selectBorrowedFresh,
+  withinFreshDeadline,
+} from "../fresh-base.js";
 import { verifyManagedRepository } from "../managed-repo.js";
-import { acquireHomeMutationLock } from "../mutation-lock.js";
+import { acquireHomeMutationLock, inspectMutationState } from "../mutation-lock.js";
 import {
   getCanonicalPortablePathKey,
   resolvePathWithinRoot,
@@ -133,6 +141,11 @@ type CreatePlan = BaseSelection & {
   remoteName?: string;
   worktreePath: string;
   branch: string;
+  verifyFreshBinding?: Effect.Effect<
+    void,
+    { message: string },
+    FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+  >;
   verifyBranchLock?: Effect.Effect<void, CreateError>;
   releaseBranchLock?: Effect.Effect<void, CreateError>;
 };
@@ -482,9 +495,9 @@ function buildCreatePlan(
 > {
   return Effect.gen(function* () {
     const borrowed = "borrowed" in repo ? repo.borrowed : undefined;
-    if (remote !== undefined && (source !== "cached-remote" || reuse))
+    if (remote !== undefined && (source === "local" || reuse))
       return yield* cachedError(
-        "--remote is only supported for cached-remote NEW selection, not local, fresh or reuse."
+        "--remote is only supported for named cached/fresh NEW selection, not local or reuse."
       );
     if (!borrowed && remote !== undefined) {
       if (remote !== "origin")
@@ -500,13 +513,13 @@ function buildCreatePlan(
     if (borrowed) {
       if (
         reuse ||
-        (source !== "local" && source !== "cached-remote") ||
+        (source !== "local" && source !== "cached-remote" && source !== "fresh-remote") ||
         !base ||
         (source === "local" &&
           !/^(?:refs\/(?:heads|tags)\/.+|[0-9a-f]{40}|[0-9a-f]{64})$/.test(base))
       )
         return yield* usageError(
-          "Borrowed NEW workspaces require local full heads/tags/SHA or named cached-remote selection. Borrowed fresh/reuse is unsupported."
+          "Borrowed NEW workspaces require local full heads/tags/SHA or explicit named cached/fresh selection. Implicit/default bases and borrowed existing-branch reuse are unsupported."
         );
       yield* source === "cached-remote"
         ? verifyBorrowed(borrowed).pipe(
@@ -535,7 +548,7 @@ function buildCreatePlan(
         branchName,
         source === "cached-remote"
           ? `refs/remotes/${remote}/${base.replace(/^refs\/heads\//, "")}`
-          : base.startsWith("refs/")
+          : source === "local" && base.startsWith("refs/")
             ? base
             : undefined
       );
@@ -560,44 +573,47 @@ function buildCreatePlan(
       { message: string },
       FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
     > =
-      borrowed && source === "cached-remote"
-        ? resolveBorrowedCache(borrowed, remote, base)
-        : reuse && !("borrowed" in repo)
-          ? resolveExistingBranch(repo, branchName)
-          : resolveBase(repo, source, base);
+      borrowed && source === "fresh-remote"
+        ? prepareBorrowedFresh(borrowed, remote, base)
+        : borrowed && source === "cached-remote"
+          ? resolveBorrowedCache(borrowed, remote, base)
+          : reuse && !("borrowed" in repo)
+            ? resolveExistingBranch(repo, branchName)
+            : resolveBase(repo, source, base);
     const selection = yield* selectionEffect.pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
-    if (borrowed)
+    if (borrowed && selection.startPoint)
       yield* requireOwnedReuseObjects(repo.managedRepoPath, selection.startPoint ?? "", repo.id);
-    const filterOverrides = borrowed
-      ? yield* withAttributeIndex(borrowed, (inspection) =>
-          preflightReusedTree(
-            repo.managedRepoPath,
-            selection.startPoint ?? "",
-            repo.id,
-            true,
-            inspection,
-            true
-          )
-        ).pipe(
-          Effect.mapError(
-            (error) => new CreateError({ message: error.message, ...domainDetails(error) })
-          )
-        )
-      : reuse
-        ? yield* preflightReusedTree(
-            repo.managedRepoPath,
-            selection.startPoint ?? "",
-            repo.id
+    const filterOverrides =
+      borrowed && selection.startPoint
+        ? yield* withAttributeIndex(borrowed, (inspection) =>
+            preflightReusedTree(
+              repo.managedRepoPath,
+              selection.startPoint ?? "",
+              repo.id,
+              true,
+              inspection,
+              true
+            )
           ).pipe(
             Effect.mapError(
               (error) => new CreateError({ message: error.message, ...domainDetails(error) })
             )
           )
-        : [];
+        : reuse
+          ? yield* preflightReusedTree(
+              repo.managedRepoPath,
+              selection.startPoint ?? "",
+              repo.id
+            ).pipe(
+              Effect.mapError(
+                (error) => new CreateError({ message: error.message, ...domainDetails(error) })
+              )
+            )
+          : [];
     const branchExists = yield* localBranchExists(repo, branchName).pipe(
       Effect.mapError(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
@@ -750,8 +766,20 @@ function createWorktree(
   );
 }
 
+function verifyFreshAdmission(plan: CreatePlan) {
+  return (plan.verifyFreshBinding ?? Effect.void).pipe(
+    Effect.mapError(
+      () =>
+        new CreateError({
+          message: freshError("Fresh binding unavailable or changed before admission").message,
+        })
+    )
+  );
+}
+
 function verifyCreatedPlans(plans: ReadonlyArray<CreatePlan>) {
   return Effect.gen(function* () {
+    for (const plan of plans) yield* verifyFreshAdmission(plan);
     for (const plan of plans) {
       if (plan.borrowed) {
         yield* verifyDirectory(plan.borrowed.common);
@@ -1182,12 +1210,52 @@ function prepareCreate(
         (error) => new CreateError({ message: error.message, ...domainDetails(error) })
       )
     );
-    if (selectedRepos.some((repo) => "borrowed" in repo) && (reuse || source === "fresh-remote"))
+    if (selectedRepos.some((repo) => "borrowed" in repo) && reuse)
       return yield* cachedError(
-        "Borrowed fresh transport and existing-branch reuse remain unsupported. No selected member was changed."
+        "Borrowed existing-branch reuse remains unsupported. No selected member was changed."
       );
-    if (remote !== undefined && (reuse || source !== "cached-remote"))
-      return yield* cachedError("--remote is only supported for cached-remote NEW selection.");
+    if (remote !== undefined && (reuse || source === "local"))
+      return yield* cachedError("--remote is only supported for named cached/fresh NEW selection.");
+    if (
+      source === "fresh-remote" &&
+      remote !== undefined &&
+      selectedRepos.some((repo) => !("borrowed" in repo))
+    )
+      return yield* freshError(
+        "Named fresh requires borrowed-only membership; no selected member was changed"
+      );
+    const recovery = yield* inspectMutationState(outpostHome);
+    if (
+      source === "fresh-remote" &&
+      selectedRepos.some((repo) => "borrowed" in repo) &&
+      recovery.some(
+        (entry) =>
+          entry.kind === "inspection-error" ||
+          (entry.kind === "operation" && "error" in entry && entry.error)
+      )
+    )
+      return yield* freshError(
+        "Uninspectable operation metadata requires manual inspection before fresh transport"
+      );
+    if (
+      recovery.some(
+        (entry) =>
+          entry.kind === "operation" &&
+          "metadata" in entry &&
+          entry.metadata &&
+          typeof entry.metadata === "object" &&
+          "steps" in entry.metadata &&
+          Array.isArray(entry.metadata.steps) &&
+          entry.metadata.steps.some(
+            (step: Record<string, unknown>) =>
+              step.ticket === ticket &&
+              ["borrowed-fresh", "borrowed-fresh-prepared"].includes(String(step.action))
+          )
+      )
+    )
+      return yield* freshError(
+        "Ticket has an unfinished operation; inspect doctor before manual resolution"
+      );
     yield* Effect.forEach(selectedRepos, (repo) =>
       Effect.gen(function* () {
         if ("borrowed" in repo)
@@ -1227,6 +1295,14 @@ export function runCreate(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     let parsedArgsInput = yield* parseCreateArgsInput(args);
+    if (
+      parsedArgsInput.baseSource === "fresh-remote" &&
+      parsedArgsInput.remote !== undefined &&
+      Object.entries(process.env).some(
+        ([key, value]) => value && (/^GIT_TRACE/.test(key) || key === "GIT_CURL_VERBOSE")
+      )
+    )
+      return yield* freshError("Inherited Git transport tracing is unsupported");
 
     const outpostHome = yield* resolveOutpostHome();
     // Existing membership is frozen: current tags, registrations and base refs
@@ -1520,7 +1596,74 @@ export function runCreate(
             Effect.fail(new CreateError({ message: "Missing existing branch admission lock." }));
         }
       }
-      if (parsedArgs.baseSource === "fresh-remote") {
+      if (parsedArgs.baseSource === "fresh-remote" && plans.every((plan) => plan.borrowed)) {
+        freshStarted = true;
+        const deadline = yield* freshDeadline();
+        const hooks = yield* emptyHooks(outpostHome);
+        const operationId = mutation?.id ?? randomUUID();
+        if (plans.length > 128) return yield* freshError("Fresh member bound exceeded");
+        for (let index = 0; index < plans.length; index++) {
+          const plan = plans[index];
+          yield* requireOwnedReuseStorage(
+            { id: plan.repoId, managedRepoPath: plan.managedRepoPath },
+            "",
+            `refs/outpost/base-fetch/${operationId}/${index}`
+          );
+        }
+        yield* record({
+          action: "borrowed-fresh-prepared",
+          ticket: parsedArgs.ticket,
+          operationId,
+          members: plans.map((plan, index) => ({
+            repoId: plan.repoId,
+            common: plan.borrowed!.common,
+            checkoutPath: plan.worktreePath,
+            receiptRef: `refs/outpost/base-fetch/${operationId}/${index}`,
+            remote: plan.baseRemote,
+            remoteRef: plan.remoteRef,
+            requestedBase: plan.requestedBase,
+            stage: "unattempted",
+          })),
+        });
+        plans = yield* withinFreshDeadline(
+          Effect.gen(function* () {
+            const refreshed: CreatePlan[] = [];
+            for (let index = 0; index < plans.length; index++) {
+              const plan = plans[index];
+              const target = selectedRepos[index];
+              if (!("borrowed" in target)) return yield* freshError("Borrowed member required");
+              const selected = yield* selectBorrowedFresh(
+                target.borrowed,
+                plan,
+                `refs/outpost/base-fetch/${operationId}/${index}`,
+                operationId,
+                hooks,
+                deadline,
+                (step) => record({ ...step, ticket: parsedArgs.ticket })
+              );
+              const checked = yield* buildCreatePlan(
+                target,
+                ticketDirectory,
+                branchName,
+                selected.startPoint!,
+                "local"
+              );
+              const refreshedPlan: CreatePlan = { ...checked, ...selected, hooks };
+              Object.defineProperty(refreshedPlan, "verifyFreshBinding", {
+                value: selected.verifyFreshBinding,
+                enumerable: false,
+              });
+              refreshed.push(refreshedPlan);
+            }
+            return refreshed;
+          }),
+          deadline
+        ).pipe(
+          Effect.mapError(() =>
+            freshError("Fresh selection incomplete; inspect per-member operation stages")
+          )
+        );
+      } else if (parsedArgs.baseSource === "fresh-remote") {
         // Validate every transport before the first fetch; local/cached modes never touch it.
         for (const repo of selectedRepos)
           yield* validateWindowsLocalTransport(
@@ -1614,6 +1757,7 @@ export function runCreate(
           }
           if (plan.branchDisposition !== "existing") {
             yield* record({ action: "create-branch", phase: "intent", ...plan });
+            yield* verifyFreshAdmission(plan);
             yield* Effect.uninterruptibleMask((restore) =>
               Effect.gen(function* () {
                 // Git remains interruptible. Only a successful result confirms
@@ -1622,6 +1766,7 @@ export function runCreate(
                 created.branches.push(plan);
               })
             );
+            yield* verifyFreshAdmission(plan);
             yield* record({ action: "create-branch", phase: "confirmed", ...plan });
           } else {
             yield* plan.verifyBranchLock ??
@@ -1636,12 +1781,14 @@ export function runCreate(
             });
           }
           yield* record({ action: "create-worktree", phase: "intent", ...plan });
+          yield* verifyFreshAdmission(plan);
           yield* Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               yield* restore(createWorktree(plan));
               created.worktrees.push(plan);
             })
           );
+          yield* verifyFreshAdmission(plan);
           yield* record({ action: "create-worktree", phase: "confirmed", ...plan });
           if (plan.borrowed)
             plan.storage = yield* captureWorkspaceStorage(plan.borrowed, plan.worktreePath);
@@ -1693,6 +1840,7 @@ export function runCreate(
               requestedBase: plan.requestedBase,
               baseRef: plan.baseRef,
               baseCommit: plan.startPoint ?? undefined,
+              ...(plan.fetchReceipt ? { fetchReceipt: plan.fetchReceipt } : {}),
               ...(plan.baseRemote
                 ? { baseRemote: plan.baseRemote, remoteRef: plan.remoteRef }
                 : {}),
@@ -1717,13 +1865,15 @@ export function runCreate(
         );
 
         const manifest: Manifest = {
-          version: plans.some((plan) => plan.borrowed && plan.baseRemote)
-            ? 6
-            : plans.some((plan) => plan.borrowed)
-              ? 5
-              : parsedArgs.reuseBranch === undefined
-                ? 3
-                : 4,
+          version: plans.some((plan) => plan.fetchReceipt)
+            ? 7
+            : plans.some((plan) => plan.borrowed && plan.baseRemote)
+              ? 6
+              : plans.some((plan) => plan.borrowed)
+                ? 5
+                : parsedArgs.reuseBranch === undefined
+                  ? 3
+                  : 4,
           worktreesRoot: provenanceConfig.worktreesRoot,
           ticket: parsedArgs.ticket,
           type: parsedArgs.type,
@@ -1789,6 +1939,22 @@ export function runCreate(
           })
         );
 
+        for (const plan of plans) yield* verifyFreshAdmission(plan);
+        if (plans.some((plan) => plan.fetchReceipt)) {
+          if (!mutation) return yield* freshError("Missing fresh inventory owner");
+          yield* Effect.uninterruptible(
+            mutation.completeFresh(
+              parsedArgs.ticket,
+              plans.map((plan) => ({
+                repoId: plan.repoId,
+                commonDirectory: plan.managedRepoPath,
+                common: plan.borrowed!.common,
+                baseCommit: plan.startPoint!,
+                fetchReceipt: plan.fetchReceipt!,
+              }))
+            )
+          );
+        }
         return {
           command: "create",
           data: {
@@ -1797,6 +1963,9 @@ export function runCreate(
             type: parsedArgs.type,
             branch: branchName,
             dryRun: false,
+            ...(plans.some((plan) => plan.fetchReceipt) && mutation
+              ? { receiptInventory: { operationId: mutation.id, path: mutation.journalPath } }
+              : {}),
             workspacePath,
             worktrees: plans.map((plan) => ({
               repoId: plan.repoId,
@@ -1832,7 +2001,11 @@ export function runCreate(
       Effect.mapError((error) =>
         freshStarted
           ? new CreateError({
-              message: `Fresh-base tracking/receipt updates are not rolled back; inspect the operation journal before retrying. ${error.message}`,
+              message: selectedRepos.some((repo) => "borrowed" in repo)
+                ? freshError(
+                    "Fresh selection or admission incomplete; inspect per-member journal stages"
+                  ).message
+                : `Fresh-base tracking/receipt updates are not rolled back; inspect the operation journal before retrying. ${error.message}`,
               ...domainDetails(error),
             })
           : error
@@ -1848,8 +2021,9 @@ export function runCreate(
           ...domainDetails(error),
           message:
             args.some((arg) => arg === "--remote" || arg.startsWith("--remote=")) &&
-            !error.message.startsWith("Cached base: ")
-              ? "Cached base: creation could not complete safely. Preserve all state and run outpost doctor --json; inspect the saved clone configuration outside Outpost. Raw Git diagnostics are withheld. Existing tickets require explicit workspace resume."
+            !error.message.startsWith("Cached base: ") &&
+            !error.message.startsWith("Fresh base: ")
+              ? `${args.some((arg) => arg === "fresh-remote" || arg === "--base-source=fresh-remote") ? "Fresh" : "Cached"} base: creation could not complete safely. Preserve all state and run outpost doctor --json; inspect the saved clone configuration outside Outpost. Raw Git diagnostics are withheld. Existing tickets require explicit workspace resume.`
               : error.message,
         })
     )
