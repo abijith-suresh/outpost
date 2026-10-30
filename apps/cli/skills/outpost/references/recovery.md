@@ -211,3 +211,21 @@ Do not force-remove, reset, adopt or repeat creation over residual ticket paths.
 No automatic rollback or clean retry is promised. Normal successful removal must
 validate owned clean work, and always preserves all branches. Managed-only
 rollback semantics are unchanged.
+
+## Named borrowed cache selection
+
+Use explicit cached-remote, --remote NAME and --base branch/full-heads-ref. The
+required cache is refs/remotes/NAME/BRANCH. Missing/custom-only caches do not cause
+fallback, fetch or helper invocation. A cache is an unverified snapshot, not server
+freshness. Correct missing/multiple/invalid remote metadata in the saved clone
+outside Outpost; raw URL/config/subprocess diagnostics are deliberately withheld.
+Never paste credentials or private helper output into operation metadata.
+
+Manifest6 freezes original named cache/server ref/SHA and storage/root/membership.
+Do not downgrade it to v5, whose borrowed semantics are local-only. Older binaries
+report v6 show as invalid and refuse resume/removal/reference inspection. Current resume/show/remove use
+frozen state even if remote config changes or the saved linked launch anchor is
+gone. Normal owned removal preserves all branches. Failed/cancelled admission still
+retains exact branches/reflogs and uncertain checkout/admin/guidance for doctor;
+no destructive retry or clean rollback is promised. Borrowed fresh/auth/reuse remain
+unsupported, and trusted content conversion programs may have effects/network.

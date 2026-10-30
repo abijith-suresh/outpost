@@ -141,6 +141,13 @@ export function renderAgentsMarkdown(
             : [
                 `    baseSource: ${jsonEncode(repo.baseSource)}`,
                 `    requestedBase: ${repo.requestedBase === null ? "null (recorded managed HEAD default)" : jsonEncode(repo.requestedBase ?? "")}`,
+                ...(repo.baseRemote
+                  ? [
+                      `    baseRemote: ${jsonEncode(repo.baseRemote)}`,
+                      `    remoteRef: ${jsonEncode(repo.remoteRef ?? "")}`,
+                      "    cacheMeaning: unverified cached snapshot; no server freshness or endpoint provenance is claimed",
+                    ]
+                  : []),
                 `    baseRef: ${jsonEncode(repo.baseRef ?? "")}`,
                 `    baseCommit: ${repo.baseCommit ? jsonEncode(repo.baseCommit) : "unresolved (fetch-required; preview did not fetch)"}`,
               ]),

@@ -809,6 +809,9 @@ export function runWorkspaceResume(ticket: string | undefined, extraArgs: Readon
                   baseSource: repo.baseSource,
                   requestedBase: repo.requestedBase,
                   baseRef: repo.baseRef,
+                  ...(repo.baseRemote
+                    ? { baseRemote: repo.baseRemote, remoteRef: repo.remoteRef }
+                    : {}),
                   baseCommit: repo.baseCommit,
                   ...(repo.branchDisposition === undefined
                     ? {}

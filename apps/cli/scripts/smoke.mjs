@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyBorrowedLocalWorkflow } from "./borrowed-local-smoke.mjs";
+import { verifyCachedBaseWorkflow } from "./cached-base-smoke.mjs";
 import { verifyRegisterWorkflow } from "./register-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
 import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
@@ -377,7 +378,7 @@ try {
   assertSuccess(discovery, "installed describe");
   const contract = JSON.parse(discovery.stdout).data;
   assert.equal(contract.cliVersion, version);
-  assert.equal(contract.contractVersion, "4.1.0");
+  assert.equal(contract.contractVersion, "4.2.0");
   assert.equal(contract.network, "explicit");
   assert.ok(contract.inputSchema.properties.options.properties["--ticket"]);
   assert.ok(contract.outputSchema.anyOf.length >= 2);
@@ -462,6 +463,7 @@ try {
   verifyReuseWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyRegisterWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, smokeRoot });
+  verifyCachedBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
   console.log("\nAll smoke tests passed.");
 } finally {

@@ -441,8 +441,8 @@ outpost workspace remove TASK-1 --json
 
 The base must be a full `refs/heads/*`, `refs/tags/*` or full commit SHA already
 available in the registered common store. No DWIM, source-HEAD default, implicit
-fetch, source copying, borrowed existing-branch reuse or remote selection is
-provided. Mixed selections preflight every member before workspace effects.
+fetch, source copying or borrowed existing-branch reuse is provided. Named cached
+selection is a separate explicit form described below. Mixed selections preflight every member before workspace effects.
 Manifest v5 freezes storage/checkout/admin identity, original root/membership and
 requested/actual immutable starting commit. Older binaries refuse v5; managed-only
 workspaces retain their existing formats. Source storage remains an external
@@ -473,5 +473,53 @@ SHA. Inspect `doctor --json` and the operation record for original SHA, member
 paths and confirmation/unknown status. No full rollback or clean retry is promised.
 Do not reset/recreate/adopt residual ticket paths. Successful normal removal
 requires verified owned clean work and preserves every branch. Managed-only
-rollback is unchanged. Borrowed fetch/reuse/remote/auth modes remain unsupported;
+rollback is unchanged. Borrowed fetch/reuse/fresh/auth modes remain unsupported;
 `repo fetch --all` refuses when borrowed records are active.
+
+
+### Select an explicit borrowed cached base
+
+```sh
+outpost create --ticket TASK-2 --type feat --repo local:ID --base-source cached-remote --remote team --base refs/heads/topic/sub --json
+```
+
+Both remote and base are required. The base is a branch suffix such as `topic/sub`
+or a full heads ref. No default/HEAD selector, tags, SHA/revision expression or
+`refs/remotes/*` input is supported. A remote name is one 1–64 character component
+starting with a letter/number, followed by letters/numbers/dots/underscores/hyphens,
+without `..`, slashes or control characters. Selects exactly the existing direct
+`refs/remotes/team/topic/sub` and available owned objects. Missing, symbolic,
+dangling or aliased refs/objects fail without fallback or repair.
+
+An absent fetch refspec is fine if that exact cache exists. Custom refspecs do not
+redirect selection to another namespace or local head. Populate the required
+conventional tracking ref explicitly outside Outpost if unavailable. A cache may
+be stale or manually populated, including for an earlier endpoint; it is not
+server-verified or authenticated endpoint provenance. No origin/upstream/remote
+HEAD inference, implicit fetch, helper or askpass occurs during metadata selection
+or dry-run. Explicit borrowed population/status/removal still trusts configured
+conversion tools with their possible effects/network, as described above.
+
+The verified saved anchor supplies Git private/worktree config, includes and URL
+rewrites. It must name exactly one effective fetch URL; URLs/config/helper values
+are bounded metadata only and never emitted or saved as provenance. Malformed
+configuration errors withhold raw Git diagnostics. Missing/replaced anchors refuse
+new selection; frozen existing workspace lifecycle does not require current
+remote settings or the old launch anchor. Named configuration is mutable, not an
+atomic immutable endpoint binding.
+
+A borrowed cached member writes strict manifest v6, recording the original base
+argument, named remote, normalized server ref, exact tracking ref and pinned SHA
+with existing frozen storage/root/member identities. Local borrowed manifests
+remain v5 and managed formats are unchanged. Old binaries refuse v6 reads/removal;
+never downgrade a manifest or restore old settings over newer workspace state.
+Show/resume/guidance expose original cache facts separately from current work.
+Changing cache/URL/settings/tags does not change the original starting commit.
+
+Mixed selections preflight every member. Explicit managed `--remote origin` is
+accepted only for its existing actual mirror origin and cached semantics; other
+managed names refuse without remapping configuration. Managed omitted options
+retain their defaults. `--remote` is incompatible with local/reuse/fresh modes.
+Borrowed fresh transport/auth, custom cache mapping and existing branch/checkout
+reuse remain unsupported. Failed/cancelled admission retains all branch/reflog and
+uncertain checkout/admin history; inspect doctor before any retry.
