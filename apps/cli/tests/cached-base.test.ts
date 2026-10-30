@@ -377,13 +377,14 @@ describe("explicit borrowed cached bases", () => {
     const anchor = path.join(createTempDir("outpost-cache-anchor-"), "linked");
     git(f.source, "worktree", "add", "--detach", anchor, "HEAD");
     git(f.source, "config", "extensions.worktreeConfig", "true");
+    const privateDir = git(anchor, "rev-parse", "--absolute-git-dir").replaceAll("\\", "/");
     const inc = path.join(f.home, "anchor.inc");
     writeFileSync(inc, '[remote "anchor"]\n url = synthetic:alias\n');
     git(
       anchor,
       "config",
       "--worktree",
-      `includeIf.gitdir:${f.source.replaceAll("\\", "/")}/.git/worktrees/*.path`,
+      `includeIf.gitdir:${privateDir}.path`,
       inc.replaceAll("\\", "/")
     );
     git(
@@ -393,6 +394,14 @@ describe("explicit borrowed cached bases", () => {
       "url.https://FIXTURE_SECRET_42@invalid.example/.insteadOf",
       "synthetic:"
     );
+    expect(git(anchor, "config", "--get-all", "remote.anchor.url")).toBe("synthetic:alias");
+    expect(git(anchor, "remote", "get-url", "--all", "anchor")).toBe(
+      "https://FIXTURE_SECRET_42@invalid.example/alias"
+    );
+    const commonDir = git(anchor, "rev-parse", "--path-format=absolute", "--git-common-dir");
+    expect(() =>
+      git(f.source, "--git-dir", commonDir, "config", "--get-all", "remote.anchor.url")
+    ).toThrow();
     git(f.source, "update-ref", "refs/remotes/anchor/topic/sub", f.sha);
     process.env.OUTPOST_HOME = createTempDir("outpost-cache-linked-home-");
     await ok("init");
@@ -423,7 +432,7 @@ describe("explicit borrowed cached bases", () => {
     preserved(before);
   });
   it("supports explicit actual managed origin without changing omitted behavior", async () => {
-    const managed = await createManagedRepoFixture();
+    const managed = await createManagedRepoFixture({ repoName: "app" });
     process.env.OUTPOST_HOME = createTempDir("outpost-cache-managed-home-");
     await ok("init");
     await ok("repo", "add", managed.tempRepo);
