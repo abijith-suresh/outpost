@@ -755,3 +755,12 @@ and effects of trusted programs. New packs, metadata and any remaining keep/temp
 may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
 automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
 same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.
+
+
+Borrowed fresh Windows transport preflight classifies existing Git URL/SCP/helper
+syntax separately from repository-import identity policy. Configured HTTP, HTTPS
+and SSH remain Git transports; local paths/file URLs still receive raw/canonical
+cwd budgets. Repository import scheme restrictions and identity normalization are
+unchanged. Fresh integration fixtures use per-invocation Effect Console services,
+test-owned cancellation and drained fibers before temporary-state cleanup. Fixed
+lifecycle stage timings diagnose native latency without raising test/process limits.

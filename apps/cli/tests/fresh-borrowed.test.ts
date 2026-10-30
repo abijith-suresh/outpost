@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -11,24 +12,86 @@ import {
   unlinkSync,
 } from "node:fs";
 import { NodeServices } from "@effect/platform-node";
+import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { systemError } from "effect/PlatformError";
-import { expect, it, vi } from "vitest";
+import { afterEach, aroundEach, expect, it, vi } from "vitest";
 import * as Child from "../src/child-process.ts";
 import { runCreate } from "../src/commands/create.ts";
 import * as Fresh from "../src/fresh-base.ts";
+import { run as runProgram } from "../src/program.ts";
 import * as Store from "../src/store.ts";
 import {
   createManagedRepoFixture,
   createTempDir,
   path,
-  runCli,
   setupAfterEach,
+  version,
   writeFileSync,
 } from "./helpers.ts";
 
 setupAfterEach();
+// Bind every async continuation to its owning test, including after a timeout.
+// Drain before setupAfterEach restores mocks/environment or removes disposable Git fixtures.
+type TestWork = {
+  controller: AbortController;
+  pending: Set<Promise<unknown>>;
+  start: number;
+  trace: boolean;
+  stage: string;
+};
+const testWork = new AsyncLocalStorage<TestWork>();
+function breadcrumb(stage: string, owner = testWork.getStore()) {
+  if (!owner) return;
+  owner.stage = stage;
+  if (owner.trace)
+    process.stderr.write(
+      `[fresh lifecycle] ${JSON.stringify({ stage, elapsedMs: Date.now() - owner.start, pendingCli: owner.pending.size })}\n`
+    );
+}
+async function drainTestWork(owner: TestWork) {
+  if (owner.controller.signal.aborted && owner.pending.size === 0) return;
+  breadcrumb("cleanup:start", owner);
+  owner.controller.abort();
+  await Promise.allSettled([...owner.pending]);
+  breadcrumb("cleanup:done", owner);
+}
+aroundEach(async (runTest, context) => {
+  const owner: TestWork = {
+    controller: new AbortController(),
+    pending: new Set(),
+    start: Date.now(),
+    trace: false,
+    stage: "start",
+  };
+  const abort = () => {
+    breadcrumb(`aborted:${owner.stage}`, owner);
+    owner.controller.abort();
+  };
+  context.signal.addEventListener("abort", abort, { once: true });
+  if (context.signal.aborted) owner.controller.abort();
+  try {
+    await testWork.run(owner, runTest);
+  } finally {
+    context.signal.removeEventListener("abort", abort);
+    await drainTestWork(owner);
+  }
+});
+afterEach(async () => {
+  const owner = testWork.getStore();
+  if (owner) await drainTestWork(owner);
+});
+function forkOwned<A, E>(effect: Effect.Effect<A, E, never>) {
+  const owner = testWork.getStore();
+  if (!owner || owner.controller.signal.aborted) throw new Error("Test-owned CLI scope is closed.");
+  const fiber = Effect.runFork(effect, { signal: owner.controller.signal });
+  const settled = Effect.runPromise(Fiber.await(fiber));
+  owner.pending.add(settled);
+  const forget = () => owner.pending.delete(settled);
+  void settled.then(forget, forget);
+  return fiber;
+}
 function git(cwd: string, ...args: string[]) {
   return execFileSync(
     "git",
@@ -49,13 +112,33 @@ function git(cwd: string, ...args: string[]) {
   ).trim();
 }
 async function cli(...args: string[]) {
-  const out = vi.spyOn(console, "log").mockImplementation(() => undefined);
-  const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
-  out.mockClear();
-  err.mockClear();
-  const code = await runCli([...args, "--json"]);
-  const output = [...out.mock.calls, ...err.mock.calls].map((c) => String(c[0])).join("\n");
-  return { code, output, data: JSON.parse(output).data };
+  const lines: string[] = [];
+  const capture: Console.Console = Object.assign(Object.create(console), {
+    log: (...values: unknown[]) => lines.push(values.map(String).join(" ")),
+    error: (...values: unknown[]) => lines.push(values.map(String).join(" ")),
+  });
+  const fiber = forkOwned(
+    runProgram([...args, "--json"], version).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.provideService(Console.Console, capture)
+    )
+  );
+  const exit = await Effect.runPromise(Fiber.await(fiber));
+  if (exit._tag === "Failure") {
+    const owner = testWork.getStore();
+    throw new Error(
+      `Test-owned CLI interrupted or failed before its isolated JSON envelope: stage=${owner?.stage ?? "unlabelled"}, cancelled=${owner?.controller.signal.aborted ?? false}, capturedLines=${lines.length}.`
+    );
+  }
+  const code = exit.value;
+  const output = lines.join("\n");
+  try {
+    return { code, output, data: JSON.parse(output).data };
+  } catch {
+    throw new Error(
+      `Invalid isolated CLI JSON envelope: exit=${code}, capturedLines=${lines.length}.`
+    );
+  }
 }
 async function ok(...args: string[]) {
   const r = await cli(...args);
@@ -120,13 +203,20 @@ function args(id: string, ticket = "FRESH") {
   ];
 }
 it("selects actual advertised remote-only SHA and retains source, cache, receipts and healthy inventory through lifecycle", async () => {
+  testWork.getStore()!.trace = true;
+  breadcrumb("fixture:start");
   const f = await fixture();
+  breadcrumb("fixture:ready");
   const before = snapshot(f.tempRepo);
+  breadcrumb("preview:start");
   const preview = await ok(...args(f.repo.id), "--dry-run");
+  breadcrumb("preview:done");
   expect(preview.worktrees[0].baseCommit).toBe(null);
   expect(preview.worktrees[0].baseResolution).toBe("fetch-required");
   preserved(before);
+  breadcrumb("create:start");
   const made = await ok(...args(f.repo.id));
+  breadcrumb("create:done");
   const member = made.worktrees[0];
   expect(member.baseCommit).toBe(f.fresh);
   expect(git(member.path, "rev-parse", "HEAD")).toBe(f.fresh);
@@ -137,22 +227,30 @@ it("selects actual advertised remote-only SHA and retains source, cache, receipt
   expect(JSON.parse(readFileSync(path.join(f.home, "workspaces/FRESH.json"), "utf8")).version).toBe(
     7
   );
+  breadcrumb("resume:start");
   const resumed = await ok("workspace", "resume", "FRESH");
+  breadcrumb("resume:done");
   expect(resumed.resumable).toBe(true);
   expect(resumed.worktrees[0].originalBase.fetchReceipt).toEqual(member.fetchReceipt);
+  breadcrumb("doctor:start");
   const doctor = await ok("doctor");
+  breadcrumb("doctor:done");
   expect(doctor.status).toBe("ok");
   expect(doctor.operationRecords.some((r: { kind: string }) => r.kind === "completed-fresh")).toBe(
     true
   );
+  breadcrumb("remove:start");
   await ok("workspace", "remove", "FRESH");
+  breadcrumb("remove:done");
   preserved(before);
   expect(git(f.tempRepo, "rev-parse", member.fetchReceipt.ref)).toBe(f.fresh);
   expect(
     existsSync(path.join(f.home, "operations", `${member.fetchReceipt.operationId}.json`))
   ).toBe(true);
   // Completed retained inventory is not an unfinished ticket and does not prevent deliberate new admission after clean removal.
+  breadcrumb("second-create:start");
   const next = await ok(...args(f.repo.id, "SECOND"));
+  breadcrumb("second-create:done");
   expect(next.worktrees[0].baseCommit).toBe(f.fresh);
 });
 it("refuses missing advertised ref without cache fallback and blocks blind replay from failed journal", async () => {
@@ -332,7 +430,7 @@ it("preserves confirmed receipt and unknown admission on fiber interruption with
       ? result.pipe(Effect.andThen(Effect.sync(ready)), Effect.andThen(Effect.never))
       : result;
   });
-  const fiber = Effect.runFork(
+  const fiber = forkOwned(
     runCreate(args(f.repo.id).slice(1), { interactive: false }).pipe(
       Effect.provide(NodeServices.layer)
     )
@@ -588,7 +686,7 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
   );
   git(f.tempRepo, "config", "remote.origin.uploadpack", `node "${driver.replaceAll("\\", "/")}"`);
   const before = snapshot(f.tempRepo);
-  const fiber = Effect.runFork(
+  const fiber = forkOwned(
     runCreate(args(f.repo.id).slice(1), { interactive: false }).pipe(
       Effect.provide(NodeServices.layer)
     )
@@ -959,4 +1057,14 @@ it("keeps completed receipt inventory discoverable when config is absent without
   );
   expect(doctor.diagnostics).toEqual([]);
   expect(existsSync(made.receiptInventory.path)).toBe(true);
+});
+
+it("isolates actual simultaneous read-only CLI envelopes in their own Console services", async () => {
+  await fixture();
+  const [first, second] = await Promise.all([cli("config", "show"), cli("config", "show")]);
+  expect(first.code, first.output).toBe(0);
+  expect(second.code, second.output).toBe(0);
+  expect(JSON.parse(first.output).command).toBe("config show");
+  expect(JSON.parse(second.output).command).toBe("config show");
+  expect(first.data).toEqual(second.data);
 });

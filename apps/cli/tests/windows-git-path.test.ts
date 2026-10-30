@@ -9,6 +9,7 @@ import {
   administrativeNameBudget,
   sanitizedWorktreeName,
   validateWindowsCheckout,
+  validateWindowsConfiguredTransport,
   validateWindowsGitPath,
   validateWindowsGitPathLength,
   validateWindowsLocalTransport,
@@ -221,4 +222,32 @@ describe("bounded Windows Git paths", () => {
       ).toBe(true);
     }
   });
+});
+
+it.each([
+  "http://127.0.0.1:12345/app.git",
+  "https://example.invalid/team/app.git?configured-query",
+  "ssh://git@example.invalid/team/app.git",
+  "git@example.invalid:team/app.git",
+  "x:group/repo.git",
+])(
+  "classifies configured %s as non-local on win32 without importing an identity or contacting it",
+  async (transport) => {
+    expect(
+      Exit.isSuccess(
+        await provided(validateWindowsConfiguredTransport(transport, "/unused-anchor", "win32"))
+      )
+    ).toBe(true);
+  }
+);
+it("keeps raw/canonical local configured transport budgets on win32", async () => {
+  const root = realpathSync.native(createTempDir("of-transport-"));
+  const local = path.join(root, "x".repeat(259 - root.length - 1));
+  mkdirSync(local);
+  for (const transport of [local, path.relative(root, local), pathToFileURL(local).href])
+    rejection(
+      await provided(validateWindowsConfiguredTransport(transport, root, "win32")),
+      "259 UTF-16",
+      "maximum 258"
+    );
 });

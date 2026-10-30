@@ -591,3 +591,9 @@ and effects of trusted programs. New packs, metadata and any remaining keep/temp
 may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
 automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
 same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.
+
+
+On Windows, borrowed fresh checks configured network transports independently of
+repository import identity validation. Existing HTTP/HTTPS/SSH configuration is
+used as-is; local transport paths retain the supported raw/canonical path budgets.
+This does not add HTTP repository import identities or an authentication fallback.

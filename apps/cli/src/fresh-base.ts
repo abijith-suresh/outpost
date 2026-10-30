@@ -17,7 +17,7 @@ import { inspectCachedRemote } from "./cached-base.js";
 import { acquireBranchCreation, commandResult, readOnlyGitCommand } from "./child-process.js";
 import { resolvePathWithinRoot, validatePortableFilename } from "./path-safety.js";
 import { requireOwnedIncomingStorage, requireOwnedReuseObjects } from "./reuse-object-storage.js";
-import { validateWindowsGitPath, validateWindowsLocalTransport } from "./windows-git-path.js";
+import { validateWindowsConfiguredTransport, validateWindowsGitPath } from "./windows-git-path.js";
 
 export const freshError = (stage: string) =>
   new BaseSelectionError({
@@ -129,7 +129,7 @@ export function prepareBorrowedFresh(record: BorrowedRecord, remote?: string, re
     )
       return yield* freshError("Unsupported source object format");
     const binding = yield* inspectCachedRemote(record, remote);
-    yield* validateWindowsLocalTransport(binding, record.anchor.path);
+    yield* validateWindowsConfiguredTransport(binding, record.anchor.path);
     yield* preflightFreshIncoming(record);
     return {
       base: branch,

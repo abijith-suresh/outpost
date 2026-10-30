@@ -4,7 +4,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { resolveCanonicalPath } from "./path-safety.js";
-import { resolveLocalRemoteTransportPath } from "./remote-identity.js";
+import { isWindowsLocalPath, resolveLocalRemoteTransportPath } from "./remote-identity.js";
 
 // Git for Windows v2.56.0.windows.2 setup.c explicit GIT_DIR startup uses strlen(GIT_DIR) >
 // PATH_MAX - 40. MinGW's default PATH_MAX is 260 (crt/limits.h).
@@ -91,6 +91,28 @@ export function validateWindowsLocalTransport(
       local === undefined ? Effect.void : validateWindowsGitPath(local, "cwd", platform)
     )
   );
+}
+
+/** Existing clone transports are Git configuration, not new repository import identities.
+ * Only local syntax launches upload-pack from a user path that needs a cwd budget.
+ */
+export function validateWindowsConfiguredTransport(
+  transport: string,
+  anchor: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  if (platform !== "win32") return Effect.void;
+  if (/^file:\/\//i.test(transport))
+    return validateWindowsLocalTransport(transport, anchor, platform);
+  const drive = isWindowsLocalPath(transport, "win32");
+  const colon = transport.indexOf(":");
+  const separator = transport.search(/[\\/]/);
+  // URL, SCP and configured remote-helper syntax are non-local. Git validates their transport.
+  if (!drive && colon >= 0 && (separator < 0 || colon < separator)) return Effect.void;
+  return Effect.gen(function* () {
+    const path = yield* Path.Path;
+    yield* validateWindowsGitPath(path.resolve(anchor, transport), "cwd", platform);
+  });
 }
 
 /** Creation/removal children export the checkout's .git path, not its resolved admin directory. */
