@@ -1,11 +1,13 @@
 import type * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { type PlatformError, systemError } from "effect/PlatformError";
 import * as ChildProcess from "effect/process/ChildProcess";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import { invocation } from "./application/context.js";
 
 /** Git must inherit PATH/HOME while refusing interactive credential prompts. */
 export function gitCommand(...args: ReadonlyArray<string>): ChildProcess.Command {
@@ -40,6 +42,24 @@ export function readOnlyGitCommand(...args: ReadonlyArray<string>): ChildProcess
     "core.untrackedCache=false",
     ...args
   ).pipe(ChildProcess.setEnv({ GIT_OPTIONAL_LOCKS: "0" }));
+}
+
+/** Invocation-local environment for the checked process boundary. No global mutation. */
+function pinCommandEnvironment(
+  command: ChildProcess.Command,
+  environment: Readonly<Record<string, string | undefined>>
+): ChildProcess.Command {
+  if (command._tag === "PipedCommand")
+    return ChildProcess.pipeTo(
+      pinCommandEnvironment(command.left, environment),
+      pinCommandEnvironment(command.right, environment),
+      command.options
+    );
+  return ChildProcess.make(command.command, command.args, {
+    ...command.options,
+    extendEnv: false,
+    env: { ...environment, ...command.options.env },
+  });
 }
 
 type CommandOptions = {
@@ -296,8 +316,10 @@ export function acquireBranchCreation(
  * A nonzero status is intentionally returned for callers implementing probes.
  */
 export function commandResult(command: ChildProcess.Command, options: CommandOptions = {}) {
-  return Effect.suspend(() => {
-    const timeoutMs = options.timeoutMs ?? Number(process.env.OUTPOST_GIT_TIMEOUT_MS ?? 120_000);
+  return Effect.gen(function* () {
+    const selected = yield* invocation;
+    const environment = Option.isSome(selected) ? selected.value.environment : process.env;
+    const timeoutMs = options.timeoutMs ?? Number(environment.OUTPOST_GIT_TIMEOUT_MS ?? 120_000);
     const maxOutputBytes = options.maxOutputBytes ?? 256 * 1024;
     if (
       !Number.isFinite(timeoutMs) ||
@@ -305,13 +327,17 @@ export function commandResult(command: ChildProcess.Command, options: CommandOpt
       !Number.isSafeInteger(maxOutputBytes) ||
       maxOutputBytes < 1
     ) {
-      return Effect.fail(
+      return yield* Effect.fail(
         executionError("Command timeout and output limit must be positive finite values.")
       );
     }
-    return Effect.scoped(
+    return yield* Effect.scoped(
       Effect.gen(function* () {
-        const child = yield* withTerminationPolicy(command);
+        const selected = yield* invocation;
+        const pinned = Option.isSome(selected)
+          ? pinCommandEnvironment(command, selected.value.environment)
+          : command;
+        const child = yield* withTerminationPolicy(pinned);
         const [stdout, stderr, exitCode] = yield* Effect.all(
           [
             capture(child.stdout, maxOutputBytes),

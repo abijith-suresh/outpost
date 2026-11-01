@@ -17,11 +17,12 @@ npm run build
 ```
 
 The root is a private npm workspace coordinator. One root install provisions
-the CLI and website workspaces from `package-lock.json`.
+the CLI, bundled manager and website workspaces from `package-lock.json`.
 
 | Workspace                 | Path            | Purpose                         |
 | ------------------------- | --------------- | ------------------------------- |
 | `@abijith-suresh/outpost` | `apps/cli/`     | Published CLI package           |
+| `@outpost/manager` | `apps/manager/` | Private Solid/Vite bundled human manager |
 | `outpost-website`         | `apps/website/` | Private Astro marketing website |
 
 ## Development Workflow
@@ -102,7 +103,8 @@ This runs, in order:
 2. `lint` — repository-wide Biome lint
 3. `test:policy` — Changeset policy and command tests
 4. CLI verification — TypeScript strict mode and Vitest
-5. Website verification — Astro check and TypeScript
+5. Manager verification — TypeScript and production assets
+6. Website verification — Astro check and TypeScript
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
@@ -345,3 +347,11 @@ identity replacement and path-budget boundaries. Packed/global installed smoke
 checks bigint directory IDs and exact source preservation through unregister and
 restore using the installed `.cmd` entrypoint. Run full verification and packed
 smoke sequentially: subprocess tests compile/use `dist`, while smoke rebuilds it.
+
+## Bundled manager development and installed browser checks
+
+The private `apps/manager` workspace builds production Solid/Vite assets. CLI builds run that build sequentially, generate the integrity-checked asset map and copy assets into the CLI package. Runtime management uses the foreground installed CLI, never a Vite development server. Build with `npm run build --workspace @abijith-suresh/outpost`. Normal CLI help/version remain lazy.
+
+Installed smoke tests use the root development Playwright dependency. Install its matching Chromium with `npm exec -- playwright install chromium`, then run `npm run test:smoke --workspace @abijith-suresh/outpost`. The native CLI CI matrix installs Chromium and exercises the actual global package, including the PowerShell `.cmd` launcher on Windows. No browser automation dependency ships with the CLI.
+
+Capture UI evidence from the installed production package with synthetic data and record source/asset/tarball hashes. Keep browser costs separate from the one foreground manager's startup, RSS, private memory, idle CPU and shutdown measurements. Linux observations do not establish native Windows or corporate-browser support. Changes to manager source must still pass full pinned verification, normal hooks and a CLI patch Changeset.

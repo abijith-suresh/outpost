@@ -597,3 +597,13 @@ On Windows, borrowed fresh checks configured network transports independently of
 repository import identity validation. Existing HTTP/HTTPS/SSH configuration is
 used as-is; local transport paths retain the supported raw/canonical path budgets.
 This does not add HTTP repository import identities or an authentication fallback.
+
+## Foreground human manager
+
+`outpost manage [--port PORT] [--open]` serves bundled Solid/Vite production assets on IPv4 loopback in one foreground Node process. Browser opening is explicit. Ctrl+C or Stop manager drains this instance; ordinary CLI commands start no manager or daemon. Missing homes stay uninitialized. Use the printed one-use fragment link to pair; enter `p` in the terminal to issue a replacement link. Sessions remain in memory and expire.
+
+The first manager supports existing-clone registration and explicit metadata verification, unregister with retained storage, restore, managed tags, future worktree-root and extra plaintext guidance settings, and recorded workspace inventory. Borrowed tags, managed import, Git-backed workspace status/create/resume/remove and storage purge are not browser actions in this increment. Existing CLI workflows remain supported.
+
+Quiet inventory reads only bounded, identity-checked selected-home metadata. It starts no Git/helper/filter processes, probes no external roots, writes no locks and migrates nothing. Recorded paths and original provenance do not establish current availability, ownership or cleanliness. Explicit verification uses the shared checked operations. Settings affect future workspaces; existing frozen paths, membership and generated guidance remain unchanged. Browser revisions are random opaque tokens, checked against server-only fingerprints inside the existing home lock. Instance-lifetime request IDs prevent duplicate dispatch across session changes. Losing a response never authorizes automatic replay.
+
+The manager validates exact local authority, request targets, origins, bearer/version headers and bounded JSON, serves a fixed integrity-checked asset list with strict CSP, and sends allowlisted results rather than URLs/configuration/raw Git diagnostics. It offers no arbitrary Git/file runner or repository HTML viewer. Browser/corporate restrictions on the owner's laptop remain a separate manual check; there is no weakened authentication fallback.

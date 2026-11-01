@@ -21,7 +21,7 @@ const roff = (text) =>
     .map((line) => (/^[.']/.test(line) ? `\\&${line}` : line))
     .join("\n");
 let reference =
-  "# Command reference\n\nGenerated from the command registry. Edit the registry, then run `npm run docs:generate`.\n\nInput schemas describe normalized `{ arguments, options }`; named values are arrays.\nHelp and version remain text. All other listed commands support opt-in `--json`.\n\n";
+  "# Command reference\n\nGenerated from the command registry. Edit the registry, then run `npm run docs:generate`.\n\nInput schemas describe normalized `{ arguments, options }`; named values are arrays.\nHelp, version and the foreground manage command remain text. Other listed commands support opt-in `--json`.\n\n";
 let man =
   '.\\" Generated from the command registry; run npm run docs:generate.\n.TH OUTPOST 1\n.SH NAME\noutpost \\- manage local multi-repository Git workspaces\n.SH SYNOPSIS\n.B outpost\ncommand [options]\n.SH DESCRIPTION\nOutpost is operated by coding agents and developers. Workspace creation defaults to cached remote refs. Only explicit fresh-remote base selection fetches; dry runs never fetch.\n.SH COMMANDS\n';
 const schemas = [];

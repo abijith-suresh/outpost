@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as Schema from "effect/Schema";
+import { invocationEnvironment } from "./application/context.js";
 import type { BorrowedRecord } from "./borrowed-schema.js";
 import { commandString, readOnlyGitCommand } from "./child-process.js";
 import {
@@ -46,6 +47,7 @@ const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b
 export function discoverBorrowed(input: string, name: string) {
   return Effect.gen(function* () {
     yield* validatePortableFilename("repository name", name);
+    const environment = yield* invocationEnvironment;
     for (const key of [
       "GIT_DIR",
       "GIT_WORK_TREE",
@@ -62,7 +64,7 @@ export function discoverBorrowed(input: string, name: string) {
       "GIT_GRAFT_FILE",
       "GIT_ATTR_SOURCE",
     ])
-      if (process.env[key] !== undefined)
+      if (environment[key] !== undefined)
         return yield* fail(
           `Repository layout/config override ${key} is unsupported for registration.`
         );

@@ -180,3 +180,7 @@ and effects of trusted programs. New packs, metadata and any remaining keep/temp
 may consume disk even on failed or unknown operations. No persistent `.keep` guarantee,
 automatic deletion, pruning or GC is provided. Rechecks do not sandbox arbitrary raw
 same-user filesystem races. Known writable object-store directory/pack aliases are refused before transport. Selected loose-leaf aliases still refuse selected-object validation; the packed incoming route does not write through those leaves.
+
+## Human manager
+
+Agents continue using the CLI. A human may explicitly start `outpost manage`, optionally adding `--open`; this foreground manager serves bundled assets and stops with Ctrl+C. Recorded browser inventory never establishes current Git state. Register/unregister/restore, managed tags and future settings use the shared operations. Unregister preserves repository storage. No implicit UI fetch, content status, lifecycle action or state repair runs during polling. Never treat a lost browser response as permission to replay a mutation.

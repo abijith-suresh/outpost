@@ -19,6 +19,7 @@ import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyBorrowedLocalWorkflow } from "./borrowed-local-smoke.mjs";
 import { verifyCachedBaseWorkflow } from "./cached-base-smoke.mjs";
 import { verifyFreshBaseWorkflow } from "./fresh-base-smoke.mjs";
+import { verifyManagerWorkflow } from "./manager-smoke.mjs";
 import { verifyRegisterWorkflow } from "./register-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
 import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
@@ -467,6 +468,12 @@ try {
   verifyCachedBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyFreshBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
+  await verifyManagerWorkflow({
+    launcher: getInstalledBinPath(),
+    runInstalled,
+    smokeRoot,
+    installedPackage,
+  });
   console.log("\nAll smoke tests passed.");
 } finally {
   cleanup();

@@ -12,6 +12,10 @@ export async function runEarly(
     return early.exitCode;
   }
   const positional = commandTokens(argv);
+  if (positional[0] === "manage") {
+    const { runManager } = await import("./manager/run.js");
+    return runManager(argv);
+  }
   if (positional[0] === "describe") {
     const { runDiscovery } = await import("./discovery-runtime.js");
     return runDiscovery(positional.slice(1), version, argv.includes("--json"));

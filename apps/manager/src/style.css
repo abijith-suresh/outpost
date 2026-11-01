@@ -1,0 +1,396 @@
+:root {
+  font:
+    14px / 1.5 system-ui,
+    sans-serif;
+  color: #191919;
+  background: #fafafa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid #c9c9c9;
+  background: #fff;
+  color: #222;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+button:hover {
+  background: #f1f1f1;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #222;
+  outline-offset: 2px;
+}
+.primary {
+  background: #222;
+  color: white;
+  border-color: #222;
+}
+.primary:hover {
+  background: #444;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100vh;
+}
+aside {
+  border-right: 1px solid #e5e5e5;
+  padding: 26px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+aside strong {
+  font-size: 18px;
+  padding: 0 10px;
+}
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+nav button,
+.aside-actions button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  width: 100%;
+}
+nav button.active {
+  background: #e9e9e9;
+  font-weight: 600;
+}
+.aside-actions {
+  margin-top: auto;
+}
+main {
+  width: 100%;
+  padding: 32px 32px 64px;
+}
+.title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+h1 {
+  font-size: 24px;
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+h3 {
+  font-size: 14px;
+}
+p {
+  margin: 8px 0 16px;
+}
+.muted,
+.meta {
+  color: #5b5b5b;
+}
+.meta {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin: 4px 0;
+}
+.mono {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-top: 28px;
+}
+.tabs button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 14px;
+}
+.tabs .active {
+  box-shadow: inset 0 -2px #222;
+  font-weight: 600;
+}
+.list {
+  border-top: 1px solid #e5e5e5;
+}
+.tabs + .list {
+  border-top: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e5e5;
+  min-width: 0;
+}
+.row > div:first-child {
+  min-width: 0;
+}
+.actions,
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.notice {
+  background: #f0f0f0;
+  border: 1px solid #d3d3d3;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.notice button {
+  margin-left: 8px;
+}
+section {
+  border-top: 1px solid #ddd;
+  margin-top: 28px;
+  padding-top: 24px;
+  max-width: 700px;
+}
+label {
+  display: block;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+input,
+textarea {
+  display: block;
+  width: 100%;
+  border: 1px solid #aaa;
+  border-radius: 6px;
+  padding: 9px;
+  background: white;
+  color: #191919;
+}
+textarea {
+  min-height: 160px;
+  resize: vertical;
+}
+section button {
+  margin-top: 12px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f2f2f2;
+  padding: 12px;
+  min-height: 48px;
+}
+dl {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+}
+dt {
+  color: #555;
+}
+dd {
+  margin: 0;
+}
+dialog {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 24px;
+  width: min(480px, calc(100% - 32px));
+  box-shadow: 0 12px 40px #0003;
+}
+dialog::backdrop {
+  background: #0006;
+}
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+.mobile {
+  display: none;
+}
+.pair {
+  max-width: 550px;
+  margin: 10vh auto;
+}
+.pair h2 {
+  margin-top: 32px;
+}
+@media (max-width: 1100px) {
+  .shell {
+    display: block;
+  }
+  aside {
+    display: none;
+  }
+  .mobile {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #ddd;
+    padding: 8px 20px;
+    position: relative;
+  }
+  .mobile nav {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border-bottom: 1px solid #ddd;
+    padding: 12px;
+    z-index: 2;
+  }
+  main {
+    padding: 32px 24px 64px;
+  }
+}
+@media (max-width: 640px) {
+  main {
+    padding: 24px 16px 64px;
+  }
+  .title {
+    align-items: flex-start;
+  }
+  .row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  button {
+    min-height: 44px;
+  }
+  .actions {
+    width: 100%;
+  }
+  dl {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  dd {
+    margin-bottom: 12px;
+  }
+}
+
+.filters {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.filters label {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 180px;
+}
+.text {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font-weight: 600;
+}
+.group-heading {
+  font-size: 16px;
+  margin: 24px 0 8px;
+}
+
+/* Recorded names and confirmation targets remain fully readable at narrow widths. */
+main,
+.row > div,
+.actions,
+.title {
+  min-width: 0;
+  max-width: 100%;
+}
+.text,
+h1,
+h2,
+.group-heading,
+.mono,
+dialog p,
+dd {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.text {
+  white-space: normal;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+dialog {
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.repository-actions {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+.mobile-actions-toggle {
+  display: none;
+}
+@media (max-width: 640px) {
+  .row {
+    flex-direction: row;
+  }
+  .row > div:first-child {
+    flex: 1;
+  }
+  .repository-actions {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .mobile-actions-toggle {
+    display: inline-flex;
+  }
+  .repository-actions > .actions {
+    display: none;
+  }
+  .repository-actions > .actions.mobile-open {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    width: max-content;
+    min-width: 140px;
+    max-width: 220px;
+    z-index: 3;
+    padding: 8px;
+    border: 1px solid #d4d4d4;
+    border-radius: 8px;
+    background: #fff;
+  }
+}

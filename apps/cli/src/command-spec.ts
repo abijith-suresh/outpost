@@ -90,6 +90,28 @@ const CREATE_OPTIONS: readonly CommandOption[] = [
 
 export const ALL_COMMANDS: readonly CommandSpec[] = [
   {
+    path: ["manage"],
+    description:
+      "Run the foreground human manager with bundled assets; browser opening is explicit",
+    options: [
+      {
+        name: "--port",
+        valueName: "port",
+        description: "Local loopback port (0 chooses an available port)",
+        required: false,
+      },
+      {
+        name: "--open",
+        description: "Explicitly open the pairing link in your browser",
+        required: false,
+      },
+    ],
+    mutation: false,
+    interactive: false,
+    json: false,
+    dryRun: false,
+  },
+  {
     path: ["help"],
     description: "Show this help output",
     arguments: [
@@ -746,35 +768,42 @@ export function commandPolicy(spec: CommandSpec) {
       ? ("explicit" as const)
       : ("none" as const),
     retry:
-      spec.mutation || name === "workspace resume"
+      spec.mutation || name === "workspace resume" || name === "manage"
         ? ("inspect-before-retry" as const)
         : ("safe" as const),
-    sideEffects: !spec.mutation
-      ? name === "workspace resume"
-        ? ["trusted-borrowed-git-programs"]
-        : []
-      : name === "create"
+    sideEffects:
+      name === "manage"
         ? [
-            "explicit-fresh-remote-fetch",
-            "remote-tracking-refs",
-            "local-branches",
-            "worktrees",
-            "workspace-metadata",
-            "trusted-borrowed-git-programs",
+            "foreground-loopback-manager",
+            "explicit-browser-opening",
+            "explicit-application-actions",
           ]
-        : name === "workspace remove"
-          ? ["worktrees", "workspace-metadata", "trusted-borrowed-git-programs"]
-          : name === "skill export"
-            ? ["exported-guidance"]
-            : name === "init"
-              ? ["configuration", "directories"]
-              : name === "config set" || name === "guidance set" || name === "guidance clear"
-                ? ["configuration"]
-                : name === "repo tag" || name === "repo remove" || name === "repo register"
-                  ? ["configuration", "registry"]
-                  : name === "repo restore"
-                    ? ["registry"]
-                    : ["managed-repositories", "registry"],
+        : !spec.mutation
+          ? name === "workspace resume"
+            ? ["trusted-borrowed-git-programs"]
+            : []
+          : name === "create"
+            ? [
+                "explicit-fresh-remote-fetch",
+                "remote-tracking-refs",
+                "local-branches",
+                "worktrees",
+                "workspace-metadata",
+                "trusted-borrowed-git-programs",
+              ]
+            : name === "workspace remove"
+              ? ["worktrees", "workspace-metadata", "trusted-borrowed-git-programs"]
+              : name === "skill export"
+                ? ["exported-guidance"]
+                : name === "init"
+                  ? ["configuration", "directories"]
+                  : name === "config set" || name === "guidance set" || name === "guidance clear"
+                    ? ["configuration"]
+                    : name === "repo tag" || name === "repo remove" || name === "repo register"
+                      ? ["configuration", "registry"]
+                      : name === "repo restore"
+                        ? ["registry"]
+                        : ["managed-repositories", "registry"],
     dryRun: spec.dryRun ? { mutations: false, locks: false, advisory: true } : null,
   };
 }

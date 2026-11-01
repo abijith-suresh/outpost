@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { invocationCwd } from "./application/context.js";
 import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { resolveCanonicalPath } from "./path-safety.js";
 import { isWindowsLocalPath, resolveLocalRemoteTransportPath } from "./remote-identity.js";
@@ -69,7 +70,7 @@ export function validateWindowsGitPath(
 
 /** Git without -C inherits this cwd even when --git-dir is absolute. */
 export function validateWindowsInvocationCwd(platform: NodeJS.Platform = process.platform) {
-  return validateWindowsGitPath(process.cwd(), "cwd", platform);
+  return Effect.flatMap(invocationCwd, (cwd) => validateWindowsGitPath(cwd, "cwd", platform));
 }
 
 export function validateWindowsManagedGitDir(
