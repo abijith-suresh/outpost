@@ -3,12 +3,12 @@ export const ASSET_FILES: ReadonlyArray<{ path: string; type: string; sha256: st
   {
     path: "index.html",
     type: "text/html; charset=utf-8",
-    sha256: "9da322543033fa4a87275b983cbe10e304acaac339df9a0448ae50280f0358f0",
+    sha256: "3153eb6b8a9eabd808b7ea6e72e9cf9c9f389fca03087ebd7842f9db808690d1",
   },
   {
-    path: "assets/index-DuXy4GhC.js",
+    path: "assets/index-B2JNHLDk.js",
     type: "text/javascript; charset=utf-8",
-    sha256: "8fe983bd045f857b75485c75239263641ae11e9f7f31df68ec74030e4633f339",
+    sha256: "81d2e0148026b6f8ac64ae8f06f1e40424d831063804e1274efc27a7c21ab295",
   },
   {
     path: "assets/index-EN_umKkT.css",

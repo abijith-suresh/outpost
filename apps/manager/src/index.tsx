@@ -992,7 +992,7 @@ function SnapshotNotice(props: { snapshot: Snapshot | undefined; stale: string }
       <Show when={props.snapshot && props.snapshot.state !== "ok"}>
         <div class="notice">
           {props.snapshot?.state === "uninitialized"
-            ? "Run outpost init in the terminal to initialize this home, then refresh. Opening the manager does not initialize or repair state."
+            ? "Stop this manager, run outpost init in the terminal, then restart outpost manage. Opening the manager does not initialize or repair state."
             : props.snapshot?.notice || `Metadata state: ${props.snapshot?.state}`}
         </div>
       </Show>
