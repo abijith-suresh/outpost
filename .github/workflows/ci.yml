@@ -118,6 +118,48 @@ jobs:
         if: runner.os != 'Windows'
         run: npm run test --workspace @abijith-suresh/outpost -- tests/settings.test.ts tests/path-safety.test.ts tests/windows-git-path.test.ts tests/repo-retain.test.ts tests/repo-remove.test.ts tests/create-bases.test.ts tests/workspace-resume.test.ts tests/create-reuse-branch.test.ts tests/reuse-object-storage.test.ts tests/repo-register.test.ts tests/borrowed-workspace.test.ts tests/cached-base.test.ts tests/fresh-borrowed.test.ts tests/manager-inventory.test.ts tests/manager-security.test.ts tests/manager-http.test.ts --testTimeout=30000
 
+  prerelease-candidate:
+    name: Premerge candidate (Node 24, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for bundled manager acceptance
+        run: npm exec -- playwright install chromium
+
+      - name: Premerge staged candidate lifecycle, independent of postmerge dispatch
+        shell: bash
+        run: npm run prepare:prerelease -- --output "$RUNNER_TEMP/outpost-premerge-candidate" --channel dev --source-sha "$GITHUB_SHA" --date "$(date -u +%Y%m%d)" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+
+
   cli-windows-regressions:
     name: Windows CLI regressions (Node 24)
     runs-on: windows-latest
@@ -198,6 +240,7 @@ jobs:
       - changeset-policy
       - cli-build-smoke
       - cli-windows-regressions
+      - prerelease-candidate
       - website-build
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -209,11 +252,12 @@ jobs:
           QUALITY_RESULT: ${{ needs.npm-quality.result }}
           CHANGESET_RESULT: ${{ needs.changeset-policy.result }}
           CLI_BUILD_RESULT: ${{ needs.cli-build-smoke.result }}
+          CANDIDATE_RESULT: ${{ needs.prerelease-candidate.result }}
           WINDOWS_NATIVE_RESULT: ${{ needs.cli-windows-regressions.result }}
           WEBSITE_BUILD_RESULT: ${{ needs.website-build.result }}
         run: |
           set -euo pipefail
-          if [[ "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WINDOWS_NATIVE_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
+          if [[ "$CANDIDATE_RESULT" != success || "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WINDOWS_NATIVE_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
             printf 'Node 24 verification failed: quality=%s changeset=%s cli-build=%s windows-native=%s website-build=%s\n' \
               "$QUALITY_RESULT" "$CHANGESET_RESULT" "$CLI_BUILD_RESULT" "$WINDOWS_NATIVE_RESULT" "$WEBSITE_BUILD_RESULT" >&2
             exit 1
@@ -232,6 +276,7 @@ jobs:
       - changeset-policy
       - cli-build-smoke
       - cli-windows-regressions
+      - prerelease-candidate
       - website-build
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -243,11 +288,12 @@ jobs:
           QUALITY_RESULT: ${{ needs.npm-quality.result }}
           CHANGESET_RESULT: ${{ needs.changeset-policy.result }}
           CLI_BUILD_RESULT: ${{ needs.cli-build-smoke.result }}
+          CANDIDATE_RESULT: ${{ needs.prerelease-candidate.result }}
           WINDOWS_NATIVE_RESULT: ${{ needs.cli-windows-regressions.result }}
           WEBSITE_BUILD_RESULT: ${{ needs.website-build.result }}
         run: |
           set -euo pipefail
-          if [[ "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WINDOWS_NATIVE_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
+          if [[ "$CANDIDATE_RESULT" != success || "$QUALITY_RESULT" != success || "$CLI_BUILD_RESULT" != success || "$WINDOWS_NATIVE_RESULT" != success || "$WEBSITE_BUILD_RESULT" != success ]]; then
             printf 'Node 24 verification failed: quality=%s changeset=%s cli-build=%s windows-native=%s website-build=%s\n' \
               "$QUALITY_RESULT" "$CHANGESET_RESULT" "$CLI_BUILD_RESULT" "$WINDOWS_NATIVE_RESULT" "$WEBSITE_BUILD_RESULT" >&2
             exit 1

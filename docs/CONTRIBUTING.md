@@ -359,3 +359,66 @@ The private `apps/manager` workspace builds production Solid/Vite assets. CLI bu
 Installed smoke tests use the root development Playwright dependency. Install its matching Chromium with `npm exec -- playwright install chromium`, then run `npm run test:smoke --workspace @abijith-suresh/outpost`. The native CLI CI matrix installs Chromium and exercises the actual global package, including the PowerShell `.cmd` launcher on Windows. No browser automation dependency ships with the CLI.
 
 Capture UI evidence from the installed production package with synthetic data and record source/asset/tarball hashes. Keep browser costs separate from the one foreground manager's startup, RSS, private memory, idle CPU and shutdown measurements. Linux observations do not establish native Windows or corporate-browser support. Changes to manager source must still pass full pinned verification, normal hooks and a CLI patch Changeset.
+
+## Manual dev/alpha artifacts
+
+`Prepare dev or alpha artifacts` is preparation only. It accepts manual dispatch
+on this repository's `main` with `channel=dev|alpha` and `publish=false`.
+`publish=true` always refuses before checkout. It has read-only permissions, no
+registry credentials or publisher, no OIDC write permission, and never moves a
+release, Git tag, npm dist-tag or `latest`. The existing disabled release workflow
+is separate. There is no automatic main-push candidate release.
+
+One dispatch exports the exact commit's regular Git blobs to owned temporary
+storage, without another checkout or worktree. Only the snapshot's CLI version is
+changed to `0.0.0-CHANNEL.YYYYMMDD.RUN.ATTEMPT`. Source version, lockfile and
+existing Changesets stay untouched. Preparation requires the exact `.node-version`
+and `packageManager` pins. `npm ci --ignore-scripts` installs locked build tools
+in the snapshot; the build runs explicitly afterward. This needs registry access
+or a sufficiently populated npm cache. No offline cache is assumed.
+
+Source inspection never refreshes the Git index or invokes conversion filters,
+fsmonitor or source transports. It fingerprints source files directly, including
+committed paths and new files outside generated dependency/build directories
+(`node_modules`, `dist`, `coverage`, `.astro`). The index and existing backing
+`sharedindex.*` files are read directly with bytes, identity and nanosecond mtime
+checks. Source preparation requires a complete local checkout and refuses any
+partial-clone/promisor configuration before object inspection, even if its objects
+happen to be available. Missing local objects fail without fetching. This boundary
+is separate from the explicit npm dependency downloads used to build/install.
+
+The private, scripts-free tarball contains `dist/build-receipt.json`, a bounded
+inert identity record with source SHA/version and candidate coordinates. It makes
+no process, network or environment probes. `manifest.json` records that identity,
+the exact runtime lock closure, archive SHA256/SRI and every packaged file's size
+and SHA256. `SHA256SUMS` covers the archives and manifest. These are integrity
+receipts, not signatures. Approve the run/source and retain the manifest checksum
+from that trusted run independently of the downloaded bundle.
+
+Installation uses a new user-owned prefix, locked dependencies and scripts disabled.
+It compares installed files and metadata against the receipt, then checks actual
+Effect/platform/shared consumer resolution before executing the candidate. The
+staged lifecycle exercises native launcher, registration, borrowed local create /
+remove, resume and foreground manager/browser flows using disposable fixtures.
+The receipt does not imply live corporate repository or owner laptop acceptance.
+
+Ordinary PR CI prepares a platform-local candidate and runs that lifecycle on
+Linux and native Windows. This is **premerge** evidence only. After this workflow
+is merged, the parent runs manual `publish=false` dispatch on integrated main.
+The Linux job uploads the canonical bundle; Windows downloads those same bytes,
+verifies them and installs/tests them without rebuilding. Success of both jobs
+and retained source/run/checksums establishes **postmerge dispatch** acceptance.
+Parallel UI/tag work may extend the shared smoke helpers later. Final canonical
+refresh must use eventual integrated main, not this branch's current candidate.
+
+Local preparation, from a checkout with pinned tooling and dependencies:
+
+```powershell
+$sha = (git rev-parse HEAD).Trim()
+npm.cmd run prepare:prerelease -- --output C:\Users\me\outpost-dev-bundle --channel dev --source-sha $sha --date 20261105 --run-id 1 --attempt 1
+```
+
+Use a new absolute output directory outside the repository. Browser lifecycle
+checks require `npm.cmd exec -- playwright install chromium` first. Registry
+access is needed when the locked dependencies are absent from cache. Local run
+coordinates are local evidence and must not be presented as a GitHub dispatch.

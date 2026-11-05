@@ -778,3 +778,17 @@ The manager validates exact local authority, request targets, origins, bearer/ve
 The manager application boundary uses an immutable invocation service for home, cwd and environment. Browser mutation revisions are random opaque tokens backed by server-only exact metadata fingerprints. The existing home lock validates the pinned home before acquisition and checks the submitted revision after acquisition, before journals or target writes. HTTP admission waits for that decision so stale requests return409. Request ownership and the128-entry deduplication ledger last for the manager instance across session changes; socket closure does not cancel accepted work. Explicit cancel/stop interrupts only owned scopes and drains their checked child processes/finalizers. Read-only selected registration verification validates metadata before/after without creating a home write lock.
 
 Recorded inventory validates owned metadata paths and coherent two-phase reads within a16MiB read budget. Unchanged views reuse decoded data after bounded file/directory identity+size+nanosecond timestamp checks; cached metadata never admits a mutation. Admission always reads current exact bytes. Known journals distinguish healthy completed retained receipts from unfinished/uninspectable state. Missing configuration with surviving metadata is a recovery condition, not an empty home. Quiet readers use only lexical known startup-home spellings and never resolve paths supplied by configuration into unrelated external roots.
+
+### Preparation artifact boundary
+
+`scripts/prerelease.mjs` is a separate Node process boundary for explicit manual
+artifact preparation and installation. It exports a bounded regular-blob Git
+snapshot to owned scratch, builds there with pinned tooling, stages one private
+scripts-free dev/alpha tarball, and emits bounded identity/manifest/hash receipts.
+It never changes source package versions, lock or pending release notes and has
+no publication path. Scripts-disabled installation verifies packaged files and
+exact runtime lock/consumer resolution before candidate execution. Identity is
+inert `dist/build-receipt.json`; runtime CLI/UI modules remain unchanged.
+`scripts/check-prerelease.mjs` reuses the installed CLI/manager lifecycle helpers.
+Premerge platform-local candidates and postmerge canonical Linux-to-Windows
+artifact transfer are separate acceptance boundaries; see CONTRIBUTING.
