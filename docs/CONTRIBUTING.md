@@ -176,11 +176,15 @@ GitHub Actions run on every pull request and push to `main`:
   metadata and the Outpost-specific release-path rules. It reads the same
   `.node-version` file.
 - `CLI build and smoke (Node 24, <OS>)` runs on Ubuntu and native Windows. Each
-  matrix job builds the CLI, runs focused settings/path regressions, packs and
-  installs the actual tarball, then exercises installed commands and offline
-  schemas from an unrelated directory. Borrowed fresh regressions exercise packed incoming ownership (including pack/MIDX/fanout aliases), strict receipt acknowledgements and shared deadlines. The installed fresh lifecycle checks retained inventory, immutable advertisement provenance and unchanged cache/source refs. Linux acceptance can supply the preserved preceding installed CLI through `OUTPOST_PRECEDING_CLI` to exercise old-reader refusal and a paused actual cached-config writer under the home lock. That extra old-reader proof is separate from the native installed-current smoke. The Windows job allows 30 minutes for
-  both stages because its focused regressions alone take about 11 minutes;
-  Ubuntu retains 15 minutes. Per-test and subprocess deadlines are unchanged.
+  matrix job builds, packs and installs the actual tarball, then exercises
+  installed commands, offline schemas and the bundled browser manager from an
+  unrelated directory. Ubuntu also runs the focused settings/path regressions.
+  `Windows CLI regressions (Node 24)` runs the identical Windows focused matrix
+  in a separate job, with its own checkout, pinned toolchain and CLI build. Borrowed fresh regressions exercise packed incoming ownership (including pack/MIDX/fanout aliases), strict receipt acknowledgements and shared deadlines. The installed fresh lifecycle checks retained inventory, immutable advertisement provenance and unchanged cache/source refs. Linux acceptance can supply the preserved preceding installed CLI through `OUTPOST_PRECEDING_CLI` to exercise old-reader refusal and a paused actual cached-config writer under the home lock. That extra old-reader proof is separate from the native installed-current smoke. Windows package smoke and focused regressions each have a 30-minute
+  job limit; Ubuntu retains 15 minutes. The combined Windows job exceeded its
+  limit after package smoke passed and focused regressions ran for over 22
+  minutes. Separating the jobs preserves every test and its existing deadline.
+  Both historical aggregation aliases require the separate Windows job to pass.
   Windows uses the npm-generated `.cmd`
   shim through native PowerShell, with spaces and Unicode in fixture paths. The
   installed smoke also asserts the effective Node and npm versions against
