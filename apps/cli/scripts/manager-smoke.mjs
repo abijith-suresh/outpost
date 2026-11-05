@@ -6,6 +6,26 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, expect } from "@playwright/test";
 
+/** Fixed categories only: child diagnostics can contain paths, URLs or credentials. */
+export function managerStartupDiagnostic(stderr, code, signal) {
+  const category = /\bERR_ACCESS_DENIED\b/.test(stderr)
+    ? "access-denied"
+    : stderr.includes("Manager could not start.")
+      ? "manager-startup-refused"
+      : /\b(?:ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND)\b/.test(stderr)
+        ? "module-not-found"
+        : "unclassified";
+  return {
+    category,
+    exitCode: Number.isSafeInteger(code) ? code : null,
+    signal: ["SIGINT", "SIGTERM", "SIGKILL", "SIGABRT"].includes(signal)
+      ? signal
+      : signal
+        ? "other"
+        : null,
+  };
+}
+
 /** Actual installed foreground launcher, native .cmd through PowerShell on Windows. */
 export async function verifyManagerWorkflow({
   launcher,
@@ -116,11 +136,16 @@ export async function verifyManagerWorkflow({
       }
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      const remaining = 65536 - Buffer.byteLength(stderr);
+      if (remaining > 0) stderr += Buffer.from(chunk).subarray(0, remaining).toString("utf8");
     });
-    child.once("exit", () => {
+    child.once("exit", (code, signal) => {
       clearTimeout(timer);
-      reject(new Error("Installed manager exited before pairing"));
+      reject(
+        new Error(
+          `Installed manager exited before pairing: ${JSON.stringify(managerStartupDiagnostic(stderr, code, signal))}`
+        )
+      );
     });
   });
   const origin = new URL(url).origin;
