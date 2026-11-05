@@ -62,7 +62,8 @@ Read [commands](references/commands.md) for syntax and
   for future workspaces; old workspaces keep their recorded paths. The first
   creation or settings/tag/guidance mutation upgrades metadata so older writers refuse it.
   Keep the newer tool after migration; do not restore stale config over new state.
-- Use `repo tag <id> --add <tag> --remove <tag> --json` for optional flat tags.
+- Use `repo tag <id> --add <tag> --remove <tag> --json` for optional flat tags on managed or existing-clone records.
+  Tags never change storage identity; unregister/restore preserves them.
   `repo list --tag <tag>` and `create --tag <tag>` require every supplied tag.
   Tags filter explicit `--repo` IDs when combined; workspace membership freezes
   at creation and is unaffected by later tag edits.
@@ -183,4 +184,7 @@ same-user filesystem races. Known writable object-store directory/pack aliases a
 
 ## Human manager
 
-Agents continue using the CLI. A human may explicitly start `outpost manage`, optionally adding `--open`; this foreground manager serves bundled assets and stops with Ctrl+C. Recorded browser inventory never establishes current Git state. Register/unregister/restore, managed tags and future settings use the shared operations. Unregister preserves repository storage. No implicit UI fetch, content status, lifecycle action or state repair runs during polling. Never treat a lost browser response as permission to replay a mutation.
+Agents continue using the CLI. A human may explicitly start `outpost manage`, optionally adding `--open`; this foreground manager serves bundled assets and stops with Ctrl+C. Recorded browser inventory never establishes current Git state. Register/unregister/restore, managed tag controls and future settings use the shared operations. Unregister preserves repository storage. No implicit UI fetch, content status, lifecycle action or state repair runs during polling. Never treat a lost browser response as permission to replay a mutation.
+
+The shared tag operation and recorded inventory support existing-clone tags.
+Borrowed tag controls remain a separate frontend increment; use the CLI today.

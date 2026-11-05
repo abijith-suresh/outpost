@@ -143,8 +143,10 @@ export function runRepoTag(id: string, add: readonly string[], remove: readonly 
     const outpostHome = yield* resolveOutpostHome();
     const mutation = yield* acquireHomeMutationLock(outpostHome, "repo tag");
     const config = yield* loadConfig(outpostHome);
-    const registry = yield* loadRepoRegistry(outpostHome);
-    const repo = registry.repos.find((repo) => repo.id === id);
+    const registry = yield* loadRepoRegistry(outpostHome, { canonicalPaths: false });
+    const repo = [...registry.repos, ...(registry.borrowedRepositories ?? [])].find(
+      (repo) => repo.id === id
+    );
     if (!repo)
       return yield* Effect.fail(
         new SettingsError({ ...reasonDetails("repo-missing"), message: `Unknown repo id: ${id}` })
@@ -155,11 +157,22 @@ export function runRepoTag(id: string, add: readonly string[], remove: readonly 
     yield* mutation.record({ action: "tag-repository", id, tags });
     // Install the version barrier before metadata that an old binary would strip.
     if (config.version === 1) yield* writeConfig(outpostHome, upgradeConfig(config));
-    yield* writeRepoRegistry(outpostHome, {
-      ...registry,
-      version: registry.version === 4 ? 4 : registry.version === 3 ? 3 : 2,
-      repos: registry.repos.map((repo) => (repo.id === id ? { ...repo, tags } : repo)),
-    });
+    yield* writeRepoRegistry(
+      outpostHome,
+      {
+        ...registry,
+        version: registry.version === 4 ? 4 : registry.version === 3 ? 3 : 2,
+        repos: registry.repos.map((repo) => (repo.id === id ? { ...repo, tags } : repo)),
+        ...(registry.borrowedRepositories !== undefined
+          ? {
+              borrowedRepositories: registry.borrowedRepositories.map((repo) =>
+                repo.id === id ? { ...repo, tags } : repo
+              ),
+            }
+          : {}),
+      },
+      { canonicalPaths: false }
+    );
     return { command: "repo tag", data: { id, tags } } satisfies CommandOutput<"repo tag">;
   }).pipe(Effect.scoped, Effect.mapError(mapError));
 }

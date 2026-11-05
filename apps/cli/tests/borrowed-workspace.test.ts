@@ -119,6 +119,95 @@ function args(id: string, ticket = "LOCAL", base = "refs/heads/main") {
 }
 
 describe("borrowed local NEW workspaces", () => {
+  it("tags borrowed records, freezes tag-selected membership and retains tags through settings and restore", async () => {
+    const f = await fixture();
+    const before = snapshot(f.source);
+    expect((await ok("repo", "show", f.repo.id)).tags).toBeUndefined();
+    const tagged = await ok(
+      "repo",
+      "tag",
+      f.repo.id,
+      "--add",
+      "job",
+      "--add",
+      "backend",
+      "--add",
+      "job"
+    );
+    expect(tagged.tags).toEqual(["backend", "job"]);
+    expect(
+      (await ok("repo", "list", "--tag", "backend", "--tag", "job")).repos.map(
+        (r: { id: string }) => r.id
+      )
+    ).toEqual([f.repo.id]);
+    expect((await ok("repo", "list", "--tag", "frontend")).repos).toEqual([]);
+    const select = [
+      "--ticket",
+      "TAGGED",
+      "--type",
+      "feat",
+      "--tag",
+      "backend",
+      "--base-source",
+      "local",
+      "--base",
+      "refs/heads/main",
+    ];
+    await ok("create", ...select, "--dry-run");
+    preserved(before);
+    await ok("create", ...select);
+    const manifest = path.join(f.home, "workspaces", "TAGGED.json");
+    const frozen = readFileSync(manifest);
+    const guidance = readFileSync(path.join(f.home, "worktrees", "TAGGED", "AGENTS.md"));
+    await ok("repo", "tag", f.repo.id, "--remove", "backend", "--add", "frontend");
+    await ok("config", "set", "worktreesRoot", path.join(f.home, "future"));
+    expect((await ok("workspace", "resume", "TAGGED")).resumable).toBe(true);
+    expect(readFileSync(manifest)).toEqual(frozen);
+    expect(readFileSync(path.join(f.home, "worktrees", "TAGGED", "AGENTS.md"))).toEqual(guidance);
+    await ok("workspace", "remove", "TAGGED");
+    await ok("repo", "remove", f.repo.id);
+    expect((await ok("repo", "list", "--retained", "--tag", "frontend")).repos[0].tags).toEqual([
+      "frontend",
+      "job",
+    ]);
+    await ok("repo", "restore", f.repo.id);
+    expect((await ok("repo", "show", f.repo.id)).tags).toEqual(["frontend", "job"]);
+    await ok("repo", "tag", f.repo.id, "--remove", "frontend", "--remove", "job");
+    expect((await ok("repo", "show", f.repo.id)).tags).toEqual([]);
+    preserved(before);
+  });
+  it("rejects invalid or duplicate persisted borrowed tags without rewriting metadata", async () => {
+    const f = await fixture();
+    const file = path.join(f.home, "repos.json");
+    const original = JSON.parse(readFileSync(file, "utf8"));
+    for (const tags of [["Backend"], ["job", "job"]]) {
+      const invalid = structuredClone(original);
+      invalid.repositories.find(
+        (entry: { kind: string }) => entry.kind === "borrowed"
+      ).record.tags = tags;
+      writeFileSync(file, JSON.stringify(invalid));
+      const before = readFileSync(file);
+      expect((await cli("repo", "list")).code).toBe(1);
+      expect((await cli("repo", "tag", f.repo.id, "--add", "backend")).code).toBe(1);
+      expect(readFileSync(file)).toEqual(before);
+    }
+  });
+  it("edits only recorded tags with an unavailable source and rejects invalid inputs without changing registry", async () => {
+    const f = await fixture();
+    renameSync(f.source, `${f.source}-moved`);
+    try {
+      await ok("repo", "tag", f.repo.id, "--add", "backend");
+      const file = path.join(f.home, "repos.json");
+      const before = readFileSync(file);
+      for (const input of [["--add", "Backend"], ["--add", "a", "--remove", "a"], []]) {
+        expect((await cli("repo", "tag", f.repo.id, ...input)).code).toBe(1);
+        expect(readFileSync(file)).toEqual(before);
+      }
+    } finally {
+      renameSync(`${f.source}-moved`, f.source);
+    }
+  });
+
   it("accepts existing alias-parent spelling but rejects foreign pointers and replaced checkout identity", async () => {
     const f = await fixture();
     const outer = createTempDir("outpost-alias-parent-");

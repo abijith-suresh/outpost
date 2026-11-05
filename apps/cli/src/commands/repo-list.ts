@@ -57,14 +57,14 @@ export function runRepoList(
       ).filter((repo) => matchesTags(repo, tags))
     ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
 
-    const borrowed = tags.length
-      ? []
-      : yield* Effect.forEach(
-          (parsed.options["--retained"]
-            ? registry.retainedBorrowedRepositories
-            : registry.borrowedRepositories) ?? [],
-          inspectBorrowed
-        );
+    const borrowed = yield* Effect.forEach(
+      (
+        (parsed.options["--retained"]
+          ? registry.retainedBorrowedRepositories
+          : registry.borrowedRepositories) ?? []
+      ).filter((repo) => matchesTags(repo, tags)),
+      inspectBorrowed
+    );
     return {
       command: "repo list",
       data: {
