@@ -1,6 +1,5 @@
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
-import { once } from "node:events";
 import {
   mkdirSync,
   readdirSync,
@@ -12,6 +11,31 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, expect } from "@playwright/test";
+
+export class ManagerFixtureCleanupError extends Error {
+  constructor(cause) {
+    super("Owned manager or browser cleanup was not confirmed; preserve the smoke fixture.", {
+      cause,
+    });
+  }
+}
+
+async function withinCleanupDeadline(promise) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Owned manager did not close within 5 seconds")),
+          5000
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Fixed categories only: child diagnostics can contain paths, URLs or credentials. */
 export function managerStartupDiagnostic(stderr, code, signal) {
@@ -57,6 +81,8 @@ export async function verifyManagerWorkflow({
   smokeRoot,
   installedPackage,
 }) {
+  // Initialize metadata with the same verified spelling the manager will pin.
+  smokeRoot = managerFixtureRoots(installedPackage, smokeRoot).canonical[1];
   const home = join(smokeRoot, "manager home Ω");
   const initialized = runInstalled(["init", "--json"], { OUTPOST_HOME: home });
   assert.equal(initialized.status, 0, initialized.stderr);
@@ -149,35 +175,48 @@ export async function verifyManagerWorkflow({
           { cwd: smokeRoot, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
         )
       : spawn(launcher, ["manage"], { cwd: smokeRoot, env, stdio: ["ignore", "pipe", "pipe"] });
-  const exit = once(child, "exit");
+  const exit = new Promise((resolve) =>
+    child.once("exit", (code, signal) => resolve([code, signal]))
+  );
+  const closed = new Promise((resolve) => child.once("close", resolve));
   let stdout = "",
     stderr = "";
-  const url = await new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Installed manager did not start within 10 seconds")),
-      10000
-    );
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-      const match = /http:\/\/127\.0\.0\.1:\d+\/#pair=[0-9a-f]+/.exec(stdout);
-      if (match) {
-        clearTimeout(timer);
-        resolve(match[0]);
-      }
-    });
-    child.stderr.on("data", (chunk) => {
-      const remaining = 65536 - Buffer.byteLength(stderr);
-      if (remaining > 0) stderr += Buffer.from(chunk).subarray(0, remaining).toString("utf8");
-    });
-    child.once("close", (code, signal) => {
-      clearTimeout(timer);
-      const startupExit = managerStartupDiagnostic(stderr, code, signal);
-      reject(new Error(`Installed manager exited before pairing: ${JSON.stringify(startupExit)}`));
-    });
-  });
-  const origin = new URL(url).origin;
-  let browser;
+  let origin = "",
+    browser,
+    browserBearer = "",
+    originalFailure,
+    workflowFailed = false;
   try {
+    const url = await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("Installed manager did not start within 10 seconds")),
+        10000
+      );
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+        const match = /http:\/\/127\.0\.0\.1:\d+\/#pair=[0-9a-f]+/.exec(stdout);
+        if (match) {
+          clearTimeout(timer);
+          resolve(match[0]);
+        }
+      });
+      child.stderr.on("data", (chunk) => {
+        const remaining = 65536 - Buffer.byteLength(stderr);
+        if (remaining > 0) stderr += Buffer.from(chunk).subarray(0, remaining).toString("utf8");
+      });
+      child.once("close", (code, signal) => {
+        clearTimeout(timer);
+        const startupExit = managerStartupDiagnostic(stderr, code, signal);
+        reject(
+          new Error(`Installed manager exited before pairing: ${JSON.stringify(startupExit)}`)
+        );
+      });
+      child.once("error", () => {
+        clearTimeout(timer);
+        reject(new Error("Installed manager launcher could not start"));
+      });
+    });
+    origin = new URL(url).origin;
     const health = await fetch(origin);
     assert.equal(health.status, 200);
     assert.match(await health.text(), /Outpost/);
@@ -189,7 +228,7 @@ export async function verifyManagerWorkflow({
       (response) => response.url().endsWith("/api/v1/pair") && response.status() === 200
     );
     await page.goto(url);
-    const browserBearer = (await (await pairedResponse).json()).data.bearer;
+    browserBearer = (await (await pairedResponse).json()).data.bearer;
     await page.getByRole("heading", { name: "Repositories", exact: true }).waitFor();
     assert.equal(new URL(page.url()).hash, "");
     await page.getByRole("button", { name: "Register repository", exact: true }).click();
@@ -290,14 +329,57 @@ export async function verifyManagerWorkflow({
     assert.deepEqual(errors, []);
     await page.getByRole("button", { name: "Stop manager", exact: true }).click();
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
-    const [code] = await exit;
+    const [code] = await withinCleanupDeadline(exit);
     assert.equal(code, 0, "Foreground manager exited unsuccessfully");
     assert.equal(stderr.includes("SECRET_TRANSPORT_MARKER"), false);
     console.log(
       "Installed foreground manager paired, registered/unregistered/restored a local clone and changed future settings coherently with the CLI, preserved source config bytes/ns-mtime, kept sessions out of browser storage and stopped through bundled browser assets."
     );
-  } finally {
-    await browser?.close();
-    if (child.exitCode === null) child.kill();
+  } catch (error) {
+    originalFailure = error;
+    workflowFailed = true;
   }
+  if (child.exitCode === null && child.signalCode === null && origin && browserBearer) {
+    await fetch(`${origin}/api/v1/stop`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "X-Outpost-Manager": "1",
+        Authorization: `Bearer ${browserBearer}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(5000),
+    })
+      .then(() => withinCleanupDeadline(closed))
+      .catch(() => {});
+  }
+  let browserCloseFailure;
+  try {
+    await browser?.close();
+  } catch (error) {
+    browserCloseFailure = error;
+  }
+  if (
+    child.exitCode === null &&
+    child.signalCode === null &&
+    Number.isSafeInteger(child.pid) &&
+    child.pid > 0
+  ) {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true,
+        timeout: 5000,
+        maxBuffer: 4096,
+      });
+    } else child.kill("SIGTERM");
+  }
+  try {
+    await withinCleanupDeadline(closed);
+  } catch (error) {
+    throw new ManagerFixtureCleanupError(originalFailure ?? error);
+  }
+  if (browserCloseFailure)
+    throw new ManagerFixtureCleanupError(originalFailure ?? browserCloseFailure);
+  if (workflowFailed) throw originalFailure;
 }
