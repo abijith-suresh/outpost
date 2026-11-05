@@ -602,8 +602,24 @@ This does not add HTTP repository import identities or an authentication fallbac
 
 `outpost manage [--port PORT] [--open]` serves bundled Solid/Vite production assets on IPv4 loopback in one foreground Node process. Browser opening is explicit. Ctrl+C or Stop manager drains this instance; ordinary CLI commands start no manager or daemon. Missing homes stay uninitialized. Use the printed one-use fragment link to pair; enter `p` in the terminal to issue a replacement link. Sessions remain in memory and expire.
 
-The first manager supports existing-clone registration and explicit metadata verification, unregister with retained storage, restore, managed tags, future worktree-root and extra plaintext guidance settings, and recorded workspace inventory. Borrowed tags, managed import, Git-backed workspace status/create/resume/remove and storage purge are not browser actions in this increment. Existing CLI workflows remain supported.
+The first manager supports existing-clone registration and explicit metadata verification, unregister with retained storage, restore, managed tag controls, future worktree-root and extra plaintext guidance settings, and recorded workspace inventory. Managed import, Git-backed workspace status/create/resume/remove and storage purge are not browser actions in this increment. Existing CLI workflows remain supported.
 
 Quiet inventory reads only bounded, identity-checked selected-home metadata. It starts no Git/helper/filter processes, probes no external roots, writes no locks and migrates nothing. Recorded paths and original provenance do not establish current availability, ownership or cleanliness. Explicit verification uses the shared checked operations. Settings affect future workspaces; existing frozen paths, membership and generated guidance remain unchanged. Browser revisions are random opaque tokens, checked against server-only fingerprints inside the existing home lock. Instance-lifetime request IDs prevent duplicate dispatch across session changes. Losing a response never authorizes automatic replay.
 
 The manager validates exact local authority, request targets, origins, bearer/version headers and bounded JSON, serves a fixed integrity-checked asset list with strict CSP, and sends allowlisted results rather than URLs/configuration/raw Git diagnostics. It offers no arbitrary Git/file runner or repository HTML viewer. Browser/corporate restrictions on the owner's laptop remain a separate manual check; there is no weakened authentication fallback.
+
+Existing-clone records support the same optional tags as managed repositories.
+Use `repo tag <id> --add backend --add job --json` and repeat `--remove` to clear
+selected tags. Writes sort and deduplicate validated lowercase tags. Tag edits
+read only recorded metadata and never run Git, scan source directories, contact
+remotes or change storage identity. Missing source storage does not prevent tag
+editing. Unregister/restore and settings preserve tags. Existing workspaces keep
+their frozen concrete members and original guidance after tag changes.
+
+Borrowed tags remain additive fields in registry v4. Older binaries with strict
+borrowed-record decoders refuse tagged registries, including mutation paths that
+already cached configuration. Keep the newer binary to repair forward; do not
+remove fields or restore old metadata to bypass that barrier.
+
+The shared tag operation and recorded inventory support existing-clone tags.
+Borrowed tag controls remain a separate frontend increment; use the CLI today.

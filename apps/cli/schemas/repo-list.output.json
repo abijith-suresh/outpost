@@ -148,6 +148,19 @@
                       "registeredAt": {
                         "type": "string"
                       },
+                      "tags": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "anchor": {
                         "type": "object",
                         "properties": {

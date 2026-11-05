@@ -193,3 +193,45 @@ it("returns stale409 only after the inside-lock revision check and preserves the
     "newer CLI value"
   );
 });
+
+it("uses the existing opaque-handle action for borrowed tags and rejects stale edits", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const fs = await import("node:fs/promises");
+  const source = path.join(home, "source");
+  await fs.mkdir(source);
+  execFileSync("git", ["init", source], { stdio: "ignore" });
+  const snapshot = async () =>
+    (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const apply = async (revision: string, operation: unknown) => {
+    const requestId = randomUUID();
+    const response = await call("operations", { requestId, revision, operation }, bearer);
+    return { response, state: await manager.operations.settled(requestId) };
+  };
+  expect(
+    (
+      await apply((await snapshot()).revision, {
+        kind: "register",
+        checkoutPath: source,
+        name: "source",
+      })
+    ).state.state
+  ).toBe("succeeded");
+  const before = await snapshot();
+  await fs.rename(source, `${source}-moved`);
+  const operation = {
+    kind: "tags",
+    handle: before.repositories[0].handle,
+    add: ["job", "backend", "job"],
+    remove: [],
+  };
+  expect((await apply(before.revision, operation)).state.state).toBe("succeeded");
+  const after = await snapshot();
+  expect(after.repositories[0].tags).toEqual(["backend", "job"]);
+  expect(after.repositories[0].kind).toBe("borrowed");
+  const registry = await readFile(path.join(home, "repos.json"));
+  expect((await apply(before.revision, { ...operation, add: ["frontend"] })).response.status).toBe(
+    409
+  );
+  expect(await readFile(path.join(home, "repos.json"))).toEqual(registry);
+});

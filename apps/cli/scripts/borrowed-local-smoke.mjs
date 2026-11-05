@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   lstatSync,
@@ -10,6 +10,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+
+import { verifyTagsOldCachedWriter } from "./tags-old-writer-smoke.mjs";
 
 function snapshot(root) {
   const result = new Map();
@@ -81,14 +83,66 @@ export function verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, s
   const before = snapshot(source);
   call(["init"]);
   const record = call(["repo", "register", source, "--name", "app"]).data.repository;
+  assert.equal(record.tags, undefined);
+  const traceBeforeTags = readFileSync(trace);
+  assert.deepEqual(call(["repo", "tag", record.id, "--add", "job", "--add", "backend"]).data.tags, [
+    "backend",
+    "job",
+  ]);
+  assert.deepEqual(readFileSync(trace), traceBeforeTags);
+  assert.equal(
+    call(["repo", "list", "--tag", "backend", "--tag", "job"]).data.repos[0].id,
+    record.id
+  );
+  preserved(before);
+  const preceding = process.env.OUTPOST_TAGS_PRECEDING_CLI;
+  if (preceding) {
+    const protectedFiles = new Map([...snapshot(source), ...snapshot(home)]);
+    for (const args of [
+      ["repo", "list"],
+      ["repo", "show", record.id],
+      ["repo", "tag", record.id, "--add", "old-writer"],
+      ["repo", "remove", record.id],
+      ["repo", "restore", record.id],
+      ["guidance", "clear"],
+      ["config", "set", "worktreesRoot", join(root, "old-root")],
+      [
+        "create",
+        "--ticket",
+        "OLD",
+        "--type",
+        "feat",
+        "--repo",
+        record.id,
+        "--base-source",
+        "local",
+        "--base",
+        "refs/heads/main",
+      ],
+    ]) {
+      const r = spawnSync(process.execPath, [preceding, ...args, "--json"], {
+        env: { ...process.env, OUTPOST_HOME: home },
+        encoding: "utf8",
+        timeout: 30000,
+      });
+      assert.equal(r.status, 1, `${args}: ${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /Invalid repo registry/);
+      preserved(protectedFiles);
+    }
+    verifyTagsOldCachedWriter({ preceding, root, home, repoId: record.id, runInstalled });
+    preserved(protectedFiles);
+    console.log(
+      "Installed prior readers, tag/settings/create/remove/restore writers preserved tagged v4 registry and original source bytes/ns."
+    );
+  }
   const create = [
     "create",
     "--ticket",
     "LOCAL",
     "--type",
     "feat",
-    "--repo",
-    record.id,
+    "--tag",
+    "backend",
     "--base-source",
     "local",
     "--base",
@@ -105,6 +159,12 @@ export function verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, s
   const manifest = JSON.parse(readFileSync(join(home, "workspaces", "LOCAL.json"), "utf8"));
   assert.equal(manifest.version, 5);
   assert.equal(manifest.repositories[0].storage.common.inode, record.common.inode);
+  const frozen = readFileSync(join(home, "workspaces", "LOCAL.json"));
+  const guidance = readFileSync(join(made.ticketDirectory, "AGENTS.md"));
+  call(["repo", "tag", record.id, "--remove", "backend", "--add", "frontend"]);
+  call(["config", "set", "worktreesRoot", join(root, "future")]);
+  assert.deepEqual(readFileSync(join(home, "workspaces", "LOCAL.json")), frozen);
+  assert.deepEqual(readFileSync(join(made.ticketDirectory, "AGENTS.md")), guidance);
   call(["workspace", "show", "LOCAL"]);
   call(["repo", "remove", record.id], 1);
   call(create, 1);
@@ -121,7 +181,12 @@ export function verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, s
   assert.equal(git(source, "rev-parse", "feat/LOCAL"), advanced);
   preserved(before);
   call(["repo", "remove", record.id]);
+  assert.deepEqual(call(["repo", "list", "--retained", "--tag", "frontend"]).data.repos[0].tags, [
+    "frontend",
+    "job",
+  ]);
   call(["repo", "restore", record.id]);
+  assert.deepEqual(call(["repo", "show", record.id]).data.tags, ["frontend", "job"]);
   preserved(before);
   assert.doesNotMatch(
     readFileSync(trace, "utf8"),
