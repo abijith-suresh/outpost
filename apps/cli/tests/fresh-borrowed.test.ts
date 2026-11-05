@@ -752,19 +752,41 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
   );
   git(f.tempRepo, "config", "remote.origin.uploadpack", `node "${driver.replaceAll("\\", "/")}"`);
   const before = snapshot(f.tempRepo);
+  testWork.getStore()!.trace = true;
+  breadcrumb("helper-interrupt:preflight:start");
+  let notifyDispatch!: () => void;
+  const dispatched = new Promise<void>((resolve) => {
+    notifyDispatch = resolve;
+  });
+  const adapter = Child.commandResult;
+  vi.spyOn(Child, "commandResult").mockImplementation((command, options) =>
+    Effect.suspend(() => {
+      if (command._tag === "StandardCommand" && command.args.includes("ls-remote")) {
+        breadcrumb("helper-interrupt:transport:start");
+        notifyDispatch();
+      }
+      return adapter(command, options);
+    })
+  );
   const fiber = forkOwned(
     runCreate(args(f.repo.id).slice(1), { interactive: false }).pipe(
       Effect.provide(NodeServices.layer)
     )
   );
-  const reached = Effect.runPromise(
-    Effect.gen(function* () {
-      while (!existsSync(marker)) yield* Effect.sleep(10);
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: 4000,
-        orElse: () => Effect.fail(new Error("Owned helper did not start")),
-      })
+  // Bound helper startup from actual transport dispatch, not metadata preflight.
+  // The enclosing 15-second test still bounds the entire operation.
+  const owner = testWork.getStore()!;
+  const reached = dispatched.then(() =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        while (!existsSync(marker)) yield* Effect.sleep(10);
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: 4000,
+          orElse: () => Effect.fail(new Error("Owned helper did not start")),
+        })
+      ),
+      { signal: owner.controller.signal }
     )
   );
   await Promise.race([
@@ -773,8 +795,10 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
       throw new Error(`Creation ended before owned-helper pause: ${JSON.stringify(exit)}`);
     }),
   ]);
+  breadcrumb("helper-interrupt:helper:ready");
   const pids: number[] = JSON.parse(readFileSync(marker, "utf8"));
   await Effect.runPromise(Fiber.interrupt(fiber));
+  breadcrumb("helper-interrupt:interrupted");
   const alive = (pid: number) => {
     try {
       process.kill(pid, 0);
@@ -790,6 +814,7 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
     })
   );
   expect(pids.filter(alive)).toEqual([]);
+  breadcrumb("helper-interrupt:descendants:gone");
   preserved(before);
   expect(existsSync(path.join(f.home, "workspaces/FRESH.json"))).toBe(false);
 }, 15_000);
