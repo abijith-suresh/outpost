@@ -488,7 +488,7 @@ function decodeRecorded(
         name: r.name,
         kind: r.kind,
         retained: r.retained,
-        tags: [] as string[],
+        tags: [...(r.tags ?? [])],
         registeredAt: r.registeredAt,
         path: r.anchor.path,
       })),

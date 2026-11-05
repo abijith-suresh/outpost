@@ -769,7 +769,7 @@ lifecycle stage timings diagnose native latency without raising test/process lim
 
 `outpost manage [--port PORT] [--open]` serves bundled Solid/Vite production assets on IPv4 loopback in one foreground Node process. Browser opening is explicit. Ctrl+C or Stop manager drains this instance; ordinary CLI commands start no manager or daemon. Missing homes stay uninitialized. Use the printed one-use fragment link to pair; enter `p` in the terminal to issue a replacement link. Sessions remain in memory and expire.
 
-The manager supports explicit managed repository import, existing-clone registration and explicit metadata verification, unregister with retained storage, restore, managed tags, future worktree-root and extra plaintext guidance settings, and recorded workspace inventory. Borrowed tags, Git-backed workspace status/create/resume/remove and storage purge are not browser actions in this increment. Existing CLI workflows remain supported.
+The manager supports explicit managed repository import, existing-clone registration and explicit metadata verification, unregister with retained storage, restore, managed tag controls, future worktree-root and extra plaintext guidance settings, and recorded workspace inventory. Git-backed workspace status/create/resume/remove and storage purge are not browser actions in this increment. Existing CLI workflows remain supported.
 
 Quiet inventory reads only bounded, identity-checked selected-home metadata. It starts no Git/helper/filter processes, probes no external roots, writes no locks and migrates nothing. Recorded paths and original provenance do not establish current availability, ownership or cleanliness. Explicit verification uses the shared checked operations. Settings affect future workspaces; existing frozen paths, membership and generated guidance remain unchanged. Browser revisions are random opaque tokens, checked against server-only fingerprints inside the existing home lock. Instance-lifetime request IDs prevent duplicate dispatch across session changes. Losing a response never authorizes automatic replay.
 
@@ -778,3 +778,17 @@ The manager validates exact local authority, request targets, origins, bearer/ve
 The manager application boundary uses an immutable invocation service for home, cwd and environment. Browser mutation revisions are random opaque tokens backed by server-only exact metadata fingerprints. The existing home lock validates the pinned home before acquisition and checks the submitted revision after acquisition, before journals or target writes. HTTP admission waits for that decision so stale requests return409. Request ownership and the128-entry deduplication ledger last for the manager instance across session changes; socket closure does not cancel accepted work. Explicit cancel/stop interrupts only owned scopes and drains their checked child processes/finalizers. Read-only selected registration verification validates metadata before/after without creating a home write lock.
 
 Recorded inventory validates owned metadata paths and coherent two-phase reads within a16MiB read budget. Unchanged views reuse decoded data after bounded file/directory identity+size+nanosecond timestamp checks; cached metadata never admits a mutation. Admission always reads current exact bytes. Known journals distinguish healthy completed retained receipts from unfinished/uninspectable state. Missing configuration with surviving metadata is a recovery condition, not an empty home. Quiet readers use only lexical known startup-home spellings and never resolve paths supplied by configuration into unrelated external roots.
+
+Borrowed records optionally carry the same validated flat `tags` as managed
+records. Active `repo tag` edits sort/deduplicate tags under the home lock using
+lexical registry identity validation, without probing recorded storage. CLI list
+and create apply AND tag matching across both storage kinds, including the
+under-lock repeated selection. Retained transfer copies tags unchanged. Quiet
+manager inventory includes borrowed tags and the existing opaque-handle `tags`
+action delegates to the same application operation. Registry v4 and config v3
+remain unchanged: prior strict borrowed decoders reject the excess field and
+mutation paths reread the registry after config, preventing silent tag loss.
+No manifest fields change; membership remains frozen concrete IDs.
+
+The shared tag operation and recorded inventory support existing-clone tags.
+Borrowed tag controls remain a separate frontend increment; use the CLI today.

@@ -278,6 +278,9 @@ function validateRepoRegistryUniqueness(
       ...(registry.borrowedRepositories ?? []),
       ...(registry.retainedBorrowedRepositories ?? []),
     ]) {
+      for (const tag of repo.tags ?? []) yield* validateTag(tag);
+      if (new Set(repo.tags).size !== (repo.tags?.length ?? 0))
+        return yield* new ConfigError({ message: `Duplicate tags on repository ${repo.id}.` });
       const key = yield* canonicalPaths
         ? getCanonicalPortablePathKey(repo.common.path)
         : getPortablePathKey(repo.common.path);
@@ -369,7 +372,8 @@ export function loadRepoRegistry(
 
 export function writeRepoRegistry(
   outpostHome: string,
-  registry: RepoRegistry
+  registry: RepoRegistry,
+  options: { canonicalPaths?: boolean } = {}
 ): Effect.Effect<void, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const validatedRegistry = yield* Schema.decodeUnknownEffect(RepoRegistrySchema)(registry, {
@@ -382,7 +386,7 @@ export function writeRepoRegistry(
           })
       )
     );
-    yield* validateRepoRegistryUniqueness(validatedRegistry);
+    yield* validateRepoRegistryUniqueness(validatedRegistry, options.canonicalPaths ?? true);
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
 
     const stored =
