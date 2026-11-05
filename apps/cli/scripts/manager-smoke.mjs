@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { chromium, expect } from "@playwright/test";
 
 /** Fixed categories only: child diagnostics can contain paths, URLs or credentials. */
@@ -33,76 +33,21 @@ export function managerStartupDiagnostic(stderr, code, signal) {
   };
 }
 
-/** Failure-only comparison of the real installed metadata reader; never a passing fallback. */
-export function inspectManagerStartupBoundary({ home, installedPackage, smokeRoot, permissions }) {
-  try {
-    const roots = [dirname(dirname(installedPackage)), smokeRoot];
-    const canonical = roots.map((root) => {
-      const before = statSync(root, { bigint: true });
-      const real = realpathSync.native(root);
-      const after = statSync(real, { bigint: true });
-      assert(before.isDirectory() && after.isDirectory());
-      assert.equal(before.dev, after.dev);
-      assert.equal(before.ino, after.ino);
-      return real;
-    });
-    const quoted = (value) => `"${value.replaceAll("\\", "/")}"`;
-    const both = `${permissions} ${canonical.map((root) => `--allow-fs-read=${quoted(root)}`).join(" ")} --allow-fs-write=${quoted(canonical[1])}`;
-    const input = JSON.stringify({
-      home,
-      source: fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
-      inventory: pathToFileURL(join(installedPackage, "dist/application/inventory.js")).href,
-    });
-    const script = `
-      import fs from 'node:fs';
-      import fsp from 'node:fs/promises';
-      const input=JSON.parse(fs.readFileSync(0,'utf8'));
-      const result={sourceDenied:false,realpath:false,canonicalStat:false,recordedHome:false,code:'none'};
-      const code=e=>['ERR_ACCESS_DENIED','ENOENT','EACCES','EPERM'].includes(e?.code)?e.code:'other';
-      try{fs.readFileSync(input.source);}catch(e){result.sourceDenied=e.code==='ERR_ACCESS_DENIED';}
-      try{const real=await fsp.realpath(input.home);result.realpath=true;result.canonicalStat=(await fsp.lstat(real)).isDirectory();}catch(e){result.code=code(e);}
-      try{const{RecordedFiles}=await import(input.inventory);await RecordedFiles.open(input.home);result.recordedHome=true;}catch(e){if(result.code==='none')result.code=code(e);}
-      process.stdout.write(JSON.stringify(result));
-    `;
-    const inspect = (options) => {
-      const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
-        cwd: smokeRoot,
-        env: { ...process.env, NODE_OPTIONS: options },
-        input,
-        encoding: "utf8",
-        timeout: 5000,
-        maxBuffer: 65536,
-        windowsHide: true,
-      });
-      if (child.status !== 0)
-        return {
-          unavailable: true,
-          ...managerStartupDiagnostic(child.stderr, child.status, child.signal),
-        };
-      const raw = JSON.parse(child.stdout);
-      if (
-        !["sourceDenied", "realpath", "canonicalStat", "recordedHome"].every(
-          (key) => typeof raw[key] === "boolean"
-        ) ||
-        !["none", "ERR_ACCESS_DENIED", "ENOENT", "EACCES", "EPERM", "other"].includes(raw.code)
-      )
-        return { unavailable: true };
-      return {
-        sourceDenied: raw.sourceDenied,
-        realpath: raw.realpath,
-        canonicalStat: raw.canonicalStat,
-        recordedHome: raw.recordedHome,
-        code: raw.code,
-      };
-    };
-    return {
-      rootSpellingsDiffer: roots.some((root, index) => root !== canonical[index]),
-      original: inspect(permissions),
-      bothOwnedSpellings: inspect(both),
-    };
-  } catch {
-    return { unavailable: true };
-  }
+function managerFixtureRoots(installedPackage, smokeRoot) {
+  const roots = [dirname(dirname(installedPackage)), smokeRoot];
+  const canonical = roots.map((root) => {
+    const before = statSync(root, { bigint: true });
+    const real = realpathSync.native(root);
+    const after = statSync(real, { bigint: true });
+    const confirmed = statSync(root, { bigint: true });
+    assert(before.isDirectory() && after.isDirectory() && confirmed.isDirectory());
+    assert.equal(before.dev, after.dev);
+    assert.equal(before.ino, after.ino);
+    assert.equal(before.dev, confirmed.dev);
+    assert.equal(before.ino, confirmed.ino);
+    return real;
+  });
+  return { roots, canonical };
 }
 
 /** Actual installed foreground launcher, native .cmd through PowerShell on Windows. */
@@ -115,6 +60,7 @@ export async function verifyManagerWorkflow({
   const home = join(smokeRoot, "manager home Ω");
   const initialized = runInstalled(["init", "--json"], { OUTPOST_HOME: home });
   assert.equal(initialized.status, 0, initialized.stderr);
+  const expectedFutureRoot = join(realpathSync.native(home), "future worktrees");
   const source = join(smokeRoot, "ms");
   mkdirSync(source);
   const git = (...args) => {
@@ -164,9 +110,14 @@ export async function verifyManagerWorkflow({
   const configBefore = readFileSync(configPath);
   const configTime = statSync(configPath, { bigint: true }).mtimeNs;
   const quoted = (value) => `"${value.replaceAll("\\", "/")}"`;
+  const { roots, canonical } = managerFixtureRoots(installedPackage, smokeRoot);
+  // Native Windows evidence: the short temp spelling alone does not grant the
+  // canonical home read. Both spellings identify these same owned fixture roots.
+  const reads = [...new Set([...roots, ...canonical])];
+  const writes = [...new Set([smokeRoot, canonical[1]])];
   // Linux's callback realpath checks ancestor /tmp. Add its test-only allowance
   // before the nested fixture: Node24's permission trie otherwise drops the parent.
-  const permissions = `--permission --allow-child-process${process.platform === "linux" ? " --allow-fs-read=/tmp" : ""} --allow-fs-read=${quoted(dirname(dirname(installedPackage)))} --allow-fs-read=${quoted(smokeRoot)} --allow-fs-write=${quoted(smokeRoot)}`;
+  const permissions = `--permission --allow-child-process${process.platform === "linux" ? " --allow-fs-read=/tmp" : ""} ${reads.map((root) => `--allow-fs-read=${quoted(root)}`).join(" ")} ${writes.map((root) => `--allow-fs-write=${quoted(root)}`).join(" ")}`;
   const denied = spawnSync(
     process.execPath,
     [
@@ -201,7 +152,6 @@ export async function verifyManagerWorkflow({
   const exit = once(child, "exit");
   let stdout = "",
     stderr = "";
-  let startupExit = null;
   const url = await new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error("Installed manager did not start within 10 seconds")),
@@ -221,17 +171,9 @@ export async function verifyManagerWorkflow({
     });
     child.once("close", (code, signal) => {
       clearTimeout(timer);
-      startupExit = managerStartupDiagnostic(stderr, code, signal);
+      const startupExit = managerStartupDiagnostic(stderr, code, signal);
       reject(new Error(`Installed manager exited before pairing: ${JSON.stringify(startupExit)}`));
     });
-  }).catch(() => {
-    const boundary =
-      child.exitCode === null
-        ? { unavailable: true }
-        : inspectManagerStartupBoundary({ home, installedPackage, smokeRoot, permissions });
-    throw new Error(
-      `Installed manager startup failed: ${JSON.stringify({ exit: startupExit, boundary })}`
-    );
   });
   const origin = new URL(url).origin;
   let browser;
@@ -316,7 +258,7 @@ export async function verifyManagerWorkflow({
       runInstalled(["config", "show", "--json"], { OUTPOST_HOME: home }).stdout
     ).data;
     assert.equal(stored.extraInstructions, "Future-only fixture guidance Ω");
-    assert.equal(stored.worktreesRoot, join(home, "future worktrees"));
+    assert.equal(stored.worktreesRoot, expectedFutureRoot);
     await page.getByRole("button", { name: "Repositories", exact: true }).click();
     await page.getByText("registered clone", { exact: true }).first().waitFor();
     await page.getByRole("button", { name: "Unregister", exact: true }).click();
