@@ -16,7 +16,7 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { systemError } from "effect/PlatformError";
-import { afterEach, aroundEach, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Child from "../src/child-process.ts";
 import { runCreate } from "../src/commands/create.ts";
 import * as Fresh from "../src/fresh-base.ts";
@@ -247,11 +247,45 @@ it("selects actual advertised remote-only SHA and retains source, cache, receipt
   expect(
     existsSync(path.join(f.home, "operations", `${member.fetchReceipt.operationId}.json`))
   ).toBe(true);
-  // Completed retained inventory is not an unfinished ticket and does not prevent deliberate new admission after clean removal.
-  breadcrumb("second-create:start");
-  const next = await ok(...args(f.repo.id, "SECOND"));
-  breadcrumb("second-create:done");
-  expect(next.worktrees[0].baseCommit).toBe(f.fresh);
+});
+describe("fresh admission after completed workspace removal", () => {
+  let removed: {
+    fixture: Awaited<ReturnType<typeof fixture>>;
+    source: ReturnType<typeof snapshot>;
+    receipt: { ref: string; operationId: string };
+    inventory: ReturnType<typeof snapshot>;
+  };
+  // Each setup and test is bounded separately. A second real admission must not
+  // share the initial lifecycle's cumulative test timer or another test's files.
+  beforeEach(async () => {
+    testWork.getStore()!.trace = true;
+    breadcrumb("readmission-setup:start");
+    const f = await fixture();
+    const source = snapshot(f.tempRepo);
+    const made = await ok(...args(f.repo.id));
+    const receipt = made.worktrees[0].fetchReceipt;
+    expect(made.worktrees[0].baseCommit).toBe(f.fresh);
+    await ok("workspace", "remove", "FRESH");
+    preserved(source);
+    expect(git(f.tempRepo, "rev-parse", receipt.ref)).toBe(f.fresh);
+    expect(existsSync(path.join(f.home, "operations", `${receipt.operationId}.json`))).toBe(true);
+    removed = { fixture: f, source, receipt, inventory: snapshot(path.join(f.home, "operations")) };
+    breadcrumb("readmission-setup:done");
+  }, 30000);
+  it("admits a new ticket without replacing completed receipt inventory", async () => {
+    const { fixture: f, source, receipt, inventory } = removed;
+    breadcrumb("second-create:start");
+    const next = await ok(...args(f.repo.id, "SECOND"));
+    breadcrumb("second-create:done");
+    expect(next.worktrees[0].baseCommit).toBe(f.fresh);
+    expect(next.worktrees[0].fetchReceipt.ref).not.toBe(receipt.ref);
+    expect(git(f.tempRepo, "rev-parse", receipt.ref)).toBe(f.fresh);
+    expect(git(f.tempRepo, "rev-parse", next.worktrees[0].fetchReceipt.ref)).toBe(f.fresh);
+    expect(git(f.tempRepo, "rev-parse", "refs/remotes/origin/main")).toBe(f.initial);
+    expect(git(f.tempRepo, "rev-parse", "refs/heads/main")).toBe(f.initial);
+    preserved(source);
+    preserved(inventory);
+  });
 });
 it("refuses missing advertised ref without cache fallback and blocks blind replay from failed journal", async () => {
   const f = await fixture();
