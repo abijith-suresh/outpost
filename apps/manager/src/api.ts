@@ -41,6 +41,7 @@ export type WorkspaceDetail = {
 export type Settings = { revision: string; worktreesRoot: string; extraInstructions: string };
 export type OperationInput =
   | { kind: "register"; checkoutPath: string; name: string }
+  | { kind: "import"; checkoutPath: string; remoteName?: string }
   | { kind: "verify-registration" | "unregister" | "restore"; handle: string }
   | { kind: "tags"; handle: string; add: string[]; remove: string[] }
   | { kind: "set-future-root"; absolutePath: string }

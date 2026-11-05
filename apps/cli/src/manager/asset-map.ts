@@ -3,16 +3,16 @@ export const ASSET_FILES: ReadonlyArray<{ path: string; type: string; sha256: st
   {
     path: "index.html",
     type: "text/html; charset=utf-8",
-    sha256: "3153eb6b8a9eabd808b7ea6e72e9cf9c9f389fca03087ebd7842f9db808690d1",
+    sha256: "317d4853fdc7f6ccb42c8976226bfe78a86c8fe38a57e50b618edc922685b89b",
   },
   {
-    path: "assets/index-B2JNHLDk.js",
+    path: "assets/index-2D_jQLeO.js",
     type: "text/javascript; charset=utf-8",
-    sha256: "81d2e0148026b6f8ac64ae8f06f1e40424d831063804e1274efc27a7c21ab295",
+    sha256: "765e34349fc0b111004641a6a7c92a0641700150736672a129a3b406085729c8",
   },
   {
-    path: "assets/index-EN_umKkT.css",
+    path: "assets/index-B3vA-0HQ.css",
     type: "text/css; charset=utf-8",
-    sha256: "13fff33ec302f9e9a6c9573324cd648d0b5b6183ac2c229f5a98850f9bf3f081",
+    sha256: "a3eda5090b51dcba1d5504561e3dd702a860eab7fd75a9660972f0f67c05660d",
   },
 ];

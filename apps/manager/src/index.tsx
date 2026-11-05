@@ -28,6 +28,7 @@ function App() {
     [dialog, setDialog] = createSignal("");
   const [selected, setSelected] = createSignal(""),
     [name, setName] = createSignal(""),
+    [remoteName, setRemoteName] = createSignal(""),
     [path, setPath] = createSignal(""),
     [tags, setTags] = createSignal(""),
     [instructions, setInstructions] = createSignal("");
@@ -228,16 +229,17 @@ function App() {
   ) {
     if (!revision || busy()) return;
     const submittedDialog = dialog();
-    if (input.kind === "register") {
+    if (input.kind === "register" || input.kind === "import") {
       const control = (value: string) =>
         [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
       const errors: { name?: string; path?: string } = {};
       if (
-        !input.name.trim() ||
-        control(input.name) ||
-        /[<>:"|?*\\/]/.test(input.name) ||
-        /[ .]$/.test(input.name) ||
-        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(input.name)
+        input.kind === "register" &&
+        (!input.name.trim() ||
+          control(input.name) ||
+          /[<>:"|?*\\/]/.test(input.name) ||
+          /[ .]$/.test(input.name) ||
+          /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(input.name))
       )
         errors.name = "Enter a portable repository name without reserved characters.";
       if (
@@ -461,18 +463,31 @@ function App() {
             <Show when={section() === "repositories"}>
               <div class="title">
                 <h1>Repositories</h1>
-                <button
-                  type="button"
-                  class="primary"
-                  disabled={busy() || !["ok", "partial"].includes(snapshot()?.state ?? "")}
-                  onClick={() => {
-                    setName("");
-                    setPath("");
-                    openDialog("register");
-                  }}
-                >
-                  Register repository
-                </button>
+                <div class="actions">
+                  <button
+                    type="button"
+                    class="primary"
+                    disabled={busy() || !["ok", "partial"].includes(snapshot()?.state ?? "")}
+                    onClick={() => {
+                      setName("");
+                      setPath("");
+                      openDialog("register");
+                    }}
+                  >
+                    Register repository
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy() || !["ok", "partial"].includes(snapshot()?.state ?? "")}
+                    onClick={() => {
+                      setPath("");
+                      setRemoteName("");
+                      openDialog("import");
+                    }}
+                  >
+                    Import repository
+                  </button>
+                </div>
               </div>
               <p class="muted">Recorded repositories. Verification runs only when requested.</p>
               <div class="tabs">
@@ -832,6 +847,7 @@ function App() {
               (
                 {
                   register: "Register repository",
+                  import: "Import repository",
                   verify: "Verify registration",
                   unregister: "Unregister repository",
                   restore: "Restore repository",
@@ -883,6 +899,32 @@ function App() {
               {fieldErrors().path}
             </p>
           </Show>
+          <Show when={dialog() === "import"}>
+            <p>
+              Imports the selected remote into Outpost managed storage. If already imported, updates
+              its remote and fetches. Git may run configured tools and contact the remote.
+            </p>
+            <label for="path">Absolute checkout path</label>
+            <input
+              id="path"
+              value={path()}
+              aria-invalid={!!fieldErrors().path}
+              aria-describedby={fieldErrors().path ? "path-error" : undefined}
+              onInput={(e) => setPath(e.currentTarget.value)}
+            />
+            <Show when={fieldErrors().path}>
+              <p id="path-error" role="alert">
+                {fieldErrors().path}
+              </p>
+            </Show>
+            <label for="remote">Remote name (optional)</label>
+            <input
+              id="remote"
+              value={remoteName()}
+              onInput={(e) => setRemoteName(e.currentTarget.value)}
+            />
+            <p>Specify a remote when the checkout has more than one.</p>
+          </Show>
           <Show when={dialog() === "verify"}>
             <p>
               Checks the recorded clone location. Network-share paths may contact that share.
@@ -931,7 +973,13 @@ function App() {
               disabled={busy() && dialog() !== "stop" && dialog() !== "signout"}
               onClick={async () => {
                 const d = dialog();
-                if (d === "register")
+                if (d === "import")
+                  void submit({
+                    kind: "import",
+                    checkoutPath: path(),
+                    remoteName: remoteName() || undefined,
+                  });
+                else if (d === "register")
                   void submit({ kind: "register", name: name(), checkoutPath: path() });
                 else if (d === "tags") {
                   const old =
