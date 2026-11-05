@@ -627,11 +627,26 @@ it("retains no receipt when the shared selection deadline expires before admissi
     ""
   );
 });
-it("uses saved linked worktree-only helper/includes noninteractively for synthetic loopback fresh only", async () => {
-  const { freshLoopback } = await import("../scripts/fresh-fixtures.mjs");
-  const f = await fixture();
-  const service = await freshLoopback(f.tempRemote, createTempDir("ofa-"));
-  try {
+describe("saved linked-worktree helper context", () => {
+  let prepared: {
+    f: Awaited<ReturnType<typeof fixture>>;
+    service: {
+      readonly authenticated: number;
+      readonly helperLog: string;
+      readonly askpassMarker: string;
+    };
+    anchor: string;
+    home: string;
+    a: string[];
+  };
+  let closeService: (() => Promise<void>) | undefined;
+  beforeEach(async () => {
+    testWork.getStore()!.trace = true;
+    breadcrumb("linked-helper:setup:start");
+    const { freshLoopback } = await import("../scripts/fresh-fixtures.mjs");
+    const f = await fixture();
+    const service = await freshLoopback(f.tempRemote, createTempDir("ofa-"));
+    closeService = service.close;
     const anchor = path.join(createTempDir("ofl-"), "linked");
     git(f.tempRepo, "worktree", "add", "--detach", anchor, "HEAD");
     git(f.tempRepo, "config", "extensions.worktreeConfig", "true");
@@ -656,9 +671,24 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
     const linked = (await ok("repo", "register", anchor, "--name", "linked")).repository;
     const a = args(linked.id);
     a[a.indexOf("origin")] = "team";
+    prepared = { f, service, anchor, home, a };
+    breadcrumb("linked-helper:setup:done");
+  }, 30000);
+  afterEach(async () => {
+    const owner = testWork.getStore();
+    if (owner) await drainTestWork(owner);
+    breadcrumb("linked-helper:service-close:start");
+    await closeService?.();
+    closeService = undefined;
+    breadcrumb("linked-helper:service-close:done");
+  });
+  it("uses saved linked worktree-only helper/includes noninteractively for synthetic loopback fresh only", async () => {
+    const { f, service, anchor, home, a } = prepared;
     const before = snapshot(f.tempRepo);
     const linkedBefore = snapshot(anchor);
+    breadcrumb("linked-helper:preview:start");
     await ok(...a, "--dry-run");
+    breadcrumb("linked-helper:preview:done");
     expect(existsSync(service.helperLog)).toBe(false);
     expect(service.authenticated).toBe(0);
     const diagnostics: object[] = [];
@@ -679,7 +709,9 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
         )
       )
     );
+    breadcrumb("linked-helper:create:start");
     const attempt = await cli(...a);
+    breadcrumb("linked-helper:create:done");
     debug.mockRestore();
     expect(
       attempt.code,
@@ -700,14 +732,14 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
     // Source metadata and linked private/shared indexes are unchanged; only receipt and new objects/admin were added.
     preserved(before);
     preserved(linkedBefore);
+    breadcrumb("linked-helper:resume-remove:start");
     git(f.tempRepo, "worktree", "remove", anchor);
     expect((await ok("workspace", "resume", "FRESH")).resumable).toBe(true);
     await ok("workspace", "remove", "FRESH");
+    breadcrumb("linked-helper:resume-remove:done");
     for (const file of Object.keys(snapshot(home)))
       expect(readFileSync(file, "utf8"), file).not.toContain("SYNTHETIC_FRESH_CREDENTIAL_49");
-  } finally {
-    await service.close();
-  }
+  });
 });
 it("terminates only operation-owned synthetic helper descendants on fresh interruption", async () => {
   const f = await fixture();
