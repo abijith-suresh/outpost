@@ -8,6 +8,20 @@ command [options]
 .SH DESCRIPTION
 Outpost is operated by coding agents and developers. Workspace creation defaults to cached remote refs. Only explicit fresh-remote base selection fetches; dry runs never fetch.
 .SH COMMANDS
+.SS manage
+.nf
+Usage:
+  outpost manage [\-\-port <port>] [\-\-open]
+
+Run the foreground human manager with bundled assets; browser opening is explicit
+
+  mutation: false
+
+Options:
+  \-\-port <port>  Local loopback port (0 chooses an available port)
+  \-\-open  Explicitly open the pairing link in your browser
+.fi
+Network: none. Retry: inspect-before-retry.
 .SS help
 .nf
 Usage:

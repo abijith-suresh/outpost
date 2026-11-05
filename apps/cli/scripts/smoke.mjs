@@ -19,6 +19,7 @@ import { verifyBaseWorkflow } from "./bases-smoke.mjs";
 import { verifyBorrowedLocalWorkflow } from "./borrowed-local-smoke.mjs";
 import { verifyCachedBaseWorkflow } from "./cached-base-smoke.mjs";
 import { verifyFreshBaseWorkflow } from "./fresh-base-smoke.mjs";
+import { ManagerFixtureCleanupError, verifyManagerWorkflow } from "./manager-smoke.mjs";
 import { verifyRegisterWorkflow } from "./register-smoke.mjs";
 import { verifyResumeWorkflow } from "./resume-smoke.mjs";
 import { verifyReuseWorkflow } from "./reuse-smoke.mjs";
@@ -39,9 +40,10 @@ const npmPrefixEnv = {
 };
 
 let cleaned = false;
+let preserveFixture = false;
 
 function cleanup() {
-  if (cleaned) return;
+  if (cleaned || preserveFixture) return;
   cleaned = true;
   rmSync(smokeRoot, { recursive: true, force: true });
 }
@@ -467,7 +469,16 @@ try {
   verifyCachedBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
   verifyFreshBaseWorkflow({ runInstalled, validateInstalled, smokeRoot });
 
+  await verifyManagerWorkflow({
+    launcher: getInstalledBinPath(),
+    runInstalled,
+    smokeRoot,
+    installedPackage,
+  });
   console.log("\nAll smoke tests passed.");
+} catch (error) {
+  preserveFixture = error instanceof ManagerFixtureCleanupError;
+  throw error;
 } finally {
   cleanup();
 }

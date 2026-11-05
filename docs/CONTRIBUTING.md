@@ -17,11 +17,12 @@ npm run build
 ```
 
 The root is a private npm workspace coordinator. One root install provisions
-the CLI and website workspaces from `package-lock.json`.
+the CLI, bundled manager and website workspaces from `package-lock.json`.
 
 | Workspace                 | Path            | Purpose                         |
 | ------------------------- | --------------- | ------------------------------- |
 | `@abijith-suresh/outpost` | `apps/cli/`     | Published CLI package           |
+| `@outpost/manager` | `apps/manager/` | Private Solid/Vite bundled human manager |
 | `outpost-website`         | `apps/website/` | Private Astro marketing website |
 
 ## Development Workflow
@@ -102,7 +103,8 @@ This runs, in order:
 2. `lint` — repository-wide Biome lint
 3. `test:policy` — Changeset policy and command tests
 4. CLI verification — TypeScript strict mode and Vitest
-5. Website verification — Astro check and TypeScript
+5. Manager verification — TypeScript and production assets
+6. Website verification — Astro check and TypeScript
 
 If any step fails, the remaining steps do not run. Fix the issue and re-run.
 
@@ -174,11 +176,15 @@ GitHub Actions run on every pull request and push to `main`:
   metadata and the Outpost-specific release-path rules. It reads the same
   `.node-version` file.
 - `CLI build and smoke (Node 24, <OS>)` runs on Ubuntu and native Windows. Each
-  matrix job builds the CLI, runs focused settings/path regressions, packs and
-  installs the actual tarball, then exercises installed commands and offline
-  schemas from an unrelated directory. Borrowed fresh regressions exercise packed incoming ownership (including pack/MIDX/fanout aliases), strict receipt acknowledgements and shared deadlines. The installed fresh lifecycle checks retained inventory, immutable advertisement provenance and unchanged cache/source refs. Linux acceptance can supply the preserved preceding installed CLI through `OUTPOST_PRECEDING_CLI` to exercise old-reader refusal and a paused actual cached-config writer under the home lock. That extra old-reader proof is separate from the native installed-current smoke. The Windows job allows 30 minutes for
-  both stages because its focused regressions alone take about 11 minutes;
-  Ubuntu retains 15 minutes. Per-test and subprocess deadlines are unchanged.
+  matrix job builds, packs and installs the actual tarball, then exercises
+  installed commands, offline schemas and the bundled browser manager from an
+  unrelated directory. Ubuntu also runs the focused settings/path regressions.
+  `Windows CLI regressions (Node 24)` runs the identical Windows focused matrix
+  in a separate job, with its own checkout, pinned toolchain and CLI build. Borrowed fresh regressions exercise packed incoming ownership (including pack/MIDX/fanout aliases), strict receipt acknowledgements and shared deadlines. The installed fresh lifecycle checks retained inventory, immutable advertisement provenance and unchanged cache/source refs. Linux acceptance can supply the preserved preceding installed CLI through `OUTPOST_PRECEDING_CLI` to exercise old-reader refusal and a paused actual cached-config writer under the home lock. That extra old-reader proof is separate from the native installed-current smoke. Windows package smoke and focused regressions each have a 30-minute
+  job limit; Ubuntu retains 15 minutes. The combined Windows job exceeded its
+  limit after package smoke passed and focused regressions ran for over 22
+  minutes. Separating the jobs preserves every test and its existing deadline.
+  Both historical aggregation aliases require the separate Windows job to pass.
   Windows uses the npm-generated `.cmd`
   shim through native PowerShell, with spaces and Unicode in fixture paths. The
   installed smoke also asserts the effective Node and npm versions against
@@ -345,3 +351,11 @@ identity replacement and path-budget boundaries. Packed/global installed smoke
 checks bigint directory IDs and exact source preservation through unregister and
 restore using the installed `.cmd` entrypoint. Run full verification and packed
 smoke sequentially: subprocess tests compile/use `dist`, while smoke rebuilds it.
+
+## Bundled manager development and installed browser checks
+
+The private `apps/manager` workspace builds production Solid/Vite assets. CLI builds run that build sequentially, generate the integrity-checked asset map and copy assets into the CLI package. Runtime management uses the foreground installed CLI, never a Vite development server. Build with `npm run build --workspace @abijith-suresh/outpost`. Normal CLI help/version remain lazy.
+
+Installed smoke tests use the root development Playwright dependency. Install its matching Chromium with `npm exec -- playwright install chromium`, then run `npm run test:smoke --workspace @abijith-suresh/outpost`. The native CLI CI matrix installs Chromium and exercises the actual global package, including the PowerShell `.cmd` launcher on Windows. No browser automation dependency ships with the CLI.
+
+Capture UI evidence from the installed production package with synthetic data and record source/asset/tarball hashes. Keep browser costs separate from the one foreground manager's startup, RSS, private memory, idle CPU and shutdown measurements. Linux observations do not establish native Windows or corporate-browser support. Changes to manager source must still pass full pinned verification, normal hooks and a CLI patch Changeset.

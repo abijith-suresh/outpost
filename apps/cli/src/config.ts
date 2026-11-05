@@ -1,8 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import { invocation } from "./application/context.js";
 import { BorrowedRecordSchema, RetainedBorrowedRecordSchema } from "./borrowed-schema.js";
 
 import {
@@ -164,6 +166,8 @@ export function getDefaultOutpostHome(): Effect.Effect<string, never, Path.Path>
 export function resolveOutpostHome(): Effect.Effect<string, never, Path.Path> {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
+    const selected = yield* invocation;
+    if (Option.isSome(selected)) return selected.value.home;
     const configuredHome = process.env[OUTPOST_HOME_ENV];
 
     if (configuredHome) {
@@ -295,7 +299,7 @@ export function loadRepoRegistry(
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const registryFilePath = yield* getRepoRegistryFilePath(outpostHome);
-    const exists = yield* fs.exists(registryFilePath);
+    const exists = options.contents !== undefined || (yield* fs.exists(registryFilePath));
 
     if (!exists) {
       return yield* new ConfigError({
@@ -425,12 +429,12 @@ export function writeRepoRegistry(
 
 export function loadConfig(
   outpostHome: string,
-  options: { contents?: string } = {}
+  options: { contents?: string; homeSpellings?: readonly string[] } = {}
 ): Effect.Effect<OutpostConfig, ConfigError | PlatformError, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const configFilePath = yield* getConfigFilePath(outpostHome);
-    const exists = yield* fs.exists(configFilePath);
+    const exists = options.contents !== undefined || (yield* fs.exists(configFilePath));
 
     if (!exists) {
       return yield* new ConfigError({
@@ -476,7 +480,7 @@ export function loadConfig(
           })
       )
     );
-    yield* validateConfig(config, outpostHome);
+    yield* validateConfig(config, outpostHome, options.homeSpellings);
     return config;
   });
 }
@@ -494,7 +498,11 @@ export function upgradeConfig(config: OutpostConfig): OutpostConfig {
       };
 }
 
-export function validateConfig(config: OutpostConfig, outpostHome: string) {
+export function validateConfig(
+  config: OutpostConfig,
+  outpostHome: string,
+  homeSpellings?: readonly string[]
+) {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     for (const value of [config.outpostHome, config.reposRoot, config.worktreesRoot]) {
@@ -505,10 +513,13 @@ export function validateConfig(config: OutpostConfig, outpostHome: string) {
           })
         );
     }
-    if (
-      (yield* getCanonicalPortablePathKey(config.outpostHome)) !==
-      (yield* getCanonicalPortablePathKey(outpostHome))
-    )
+    const homeMatches = homeSpellings
+      ? homeSpellings.some(
+          (spelling) => path.resolve(spelling) === path.resolve(config.outpostHome)
+        )
+      : (yield* getCanonicalPortablePathKey(config.outpostHome)) ===
+        (yield* getCanonicalPortablePathKey(outpostHome));
+    if (!homeMatches)
       return yield* Effect.fail(
         new ConfigError({ message: "Config outpostHome does not match the selected Outpost home." })
       );

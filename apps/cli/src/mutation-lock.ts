@@ -3,8 +3,10 @@ import { hostname } from "node:os";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { invocation } from "./application/context.js";
 import { ErrorDetailFields, reasonDetails } from "./error-details.js";
 import { type CompletedFresh, CompletedFreshSchema, isCompletedFresh } from "./fresh-inventory.js";
 import { observeReceipt, type ReceiptObservation } from "./receipt-observation.js";
@@ -20,6 +22,11 @@ export function acquireHomeMutationLock(outpostHome: string, operation: string) 
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const selectedInvocation = yield* invocation;
+    if (Option.isSome(selectedInvocation) && selectedInvocation.value.beforeLock)
+      yield* selectedInvocation.value.beforeLock.pipe(
+        Effect.mapError((error) => new MutationError({ message: error.message }))
+      );
     const id = randomUUID();
     const lockPath = path.join(outpostHome, ".mutation.lock");
     const operationsRoot = path.join(outpostHome, "operations");
@@ -71,6 +78,11 @@ export function acquireHomeMutationLock(outpostHome: string, operation: string) 
           Effect.ignore
         )
     );
+    const selected = yield* invocation;
+    if (Option.isSome(selected) && selected.value.beforeMutation)
+      yield* selected.value.beforeMutation.pipe(
+        Effect.mapError((error) => new MutationError({ message: error.message }))
+      );
     return {
       id,
       journalPath,

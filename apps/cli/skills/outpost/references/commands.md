@@ -3,7 +3,25 @@
 Generated from the command registry. Edit the registry, then run `npm run docs:generate`.
 
 Input schemas describe normalized `{ arguments, options }`; named values are arrays.
-Help and version remain text. All other listed commands support opt-in `--json`.
+Help, version and the foreground manage command remain text. Other listed commands support opt-in `--json`.
+
+## manage
+
+```text
+Usage:
+  outpost manage [--port <port>] [--open]
+
+Run the foreground human manager with bundled assets; browser opening is explicit
+
+  mutation: false
+
+Options:
+  --port <port>  Local loopback port (0 chooses an available port)
+  --open  Explicitly open the pairing link in your browser
+```
+
+Network: none. Retry: inspect-before-retry.
+Side effects: foreground-loopback-manager, explicit-browser-opening, explicit-application-actions.
 
 ## help
 

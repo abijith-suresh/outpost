@@ -24,3 +24,7 @@ npm run build
 
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) for the complete development
 and release workflow.
+
+## Optional human manager
+
+Run `outpost manage` for a foreground local manager, or `outpost manage --open` to explicitly open its pairing link. It serves bundled production assets. Ordinary CLI commands remain daemon-free. The first manager supports recorded inventory, clone registration and retained unregister/restore, managed tags and future-workspace settings. Current Git content state and workspace lifecycle actions remain explicit CLI operations. Stop the manager with Ctrl+C or its Stop manager action.

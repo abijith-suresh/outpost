@@ -16,7 +16,7 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { systemError } from "effect/PlatformError";
-import { afterEach, aroundEach, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Child from "../src/child-process.ts";
 import { runCreate } from "../src/commands/create.ts";
 import * as Fresh from "../src/fresh-base.ts";
@@ -247,11 +247,45 @@ it("selects actual advertised remote-only SHA and retains source, cache, receipt
   expect(
     existsSync(path.join(f.home, "operations", `${member.fetchReceipt.operationId}.json`))
   ).toBe(true);
-  // Completed retained inventory is not an unfinished ticket and does not prevent deliberate new admission after clean removal.
-  breadcrumb("second-create:start");
-  const next = await ok(...args(f.repo.id, "SECOND"));
-  breadcrumb("second-create:done");
-  expect(next.worktrees[0].baseCommit).toBe(f.fresh);
+});
+describe("fresh admission after completed workspace removal", () => {
+  let removed: {
+    fixture: Awaited<ReturnType<typeof fixture>>;
+    source: ReturnType<typeof snapshot>;
+    receipt: { ref: string; operationId: string };
+    inventory: ReturnType<typeof snapshot>;
+  };
+  // Each setup and test is bounded separately. A second real admission must not
+  // share the initial lifecycle's cumulative test timer or another test's files.
+  beforeEach(async () => {
+    testWork.getStore()!.trace = true;
+    breadcrumb("readmission-setup:start");
+    const f = await fixture();
+    const source = snapshot(f.tempRepo);
+    const made = await ok(...args(f.repo.id));
+    const receipt = made.worktrees[0].fetchReceipt;
+    expect(made.worktrees[0].baseCommit).toBe(f.fresh);
+    await ok("workspace", "remove", "FRESH");
+    preserved(source);
+    expect(git(f.tempRepo, "rev-parse", receipt.ref)).toBe(f.fresh);
+    expect(existsSync(path.join(f.home, "operations", `${receipt.operationId}.json`))).toBe(true);
+    removed = { fixture: f, source, receipt, inventory: snapshot(path.join(f.home, "operations")) };
+    breadcrumb("readmission-setup:done");
+  }, 30000);
+  it("admits a new ticket without replacing completed receipt inventory", async () => {
+    const { fixture: f, source, receipt, inventory } = removed;
+    breadcrumb("second-create:start");
+    const next = await ok(...args(f.repo.id, "SECOND"));
+    breadcrumb("second-create:done");
+    expect(next.worktrees[0].baseCommit).toBe(f.fresh);
+    expect(next.worktrees[0].fetchReceipt.ref).not.toBe(receipt.ref);
+    expect(git(f.tempRepo, "rev-parse", receipt.ref)).toBe(f.fresh);
+    expect(git(f.tempRepo, "rev-parse", next.worktrees[0].fetchReceipt.ref)).toBe(f.fresh);
+    expect(git(f.tempRepo, "rev-parse", "refs/remotes/origin/main")).toBe(f.initial);
+    expect(git(f.tempRepo, "rev-parse", "refs/heads/main")).toBe(f.initial);
+    preserved(source);
+    preserved(inventory);
+  });
 });
 it("refuses missing advertised ref without cache fallback and blocks blind replay from failed journal", async () => {
   const f = await fixture();
@@ -593,11 +627,26 @@ it("retains no receipt when the shared selection deadline expires before admissi
     ""
   );
 });
-it("uses saved linked worktree-only helper/includes noninteractively for synthetic loopback fresh only", async () => {
-  const { freshLoopback } = await import("../scripts/fresh-fixtures.mjs");
-  const f = await fixture();
-  const service = await freshLoopback(f.tempRemote, createTempDir("ofa-"));
-  try {
+describe("saved linked-worktree helper context", () => {
+  let prepared: {
+    f: Awaited<ReturnType<typeof fixture>>;
+    service: {
+      readonly authenticated: number;
+      readonly helperLog: string;
+      readonly askpassMarker: string;
+    };
+    anchor: string;
+    home: string;
+    a: string[];
+  };
+  let closeService: (() => Promise<void>) | undefined;
+  beforeEach(async () => {
+    testWork.getStore()!.trace = true;
+    breadcrumb("linked-helper:setup:start");
+    const { freshLoopback } = await import("../scripts/fresh-fixtures.mjs");
+    const f = await fixture();
+    const service = await freshLoopback(f.tempRemote, createTempDir("ofa-"));
+    closeService = service.close;
     const anchor = path.join(createTempDir("ofl-"), "linked");
     git(f.tempRepo, "worktree", "add", "--detach", anchor, "HEAD");
     git(f.tempRepo, "config", "extensions.worktreeConfig", "true");
@@ -622,9 +671,24 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
     const linked = (await ok("repo", "register", anchor, "--name", "linked")).repository;
     const a = args(linked.id);
     a[a.indexOf("origin")] = "team";
+    prepared = { f, service, anchor, home, a };
+    breadcrumb("linked-helper:setup:done");
+  }, 30000);
+  afterEach(async () => {
+    const owner = testWork.getStore();
+    if (owner) await drainTestWork(owner);
+    breadcrumb("linked-helper:service-close:start");
+    await closeService?.();
+    closeService = undefined;
+    breadcrumb("linked-helper:service-close:done");
+  });
+  it("uses saved linked worktree-only helper/includes noninteractively for synthetic loopback fresh only", async () => {
+    const { f, service, anchor, home, a } = prepared;
     const before = snapshot(f.tempRepo);
     const linkedBefore = snapshot(anchor);
+    breadcrumb("linked-helper:preview:start");
     await ok(...a, "--dry-run");
+    breadcrumb("linked-helper:preview:done");
     expect(existsSync(service.helperLog)).toBe(false);
     expect(service.authenticated).toBe(0);
     const diagnostics: object[] = [];
@@ -645,7 +709,9 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
         )
       )
     );
+    breadcrumb("linked-helper:create:start");
     const attempt = await cli(...a);
+    breadcrumb("linked-helper:create:done");
     debug.mockRestore();
     expect(
       attempt.code,
@@ -666,14 +732,14 @@ it("uses saved linked worktree-only helper/includes noninteractively for synthet
     // Source metadata and linked private/shared indexes are unchanged; only receipt and new objects/admin were added.
     preserved(before);
     preserved(linkedBefore);
+    breadcrumb("linked-helper:resume-remove:start");
     git(f.tempRepo, "worktree", "remove", anchor);
     expect((await ok("workspace", "resume", "FRESH")).resumable).toBe(true);
     await ok("workspace", "remove", "FRESH");
+    breadcrumb("linked-helper:resume-remove:done");
     for (const file of Object.keys(snapshot(home)))
       expect(readFileSync(file, "utf8"), file).not.toContain("SYNTHETIC_FRESH_CREDENTIAL_49");
-  } finally {
-    await service.close();
-  }
+  });
 });
 it("terminates only operation-owned synthetic helper descendants on fresh interruption", async () => {
   const f = await fixture();
@@ -686,19 +752,41 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
   );
   git(f.tempRepo, "config", "remote.origin.uploadpack", `node "${driver.replaceAll("\\", "/")}"`);
   const before = snapshot(f.tempRepo);
+  testWork.getStore()!.trace = true;
+  breadcrumb("helper-interrupt:preflight:start");
+  let notifyDispatch!: () => void;
+  const dispatched = new Promise<void>((resolve) => {
+    notifyDispatch = resolve;
+  });
+  const adapter = Child.commandResult;
+  vi.spyOn(Child, "commandResult").mockImplementation((command, options) =>
+    Effect.suspend(() => {
+      if (command._tag === "StandardCommand" && command.args.includes("ls-remote")) {
+        breadcrumb("helper-interrupt:transport:start");
+        notifyDispatch();
+      }
+      return adapter(command, options);
+    })
+  );
   const fiber = forkOwned(
     runCreate(args(f.repo.id).slice(1), { interactive: false }).pipe(
       Effect.provide(NodeServices.layer)
     )
   );
-  const reached = Effect.runPromise(
-    Effect.gen(function* () {
-      while (!existsSync(marker)) yield* Effect.sleep(10);
-    }).pipe(
-      Effect.timeoutOrElse({
-        duration: 4000,
-        orElse: () => Effect.fail(new Error("Owned helper did not start")),
-      })
+  // Bound helper startup from actual transport dispatch, not metadata preflight.
+  // The enclosing 15-second test still bounds the entire operation.
+  const owner = testWork.getStore()!;
+  const reached = dispatched.then(() =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        while (!existsSync(marker)) yield* Effect.sleep(10);
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: 4000,
+          orElse: () => Effect.fail(new Error("Owned helper did not start")),
+        })
+      ),
+      { signal: owner.controller.signal }
     )
   );
   await Promise.race([
@@ -707,8 +795,10 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
       throw new Error(`Creation ended before owned-helper pause: ${JSON.stringify(exit)}`);
     }),
   ]);
+  breadcrumb("helper-interrupt:helper:ready");
   const pids: number[] = JSON.parse(readFileSync(marker, "utf8"));
   await Effect.runPromise(Fiber.interrupt(fiber));
+  breadcrumb("helper-interrupt:interrupted");
   const alive = (pid: number) => {
     try {
       process.kill(pid, 0);
@@ -724,6 +814,7 @@ it("terminates only operation-owned synthetic helper descendants on fresh interr
     })
   );
   expect(pids.filter(alive)).toEqual([]);
+  breadcrumb("helper-interrupt:descendants:gone");
   preserved(before);
   expect(existsSync(path.join(f.home, "workspaces/FRESH.json"))).toBe(false);
 }, 15_000);

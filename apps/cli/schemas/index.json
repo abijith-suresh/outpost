@@ -2,6 +2,11 @@
   "contractVersion": "4.3.0",
   "schemas": [
     {
+      "command": "manage",
+      "kind": "input",
+      "path": "manage.input.json"
+    },
+    {
       "command": "help",
       "kind": "input",
       "path": "help.input.json"

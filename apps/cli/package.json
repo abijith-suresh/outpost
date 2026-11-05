@@ -50,7 +50,7 @@
   "license": "MIT",
   "scripts": {
     "benchmark": "npm run build && node scripts/benchmark.mjs",
-    "build": "npm run clean && tsc -p tsconfig.json && node scripts/generate-docs.mjs --check",
+    "build": "npm run clean && npm run build --workspace @outpost/manager && node scripts/package-manager.mjs && tsc -p tsconfig.json && node scripts/generate-docs.mjs --check",
     "clean": "node --eval \"fs.rmSync('dist', { force: true, recursive: true })\"",
     "prepublishOnly": "npm run build",
     "test": "vitest run",
