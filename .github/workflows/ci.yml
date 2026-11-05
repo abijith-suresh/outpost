@@ -159,7 +159,6 @@ jobs:
         shell: bash
         run: npm run prepare:prerelease -- --output "$RUNNER_TEMP/outpost-premerge-candidate" --channel dev --source-sha "$GITHUB_SHA" --date "$(date -u +%Y%m%d)" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
 
-
   cli-windows-regressions:
     name: Windows CLI regressions (Node 24)
     runs-on: windows-latest
