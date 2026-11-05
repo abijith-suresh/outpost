@@ -105,6 +105,9 @@ export async function verifyManagerWorkflow({
     "source only"
   );
   git("config", "remote.synthetic.url", "https://SECRET_TRANSPORT_MARKER@example.invalid/private");
+  const importRemote = join(smokeRoot, "mi.git");
+  git("init", "--bare", importRemote);
+  git("remote", "add", "local", importRemote);
   writeFileSync(join(source, "tracked.txt"), "committed source bytes\n");
   git("add", "tracked.txt");
   git(
@@ -285,6 +288,23 @@ export async function verifyManagerWorkflow({
         )
         .toBe("succeeded");
     };
+    await page.getByRole("button", { name: "Import repository", exact: true }).click();
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(page.getByText("Enter an absolute native checkout path.")).toBeVisible();
+    await expect(page.getByLabel("Absolute checkout path")).toBeFocused();
+    await page.getByLabel("Absolute checkout path").fill(source);
+    await page.getByLabel("Remote name (optional)").fill("local");
+    await finished(() => page.getByRole("button", { name: "Confirm", exact: true }).click());
+    await page.getByRole("button", { name: "mi", exact: true }).waitFor();
+    const imported = JSON.parse(
+      runInstalled(["repo", "list", "--json"], { OUTPOST_HOME: home }).stdout
+    ).data.repos;
+    assert.equal(imported.length, 2);
+    assert.equal(imported.filter((repo) => repo.name === "mi" && repo.managedRepoPath).length, 1);
+    assert.equal(
+      (await page.locator("body").innerText()).includes("SECRET_TRANSPORT_MARKER"),
+      false
+    );
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Open settings editor", exact: true }).click();
     await page.getByLabel("Absolute path", { exact: true }).fill(join(home, "future worktrees"));
@@ -300,7 +320,10 @@ export async function verifyManagerWorkflow({
     assert.equal(stored.worktreesRoot, expectedFutureRoot);
     await page.getByRole("button", { name: "Repositories", exact: true }).click();
     await page.getByText("registered clone", { exact: true }).first().waitFor();
-    await page.getByRole("button", { name: "Unregister", exact: true }).click();
+    await page
+      .getByRole("group", { name: "Actions for registered clone", exact: true })
+      .getByRole("button", { name: "Unregister", exact: true })
+      .click();
     await finished(() => page.getByRole("button", { name: "Confirm", exact: true }).click());
     const retained = JSON.parse(
       runInstalled(["repo", "list", "--retained", "--json"], { OUTPOST_HOME: home }).stdout
@@ -312,7 +335,7 @@ export async function verifyManagerWorkflow({
     assert.equal(
       JSON.parse(runInstalled(["repo", "list", "--json"], { OUTPOST_HOME: home }).stdout).data.repos
         .length,
-      1
+      2
     );
     for (const item of original) {
       assert.deepEqual(readFileSync(item.file), item.bytes);
@@ -333,7 +356,7 @@ export async function verifyManagerWorkflow({
     assert.equal(code, 0, "Foreground manager exited unsuccessfully");
     assert.equal(stderr.includes("SECRET_TRANSPORT_MARKER"), false);
     console.log(
-      "Installed foreground manager paired, registered/unregistered/restored a local clone and changed future settings coherently with the CLI, preserved source config bytes/ns-mtime, kept sessions out of browser storage and stopped through bundled browser assets."
+      "Installed foreground manager paired, imported a local remote, registered/unregistered/restored a local clone and changed future settings coherently with the CLI, preserved source config bytes/ns-mtime, kept sessions out of browser storage and stopped through bundled browser assets."
     );
   } catch (error) {
     originalFailure = error;
