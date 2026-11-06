@@ -468,8 +468,12 @@ configuration. The exact-byte source validator remains unchanged. This explicit
 LF checkout is a diagnostic setup difference, not proof that a native refusal
 was caused by CRLF or that ordinary candidate installs behave identically.
 An explicit source fetch and the ordinary root
-cache warmup precede measurement. The measured child retains the preparation
-install's 180-second deadline and scripts-disabled arguments. It writes bounded,
+cache warmup precede measurement. The completion-only diagnostic child has a
+fixed 600000ms budget, recorded as `measurementBudgetMs` in its provenance; the
+required production preparation/candidate bound remains 180000ms. The workflow
+job cap remains 25 minutes. This longer diagnostic can establish completion under
+instrumentation only, not production performance, artifact acceptance or an OS
+cause. Scripts-disabled install arguments remain unchanged. It writes bounded,
 private, opaque wait observations inside owned scratch, then checks source
 preservation and cleans only the directory it still owns. It reports fixed
 categories instead of raw child output. No raw npm logs are uploaded.

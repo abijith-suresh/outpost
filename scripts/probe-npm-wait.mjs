@@ -13,7 +13,7 @@ export const TARGET = Object.freeze({
   tree: "8223d25c42451377787f0b107380d4a07d41f635",
   lock: "4cd696c26a0aa4faf5e8878ce147e2c07306b01f7549d79243e7b18bab7583fc",
 });
-const TIMEOUT = 180000,
+const TIMEOUT = 600000,
   MAX_BUFFER = 128 * 1024 * 1024;
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const refusal = (category) =>
@@ -228,6 +228,7 @@ export async function runProbe(
     });
     safe(sink, {
       npmWaitProvenance: 1,
+      measurementBudgetMs: TIMEOUT,
       diagnosticHead,
       targetSource: TARGET.source,
       targetTree: TARGET.tree,

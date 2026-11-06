@@ -296,3 +296,21 @@ test("one actual pinned npm run supplies verified JavaScript entry to an owned m
   });
   t.diagnostic(JSON.stringify(proof));
 });
+
+test("completion probe budget is fixed and isolated from production preparation and workflow caps", () => {
+  const probe = fs.readFileSync("scripts/probe-npm-wait.mjs", "utf8");
+  const production = fs.readFileSync("scripts/prerelease.mjs", "utf8");
+  const workflow = fs.readFileSync(".github/workflows/npm-wait-probe.yml", "utf8");
+  assert.match(probe, /const TIMEOUT = 600000,/);
+  assert.equal((probe.match(/\b600000\b/g) ?? []).length, 1);
+  assert.match(probe, /measurementBudgetMs: TIMEOUT,/);
+  assert.match(probe, /timeout: TIMEOUT,/);
+  assert.match(production, /timeout: 180000,/);
+  assert.doesNotMatch(production, /600000/);
+  assert.match(workflow, /timeout-minutes: 25/);
+  assert.doesNotMatch(workflow, /600000|measurementBudgetMs/);
+  assert.doesNotMatch(
+    probe,
+    /process\.env\.(?:TIMEOUT|MEASUREMENT_BUDGET)|--(?:timeout|measurement-budget)/
+  );
+});
