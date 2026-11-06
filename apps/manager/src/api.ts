@@ -40,6 +40,7 @@ export type WorkspaceDetail = {
 };
 export type Settings = { revision: string; worktreesRoot: string; extraInstructions: string };
 export type OperationInput =
+  | { kind: "inspect-workspace"; handle: string }
   | { kind: "register"; checkoutPath: string; name: string }
   | { kind: "import"; checkoutPath: string; remoteName?: string }
   | { kind: "verify-registration" | "unregister" | "restore"; handle: string }
@@ -59,6 +60,21 @@ export type Operation = {
     | "failed"
     | "unknown";
   message?: string;
+  result?: {
+    kind: "workspace-readiness";
+    checkedAt: string;
+    readiness: "ready" | "partial" | "not-ready";
+    reason: "none" | "needs-inspection";
+    members: Array<{
+      name: string;
+      readiness: "ready" | "not-ready";
+      workingState: "clean" | "dirty" | "unknown";
+      trackedEntries?: number;
+      untrackedEntries?: number;
+      conflictedEntries?: number;
+      reason: "none" | "needs-inspection";
+    }>;
+  };
 };
 type Envelope<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
 export class ApiError extends Error {
