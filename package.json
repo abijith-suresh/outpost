@@ -23,11 +23,15 @@
     "prepare": "husky",
     "publish:release": "changeset publish",
     "test": "npm run test --workspaces --if-present",
-    "test:policy": "node --test scripts/changeset-policy.test.mjs scripts/check-changeset.test.mjs",
+    "test:policy": "node --test scripts/changeset-policy.test.mjs scripts/check-changeset.test.mjs scripts/prerelease.test.mjs",
     "test:smoke": "npm run test:smoke --workspace @abijith-suresh/outpost",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run format:check && npm run lint && npm run test:policy && npm run verify --workspaces --if-present",
-    "version:packages": "changeset version && npm install --package-lock-only --ignore-scripts"
+    "version:packages": "changeset version && npm install --package-lock-only --ignore-scripts",
+    "prepare:prerelease": "node scripts/prerelease.mjs",
+    "install:prerelease": "node scripts/install-prerelease.mjs",
+    "check:prerelease": "node scripts/check-prerelease.mjs",
+    "test:prerelease": "node --test scripts/prerelease.test.mjs"
   },
   "lint-staged": {
     "*.{js,mjs,cjs,jsx,ts,tsx,astro,css,json}": [

@@ -794,3 +794,17 @@ No manifest fields change; membership remains frozen concrete IDs.
 
 The shared tag operation and recorded inventory support existing-clone tags.
 Borrowed tag controls remain a separate frontend increment; use the CLI today.
+
+### Preparation artifact boundary
+
+`scripts/prerelease.mjs` is a separate Node process boundary for explicit manual
+artifact preparation and installation. It exports a bounded regular-blob Git
+snapshot to owned scratch, builds there with pinned tooling, stages one private
+scripts-free dev/alpha tarball, and emits bounded identity/manifest/hash receipts.
+It never changes source package versions, lock or pending release notes and has
+no publication path. Scripts-disabled installation verifies packaged files and
+exact runtime lock/consumer resolution before candidate execution. Identity is
+inert `dist/build-receipt.json`; runtime CLI/UI modules remain unchanged.
+`scripts/check-prerelease.mjs` reuses the installed CLI/manager lifecycle helpers.
+Premerge platform-local candidates and postmerge canonical Linux-to-Windows
+artifact transfer are separate acceptance boundaries; see CONTRIBUTING.
