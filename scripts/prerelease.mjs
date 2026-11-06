@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { verifyInstalledRuntime } from "../apps/cli/scripts/runtime-dependencies.mjs";
 import { runNpm } from "./npm-command.mjs";
+import { withNpmInstallDiagnostics } from "./npm-install-diagnostics.mjs";
 import { preparationPhase as phase, preparationDiagnostic } from "./prerelease-diagnostics.mjs";
 import { makeBuildIdentity, validateBuildIdentity } from "./prerelease-identity.mjs";
 
@@ -723,7 +724,9 @@ export async function preparePrerelease(root, destination, input, options = {}) 
     if (manifests[0].version !== identity.sourceVersion)
       invalid("Build source version differs from the selected commit.");
     phase("snapshot-install", () =>
-      invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], snapshot)
+      withNpmInstallDiagnostics(temporary, (diagnosticArgs) =>
+        invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund", ...diagnosticArgs], snapshot)
+      )
     );
     const sourceMetadata = manifests[0];
     sourceMetadata.version = identity.version;

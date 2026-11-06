@@ -408,6 +408,15 @@ paths, configuration, URLs and environment values are never copied into these
 records. A category identifies the failing boundary, not a root cause. Logging
 failure never changes an operation's result, guards, cleanup or deadlines.
 
+Snapshot npm installation adds timing logs only under its existing owned scratch.
+A bounded summary reads at most eight log files, 256 KiB per file, 1 MiB total
+and 16,384 lines. It emits fixed timing phases, numeric counts and booleans only.
+Missing, truncated or unreadable evidence is unknown/incomplete; observed npm
+progress is not an install-success or root-cause claim. Raw logs are neither
+printed nor uploaded and remain subject to existing owned-scratch cleanup.
+Diagnostic setup, parsing or output failure cannot replace the original child
+result or exception. Dependency, network/cache settings and deadlines are unchanged.
+
 Ordinary PR CI prepares a platform-local candidate and runs that lifecycle on
 Linux and native Windows. This is **premerge** evidence only. After this workflow
 is merged, the parent runs manual `publish=false` dispatch on integrated main.

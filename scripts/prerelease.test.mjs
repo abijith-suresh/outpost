@@ -586,3 +586,217 @@ test("real archive checksum refusal emits safe phase while retaining nonzero fai
     assert.doesNotMatch(failure.stderr, /PRIVATE|stdout|stderr|message|stack/);
     assert.equal(readFileSync(join(dir, "candidate.tgz"), "utf8"), "PRIVATE_ARCHIVE_BYTES");
   }));
+
+test("npm progress retains real timing forms but excludes arbitrary keys and hostile log data", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    writeFileSync(
+      join(dir, "npm-debug.log"),
+      [
+        "12 timing idealTree Completed in 91ms",
+        "13 timing reify:unpack Completed in 11887ms",
+        "14 timing reify:unpack Completed in 2ms",
+        "15 timing command:ci Completed in 12209ms",
+        "16 http cache https://PRIVATE_URI_TOKEN.example/private 0ms (cache hit)",
+        "17 http fetch GET 200 https://PRIVATE_CREDENTIAL.example/hidden 1ms (cache miss)",
+        "18 timing PRIVATE_TIMING_KEY Completed in 99ms",
+        "19 timing reify Completed in 9999999999999999999999ms",
+        "20 verbose config PRIVATE_ENV_VALUE",
+        "21 error code ETIMEDOUT",
+        "22 timing reify Completed in 5ms PRIVATE_TRAILER",
+        "",
+      ].join("\n")
+    );
+    const summary = summarizeNpmInstallLogs(dir);
+    assert.equal(summary.outcome, "observed");
+    assert.equal(summary.commandTimingObserved, true);
+    assert.deepEqual(summary.timings, [
+      { phase: "idealTree", count: 1, maxMs: 91 },
+      { phase: "reify:unpack", count: 2, maxMs: 11887 },
+      { phase: "command:ci", count: 1, maxMs: 12209 },
+    ]);
+    assert.equal(summary.cacheHits, 1);
+    assert.equal(summary.cacheMisses, 1);
+    assert.equal(summary.httpFetches, 1);
+    assert.equal(summary.networkErrorTokens, 1);
+    assert.doesNotMatch(JSON.stringify(summary), /PRIVATE|https|config|credential|\.log/);
+  }));
+
+test("npm progress bounds missing, oversized, truncated and excessive log evidence", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    assert.equal(summarizeNpmInstallLogs(join(dir, "missing")).outcome, "incomplete");
+    assert.equal(summarizeNpmInstallLogs(dir).outcome, "unknown");
+    writeFileSync(
+      join(dir, "oversized.log"),
+      `1 timing idealTree Completed in 1ms\n${"x".repeat(300 * 1024)}`
+    );
+    let summary = summarizeNpmInstallLogs(dir);
+    assert.equal(summary.outcome, "incomplete");
+    assert.equal(summary.truncated, true);
+    assert.deepEqual(summary.timings, [{ phase: "idealTree", count: 1, maxMs: 1 }]);
+    rmSync(join(dir, "oversized.log"));
+    writeFileSync(join(dir, "truncated.log"), "1 timing command:ci Completed in 2ms");
+    summary = summarizeNpmInstallLogs(dir);
+    assert.equal(summary.outcome, "incomplete");
+    assert.equal(summary.commandTimingObserved, false);
+    rmSync(join(dir, "truncated.log"));
+    for (let i = 0; i < 20; i++)
+      writeFileSync(join(dir, `${i}.log`), "1 timing idealTree Completed in 1ms\n");
+    summary = summarizeNpmInstallLogs(dir);
+    assert.equal(summary.outcome, "incomplete");
+    assert.ok(summary.filesRead <= 8);
+    assert.ok(summary.linesRead <= 16384);
+  }));
+
+test("npm progress parsing cannot follow linked logs", async () =>
+  scope(async (dir) => {
+    if (process.platform === "win32") return;
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    writeFileSync(join(dir, "private"), "1 timing command:ci Completed in 2ms\n");
+    symlinkSync(join(dir, "private"), join(dir, "linked.log"));
+    const summary = summarizeNpmInstallLogs(dir);
+    assert.equal(summary.outcome, "incomplete");
+    assert.equal(summary.filesRead, 0);
+    assert.equal(summary.commandTimingObserved, false);
+  }));
+
+test("npm diagnostic setup/read/sink failures never change exact operation outcomes", async () =>
+  scope(async (dir) => {
+    const { withNpmInstallDiagnostics } = await import("./npm-install-diagnostics.mjs");
+    const missingParent = join(dir, "absent");
+    const value = {};
+    const summaries = [];
+    assert.equal(
+      withNpmInstallDiagnostics(
+        missingParent,
+        (args) => {
+          assert.deepEqual(args, []);
+          return value;
+        },
+        (s) => summaries.push(s)
+      ),
+      value
+    );
+    assert.equal(summaries[0].outcome, "unknown");
+    const failure = new Error("PRIVATE_ORIGINAL");
+    assert.throws(
+      () =>
+        withNpmInstallDiagnostics(
+          dir,
+          (args) => {
+            assert.deepEqual(args.slice(0, 2), ["--timing", "--logs-dir"]);
+            rmSync(args[2], { recursive: true });
+            throw failure;
+          },
+          () => {
+            throw new Error("PRIVATE_SINK");
+          }
+        ),
+      (e) => e === failure
+    );
+    assert.equal(
+      withNpmInstallDiagnostics(
+        dir,
+        (args) => {
+          rmSync(args[2], { recursive: true });
+          return value;
+        },
+        (s) => summaries.push(s)
+      ),
+      value
+    );
+    assert.equal(summaries.at(-1).outcome, "incomplete");
+  }));
+
+test("npm diagnostic summary precedes cleanup and preserves actual child timeout and exit", async () =>
+  scope(async (dir) => {
+    const { withNpmInstallDiagnostics } = await import("./npm-install-diagnostics.mjs");
+    for (const mode of ["timeout", "exit"]) {
+      const parent = join(dir, mode);
+      mkdirSync(parent);
+      let actual,
+        summarized = false;
+      assert.throws(
+        () => {
+          try {
+            withNpmInstallDiagnostics(
+              parent,
+              (args) => {
+                writeFileSync(join(args[2], "npm.log"), "1 timing idealTree Completed in 1ms\n");
+                try {
+                  execFileSync(
+                    process.execPath,
+                    [
+                      "-e",
+                      mode === "timeout"
+                        ? "process.stderr.write('PRIVATE_CHILD');setTimeout(()=>{},10000)"
+                        : "process.stderr.write('PRIVATE_CHILD');process.exit(23)",
+                    ],
+                    {
+                      encoding: "utf8",
+                      stdio: ["ignore", "pipe", "pipe"],
+                      timeout: mode === "timeout" ? 100 : 2000,
+                    }
+                  );
+                } catch (e) {
+                  actual = e;
+                  throw e;
+                }
+              },
+              (s) => {
+                summarized = true;
+                assert.equal(s.outcome, "observed");
+              }
+            );
+          } finally {
+            assert.equal(summarized, true);
+            rmSync(parent, { recursive: true });
+          }
+        },
+        (e) => e === actual && (mode === "timeout" ? e.code === "ETIMEDOUT" : e.status === 23)
+      );
+    }
+  }));
+
+test("actual pinned npm ci emits bounded timing evidence with scripts still disabled", async () =>
+  scope(async (dir) => {
+    const { withNpmInstallDiagnostics } = await import("./npm-install-diagnostics.mjs");
+    const { runNpm } = await import("./npm-command.mjs");
+    const consumer = join(dir, "consumer");
+    mkdirSync(consumer);
+    const metadata = {
+      name: "outpost-npm-diagnostic-fixture",
+      version: "0.0.0",
+      private: true,
+      scripts: { prepare: "node -e \"require('fs').writeFileSync('SCRIPT_EXECUTED','bad')\"" },
+    };
+    writeFileSync(join(consumer, "package.json"), JSON.stringify(metadata));
+    writeFileSync(
+      join(consumer, "package-lock.json"),
+      JSON.stringify({
+        name: metadata.name,
+        version: metadata.version,
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": { name: metadata.name, version: metadata.version } },
+      })
+    );
+    const summaries = [];
+    withNpmInstallDiagnostics(
+      dir,
+      (args) =>
+        runNpm(["ci", "--ignore-scripts", "--no-audit", "--no-fund", ...args], {
+          cwd: consumer,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: 10000,
+          maxBuffer: 1024 * 1024,
+        }),
+      (s) => summaries.push(s)
+    );
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].outcome, "observed");
+    assert.equal(summaries[0].commandTimingObserved, true);
+    assert.throws(() => readFileSync(join(consumer, "SCRIPT_EXECUTED")), { code: "ENOENT" });
+  }));
