@@ -184,7 +184,7 @@ same-user filesystem races. Known writable object-store directory/pack aliases a
 
 ## Human manager
 
-Agents continue using the CLI. A human may explicitly start `outpost manage`, optionally adding `--open`; this foreground manager serves bundled assets and stops with Ctrl+C. Recorded browser inventory never establishes current Git state. Register/unregister/restore, managed tag controls and future settings use the shared operations. Unregister preserves repository storage. No implicit UI fetch, content status, lifecycle action or state repair runs during polling. Never treat a lost browser response as permission to replay a mutation.
+Agents continue using the CLI. A human may explicitly start `outpost manage`, optionally adding `--open`; this foreground manager serves bundled assets and stops with Ctrl+C. Recorded browser inventory never establishes current Git state. Repository import, register/unregister/restore, tag controls, explicit workspace creation and readiness checks, and future settings use shared operations. Unregister preserves repository storage. No implicit UI fetch, content status, lifecycle action or state repair runs during polling. Never treat a lost browser response as permission to replay a mutation.
 
 The shared tag operation and recorded inventory support existing-clone tags.
 Borrowed tag controls remain a separate frontend increment; use the CLI today.

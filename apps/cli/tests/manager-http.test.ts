@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ApplicationInvocation } from "../src/application/context.js";
 import { runInit } from "../src/commands/init.js";
 import { createManager } from "../src/manager/server.js";
@@ -301,4 +301,197 @@ it("uses the existing opaque-handle action for borrowed tags and rejects stale e
     409
   );
   expect(await readFile(path.join(home, "repos.json"))).toEqual(registry);
+});
+it("creates a workspace using only active opaque repository handles under revision admission", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const source = path.join(home, "create-source");
+  const remote = path.join(home, "create-remote.git");
+  execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+  execFileSync("git", ["init", "--initial-branch=main", source], { stdio: "ignore" });
+  execFileSync(
+    "git",
+    [
+      "-C",
+      source,
+      "-c",
+      "user.name=fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "initial",
+    ],
+    { stdio: "ignore" }
+  );
+  execFileSync("git", ["-C", source, "remote", "add", "origin", remote]);
+  execFileSync("git", ["-C", source, "push", "origin", "main"], { stdio: "ignore" });
+  execFileSync("git", ["--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/main"]);
+  let snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json())
+    .data;
+  const imported = {
+    requestId: randomUUID(),
+    revision: snapshot.revision,
+    operation: { kind: "import", checkoutPath: source },
+  };
+  expect((await call("operations", imported, bearer)).status).toBe(202);
+  expect((await manager.operations.settled(imported.requestId)).state).toBe("succeeded");
+  snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const handle = snapshot.repositories[0].handle;
+  const operation = {
+    kind: "create-workspace",
+    ticket: "UI-CREATE",
+    type: "feat",
+    selection: { handles: [handle], tags: [] },
+    mode: { kind: "base" },
+  };
+  expect(
+    (
+      await call(
+        "operations",
+        { requestId: randomUUID(), revision: randomUUID(), operation },
+        bearer
+      )
+    ).status
+  ).toBe(409);
+  expect(
+    (
+      await call(
+        "operations",
+        {
+          requestId: randomUUID(),
+          revision: snapshot.revision,
+          operation: { ...operation, selection: { handles: [randomUUID()], tags: [] } },
+        },
+        bearer
+      )
+    ).status
+  ).toBe(400);
+  expect(
+    (
+      await call(
+        "operations",
+        {
+          requestId: randomUUID(),
+          revision: snapshot.revision,
+          operation: { ...operation, mode: { kind: "reuse", branch: "x", source: "local" } },
+        },
+        bearer
+      )
+    ).status
+  ).toBe(400);
+  const request = { requestId: randomUUID(), revision: snapshot.revision, operation };
+  expect((await call("operations", request, bearer)).status).toBe(202);
+  const result = await manager.operations.settled(request.requestId);
+  expect(result).toMatchObject({
+    state: "succeeded",
+    result: { kind: "workspace-created", ticket: "UI-CREATE", memberCount: 1 },
+  });
+  expect(JSON.stringify(result)).not.toContain(home);
+  expect((await (await call("operations", request, bearer)).json()).data).toEqual(result);
+  expect(
+    JSON.parse(await readFile(path.join(home, "workspaces", "UI-CREATE.json"), "utf8")).ticket
+  ).toBe("UI-CREATE");
+  snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const processTools = await import("../src/child-process.js");
+  const originalCommand = processTools.commandResult;
+  let release!: () => void;
+  let reached!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const atCommand = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const spy = vi.spyOn(processTools, "commandResult").mockImplementation((...args) =>
+    Effect.promise(() => {
+      reached();
+      return gate;
+    }).pipe(Effect.andThen(originalCommand(...args)))
+  );
+  try {
+    const cancelled = {
+      requestId: randomUUID(),
+      revision: snapshot.revision,
+      operation: { ...operation, ticket: "UI-CANCEL" },
+    };
+    expect((await call("operations", cancelled, bearer)).status).toBe(202);
+    await atCommand;
+    expect(
+      (await (await call(`operations/${cancelled.requestId}/cancel`, {}, bearer)).json()).data.state
+    ).toBe("draining");
+    const outcome = await manager.operations.settled(cancelled.requestId);
+    expect(outcome.state).toBe("unknown");
+    expect(outcome.result).toBeUndefined();
+    expect((await (await call("operations", cancelled, bearer)).json()).data.state).toBe("unknown");
+  } finally {
+    release();
+    spy.mockRestore();
+  }
+});
+it("creates a tag-selected registered-clone workspace from an explicit local base", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const source = path.join(home, "borrowed-source");
+  execFileSync("git", ["init", "--initial-branch=main", source], { stdio: "ignore" });
+  execFileSync(
+    "git",
+    [
+      "-C",
+      source,
+      "-c",
+      "user.name=fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "initial",
+    ],
+    { stdio: "ignore" }
+  );
+  let snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json())
+    .data;
+  const register = {
+    requestId: randomUUID(),
+    revision: snapshot.revision,
+    operation: { kind: "register", checkoutPath: source, name: "borrowed" },
+  };
+  await call("operations", register, bearer);
+  expect((await manager.operations.settled(register.requestId)).state).toBe("succeeded");
+  snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const tags = {
+    requestId: randomUUID(),
+    revision: snapshot.revision,
+    operation: {
+      kind: "tags",
+      handle: snapshot.repositories[0].handle,
+      add: ["backend", "job"],
+      remove: [],
+    },
+  };
+  await call("operations", tags, bearer);
+  expect((await manager.operations.settled(tags.requestId)).state).toBe("succeeded");
+  snapshot = (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const request = {
+    requestId: randomUUID(),
+    revision: snapshot.revision,
+    operation: {
+      kind: "create-workspace",
+      ticket: "BORROWED-UI",
+      type: "feat",
+      selection: { handles: [], tags: ["backend", "job"] },
+      mode: { kind: "base", source: "local", ref: "refs/heads/main" },
+    },
+  };
+  expect((await call("operations", request, bearer)).status).toBe(202);
+  expect(await manager.operations.settled(request.requestId)).toMatchObject({
+    state: "succeeded",
+    result: { kind: "workspace-created", memberCount: 1 },
+  });
+  const manifest = JSON.parse(
+    await readFile(path.join(home, "workspaces", "BORROWED-UI.json"), "utf8")
+  );
+  expect(manifest.repositories[0]).toMatchObject({ name: "borrowed", baseSource: "local" });
 });

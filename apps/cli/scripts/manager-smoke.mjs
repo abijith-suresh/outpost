@@ -327,13 +327,16 @@ export async function verifyManagerWorkflow({
     ).data.repos;
     assert.equal(imported.length, 2);
     assert.equal(imported.filter((repo) => repo.name === "mi" && repo.managedRepoPath).length, 1);
-    const managed = imported.find((repo) => repo.name === "mi" && repo.managedRepoPath);
-    const created = runInstalled(
-      ["create", "--ticket", "CHECK", "--type", "feat", "--repo", managed.id, "--json"],
-      { OUTPOST_HOME: home }
-    );
-    assert.equal(created.status, 0, created.stderr);
     await page.getByRole("button", { name: "Workspaces", exact: true }).click();
+    await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+    await page.getByLabel("Ticket", { exact: true }).fill("CHECK");
+    await page.getByLabel("Branch type", { exact: true }).fill("feat");
+    await page.getByRole("checkbox", { name: "mi (managed)", exact: true }).check();
+    await finished(() => page.getByRole("button", { name: "Confirm", exact: true }).click());
+    const created = JSON.parse(
+      runInstalled(["workspace", "show", "CHECK", "--json"], { OUTPOST_HOME: home }).stdout
+    );
+    assert.equal(created.data.ticket, "CHECK");
     await page.getByRole("button", { name: "Details", exact: true }).click();
     await finished(() =>
       page.getByRole("button", { name: "Check readiness", exact: true }).click()

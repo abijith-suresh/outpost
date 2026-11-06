@@ -869,7 +869,9 @@ it("manager preserves partial readiness for a workspace with one unavailable mem
     const result = await manager.operations.settled(id);
     expect(result.state).toBe("succeeded");
     expect(result.result).toMatchObject({ readiness: "partial", reason: "needs-inspection" });
-    expect(result.result?.members.map((m) => m.readiness).sort()).toEqual(["not-ready", "ready"]);
+    expect(result.result?.kind).toBe("workspace-readiness");
+    if (result.result?.kind !== "workspace-readiness") throw new Error("Missing readiness result");
+    expect(result.result.members.map((m) => m.readiness).sort()).toEqual(["not-ready", "ready"]);
   } finally {
     renameSync(held, f.created.worktrees[1].path);
     await manager.stop();

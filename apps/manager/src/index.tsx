@@ -8,6 +8,7 @@ import {
   type Operation,
   type OperationInput,
   pair,
+  type Repository,
   type Settings,
   type Snapshot,
   UnknownOperationFailure,
@@ -27,8 +28,22 @@ function App() {
     [settings, setSettings] = createSignal<Settings>(),
     [dialog, setDialog] = createSignal("");
   const [workspaceHandle, setWorkspaceHandle] = createSignal(""),
-    [readiness, setReadiness] = createSignal<Operation["result"]>(),
+    [readiness, setReadiness] =
+      createSignal<Extract<NonNullable<Operation["result"]>, { kind: "workspace-readiness" }>>(),
     [readinessRevision, setReadinessRevision] = createSignal("");
+  const [createRepos, setCreateRepos] = createSignal<Repository[]>([]),
+    [createSelected, setCreateSelected] = createSignal<string[]>([]),
+    [createTicket, setCreateTicket] = createSignal(""),
+    [createType, setCreateType] = createSignal("feat"),
+    [createTags, setCreateTags] = createSignal(""),
+    [createMode, setCreateMode] = createSignal<"base" | "reuse">("base"),
+    [createSource, setCreateSource] = createSignal<"" | "local" | "cached-remote" | "fresh-remote">(
+      ""
+    ),
+    [createBase, setCreateBase] = createSignal(""),
+    [createRemote, setCreateRemote] = createSignal(""),
+    [createBranch, setCreateBranch] = createSignal(""),
+    [createRoot, setCreateRoot] = createSignal("");
   const [selected, setSelected] = createSignal(""),
     [name, setName] = createSignal(""),
     [remoteName, setRemoteName] = createSignal(""),
@@ -186,7 +201,7 @@ function App() {
     if (
       activeInput?.kind === "inspect-workspace" &&
       activeInput.handle === workspaceHandle() &&
-      op.result
+      op.result?.kind === "workspace-readiness"
     ) {
       setReadiness(op.result);
       setReadinessRevision(activeRevision);
@@ -254,6 +269,55 @@ function App() {
         return;
       }
     }
+    if (input.kind === "create-workspace") {
+      const matches = createRepos().filter(
+        (r) =>
+          (input.selection.handles.length === 0 || input.selection.handles.includes(r.handle)) &&
+          input.selection.tags.every((t) => r.tags.includes(t))
+      );
+      const borrowed = matches.some((r) => r.kind === "borrowed");
+      const managed = matches.some((r) => r.kind === "managed");
+      let problem = "";
+      if (!input.ticket.trim() || !input.type.trim()) problem = "Enter a ticket and branch type.";
+      else if (!input.selection.handles.length && !input.selection.tags.length)
+        problem = "Select repositories or enter tags.";
+      else if (!matches.length) problem = "No repositories match the selection and tags.";
+      else if (input.mode.kind === "reuse" && !input.mode.branch.trim())
+        problem = "Enter the existing managed branch.";
+      else if (input.mode.kind === "reuse" && borrowed)
+        problem = "Registered clones cannot reuse an existing branch.";
+      else if (input.mode.kind === "base" && borrowed && (!input.mode.source || !input.mode.ref))
+        problem =
+          "For registered clones, open base and branch options and choose a source and ref.";
+      else if (
+        input.mode.kind === "base" &&
+        borrowed &&
+        input.mode.source === "local" &&
+        !/^(?:refs\/(?:heads|tags)\/.+|[0-9a-f]{40}|[0-9a-f]{64})$/.test(input.mode.ref ?? "")
+      )
+        problem = "For a local clone base, enter a full heads or tags ref, or a commit SHA.";
+      else if (
+        input.mode.kind === "base" &&
+        borrowed &&
+        input.mode.source !== "local" &&
+        !input.mode.remote
+      )
+        problem = "Enter a remote name for registered-clone cached or fresh bases.";
+      else if (input.mode.kind === "base" && input.mode.source === "local" && input.mode.remote)
+        problem = "A local base does not use a remote name.";
+      else if (
+        input.mode.kind === "base" &&
+        input.mode.source === "fresh-remote" &&
+        input.mode.remote &&
+        borrowed &&
+        managed
+      )
+        problem = "A named fresh base requires registered clones only.";
+      if (problem) {
+        setDialogError(problem);
+        return;
+      }
+    }
     setDialogError("");
     const requestId = crypto.randomUUID();
     setOperation({
@@ -307,6 +371,37 @@ function App() {
       setDetail(await api.workspace(handle, c.signal));
     } catch (e) {
       if (!c.signal.aborted) setError(message(e));
+    }
+  }
+  async function openCreate() {
+    try {
+      let page = await api.snapshot("repositories");
+      const revision = page.revision;
+      const repos = [...page.repositories];
+      while (page.nextCursor) {
+        page = await api.snapshot("repositories", page.nextCursor);
+        if (page.revision !== revision || repos.length + page.repositories.length > 128)
+          throw new Error("Repository list changed or exceeds the selection limit. Use the CLI.");
+        repos.push(...page.repositories);
+      }
+      const settings = await api.settings();
+      if (settings.revision !== revision || !["ok", "partial"].includes(page.state))
+        throw new Error("Recorded state changed. Reload and try again.");
+      setCreateRepos(repos.filter((r) => !r.retained));
+      setCreateSelected([]);
+      setCreateTicket("");
+      setCreateType("feat");
+      setCreateTags("");
+      setCreateMode("base");
+      setCreateSource("");
+      setCreateBase("");
+      setCreateRemote("");
+      setCreateBranch("");
+      setCreateRoot(settings.worktreesRoot);
+      openDialog("create");
+      setDialogRevision(revision);
+    } catch (e) {
+      setError(message(e));
     }
   }
   async function editSettings() {
@@ -432,7 +527,12 @@ function App() {
             <Show when={operation()}>
               {(op) => (
                 <div class="notice" role="status">
-                  Operation: {op().state}. {op().message}{" "}
+                  Operation: {op().state}. {op().message} {(() => {
+                    const result = op().result;
+                    return result?.kind === "workspace-created"
+                      ? ` ${result.ticket}: ${result.memberCount} repositories.`
+                      : "";
+                  })()}
                   <Show when={op().state === "unknown" && op().id}>
                     <button
                       type="button"
@@ -770,7 +870,17 @@ function App() {
                   </>
                 }
               >
-                <h1>Workspaces</h1>
+                <div class="title">
+                  <h1>Workspaces</h1>
+                  <button
+                    type="button"
+                    class="primary"
+                    disabled={busy()}
+                    onClick={() => void openCreate()}
+                  >
+                    Create workspace
+                  </button>
+                </div>
                 <p class="muted">
                   Recorded workspace metadata. Current working state is not checked.
                 </p>
@@ -895,6 +1005,7 @@ function App() {
                 {
                   register: "Register repository",
                   import: "Import repository",
+                  create: "Create workspace",
                   verify: "Verify registration",
                   unregister: "Unregister repository",
                   restore: "Restore repository",
@@ -972,6 +1083,108 @@ function App() {
             />
             <p>Specify a remote when the checkout has more than one.</p>
           </Show>
+          <Show when={dialog() === "create"}>
+            <p>
+              Worktrees and guidance will be created under {createRoot()}. Git and configured tools
+              may run and contact a network.
+            </p>
+            <label for="create-ticket">Ticket</label>
+            <input
+              id="create-ticket"
+              value={createTicket()}
+              onInput={(e) => setCreateTicket(e.currentTarget.value)}
+            />
+            <label for="create-type">Branch type</label>
+            <input
+              id="create-type"
+              value={createType()}
+              onInput={(e) => setCreateType(e.currentTarget.value)}
+            />
+            <fieldset class="create-repos">
+              <legend>Repositories</legend>
+              <For each={createRepos()}>
+                {(r) => (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={createSelected().includes(r.handle)}
+                      onChange={(e) =>
+                        setCreateSelected((old) =>
+                          e.currentTarget.checked
+                            ? [...old, r.handle]
+                            : old.filter((h) => h !== r.handle)
+                        )
+                      }
+                    />{" "}
+                    {r.name} ({r.kind === "borrowed" ? "registered clone" : "managed"})
+                  </label>
+                )}
+              </For>
+            </fieldset>
+            <label for="create-tags">Require tags, separated by commas (optional)</label>
+            <input
+              id="create-tags"
+              value={createTags()}
+              onInput={(e) => setCreateTags(e.currentTarget.value)}
+            />
+            <details>
+              <summary>Base and branch options</summary>
+              <p>
+                Registered clones require an explicit local ref or named cached/fresh base. Reuse
+                applies to managed repositories only.
+              </p>
+              <label for="create-mode">Branch</label>
+              <select
+                id="create-mode"
+                value={createMode()}
+                onChange={(e) => setCreateMode(e.currentTarget.value as "base" | "reuse")}
+              >
+                <option value="base">Create new branch</option>
+                <option value="reuse">Reuse managed branch</option>
+              </select>
+              <Show
+                when={createMode() === "base"}
+                fallback={
+                  <>
+                    <label for="create-branch">Existing branch</label>
+                    <input
+                      id="create-branch"
+                      value={createBranch()}
+                      onInput={(e) => setCreateBranch(e.currentTarget.value)}
+                    />
+                  </>
+                }
+              >
+                <label for="create-source">Base source</label>
+                <select
+                  id="create-source"
+                  value={createSource()}
+                  onChange={(e) =>
+                    setCreateSource(
+                      e.currentTarget.value as "" | "local" | "cached-remote" | "fresh-remote"
+                    )
+                  }
+                >
+                  <option value="">Default</option>
+                  <option value="local">Local</option>
+                  <option value="cached-remote">Cached remote</option>
+                  <option value="fresh-remote">Fresh remote (fetch)</option>
+                </select>
+                <label for="create-base">Base ref (optional)</label>
+                <input
+                  id="create-base"
+                  value={createBase()}
+                  onInput={(e) => setCreateBase(e.currentTarget.value)}
+                />
+                <label for="create-remote">Remote name (optional)</label>
+                <input
+                  id="create-remote"
+                  value={createRemote()}
+                  onInput={(e) => setCreateRemote(e.currentTarget.value)}
+                />
+              </Show>
+            </details>
+          </Show>
           <Show when={dialog() === "verify"}>
             <p>
               Checks the recorded clone location. Network-share paths may contact that share.
@@ -1020,7 +1233,36 @@ function App() {
               disabled={busy() && dialog() !== "stop" && dialog() !== "signout"}
               onClick={async () => {
                 const d = dialog();
-                if (d === "import")
+                if (d === "create")
+                  void submit({
+                    kind: "create-workspace",
+                    ticket: createTicket(),
+                    type: createType(),
+                    selection: {
+                      handles: createSelected(),
+                      tags: createTags()
+                        .split(",")
+                        .map((t) => t.trim())
+                        .filter(Boolean),
+                    },
+                    mode:
+                      createMode() === "reuse"
+                        ? { kind: "reuse", branch: createBranch() }
+                        : {
+                            kind: "base",
+                            ...(createSource()
+                              ? {
+                                  source: createSource() as
+                                    | "local"
+                                    | "cached-remote"
+                                    | "fresh-remote",
+                                }
+                              : {}),
+                            ...(createBase() ? { ref: createBase() } : {}),
+                            ...(createRemote() ? { remote: createRemote() } : {}),
+                          },
+                  });
+                else if (d === "import")
                   void submit({
                     kind: "import",
                     checkoutPath: path(),
