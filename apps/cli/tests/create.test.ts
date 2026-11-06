@@ -1523,3 +1523,22 @@ describe("run", () => {
     expect(registrations).not.toContain(ticketDirectory);
   });
 });
+
+it("retains named-remote privacy even when create arguments are invalid", async () => {
+  for (const args of [
+    ["--remote", "secret-value", "--unknown"],
+    ["--remote=secret-value", "--base-source=fresh-remote", "--unknown"],
+  ]) {
+    const result = await Effect.runPromise(
+      Effect.result(runCreate(args, { interactive: false })).pipe(
+        Effect.provide(NodeServices.layer)
+      )
+    );
+    expect(result._tag).toBe("Failure");
+    if (result._tag !== "Failure") throw new Error("Expected refusal");
+    expect(result.failure.message).toContain(
+      args.some((arg) => arg.includes("fresh-remote")) ? "Fresh base:" : "Cached base:"
+    );
+    expect(result.failure.message).not.toContain("secret-value");
+  }
+});

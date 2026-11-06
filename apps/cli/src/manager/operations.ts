@@ -8,9 +8,11 @@ import { unregisterRepository } from "../application/repo-remove.js";
 import { restoreRepository } from "../application/repo-restore.js";
 import { registerRepository } from "../application/repositories.js";
 import { runRepoTag, setFutureRoot, setInstructions } from "../application/settings.js";
+import { CreateError, createWorkspace } from "../application/workspace-create.js";
 import { inspectWorkspaceReadiness } from "../application/workspace-readiness.js";
 import { verifyBorrowed } from "../borrowed-repo.js";
 import { loadConfig, loadRepoRegistry } from "../config.js";
+import { reasonDetails } from "../error-details.js";
 import { verifyRetainedRepository } from "../managed-repo.js";
 import { RequestFailure } from "./security.js";
 
@@ -18,6 +20,24 @@ const text = Schema.String.check(Schema.isMaxLength(4096));
 const handle = Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/));
 const Action = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("register"), checkoutPath: text, name: text }),
+  Schema.Struct({
+    kind: Schema.Literal("create-workspace"),
+    ticket: text,
+    type: text,
+    selection: Schema.Struct({
+      handles: Schema.Array(handle).check(Schema.isMaxLength(128)),
+      tags: Schema.Array(text).check(Schema.isMaxLength(128)),
+    }),
+    mode: Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("base"),
+        source: Schema.optional(Schema.Literals(["local", "cached-remote", "fresh-remote"])),
+        ref: Schema.optional(text),
+        remote: Schema.optional(text),
+      }),
+      Schema.Struct({ kind: Schema.Literal("reuse"), branch: text }),
+    ]),
+  }),
   Schema.Struct({ kind: Schema.Literal("inspect-workspace"), handle }),
   Schema.Struct({
     kind: Schema.Literal("import"),
@@ -47,21 +67,23 @@ export type OperationState = {
   id: string;
   state: "accepted" | "running" | "draining" | "succeeded" | "failed" | "unknown";
   message?: string;
-  result?: {
-    kind: "workspace-readiness";
-    checkedAt: string;
-    readiness: "ready" | "partial" | "not-ready";
-    reason: "none" | "needs-inspection";
-    members: Array<{
-      name: string;
-      readiness: "ready" | "not-ready";
-      workingState: "clean" | "dirty" | "unknown";
-      trackedEntries?: number;
-      untrackedEntries?: number;
-      conflictedEntries?: number;
-      reason: "none" | "needs-inspection";
-    }>;
-  };
+  result?:
+    | { kind: "workspace-created"; ticket: string; memberCount: number }
+    | {
+        kind: "workspace-readiness";
+        checkedAt: string;
+        readiness: "ready" | "partial" | "not-ready";
+        reason: "none" | "needs-inspection";
+        members: Array<{
+          name: string;
+          readiness: "ready" | "not-ready";
+          workingState: "clean" | "dirty" | "unknown";
+          trackedEntries?: number;
+          untrackedEntries?: number;
+          conflictedEntries?: number;
+          reason: "none" | "needs-inspection";
+        }>;
+      };
 };
 /** Lifetime is the process instance, deliberately independent of browser sessions. */
 export class ManagerOperations {
@@ -250,14 +272,20 @@ export class ManagerOperations {
       .then(
         (value) => {
           result.state = "succeeded";
-          if (value && "kind" in value && value.kind === "workspace-readiness")
+          if (
+            value &&
+            "kind" in value &&
+            (value.kind === "workspace-readiness" || value.kind === "workspace-created")
+          )
             result.result = value;
           result.message =
-            input.operation.kind === "inspect-workspace"
-              ? "Readiness check completed."
-              : input.operation.kind === "verify-registration"
-                ? "Registration identity verified at request time. Working content was not checked."
-                : "Action completed.";
+            input.operation.kind === "create-workspace"
+              ? "Workspace created."
+              : input.operation.kind === "inspect-workspace"
+                ? "Readiness check completed."
+                : input.operation.kind === "verify-registration"
+                  ? "Registration identity verified at request time. Working content was not checked."
+                  : "Action completed.";
         },
         () => {
           result.state = admitted && !safeImportError && !staleRead ? "unknown" : "failed";
@@ -279,6 +307,53 @@ export class ManagerOperations {
   }
   private execute(action: Action, revision: string, admitRead: () => void) {
     return Effect.gen({ self: this }, function* () {
+      if (action.kind === "create-workspace") {
+        const view = yield* this.inventory.read();
+        if (view.revision !== revision || (view.state !== "ok" && view.state !== "partial"))
+          return yield* new InvocationError({
+            message: "Recorded state changed.",
+            reason: "stale-state",
+          });
+        if (new Set(action.selection.handles).size !== action.selection.handles.length)
+          return yield* new CreateError({
+            message: "Duplicate selection.",
+            ...reasonDetails("invalid-arguments"),
+          });
+        const ids: string[] = [];
+        for (const selected of action.selection.handles) {
+          const key = this.inventory.resolve(selected);
+          if (
+            !key?.startsWith("repo:") ||
+            !view.repositories.some((repo) => repo.handle === selected && !repo.retained)
+          )
+            return yield* new CreateError({
+              message: "Invalid repository selection.",
+              ...reasonDetails("invalid-arguments"),
+            });
+          ids.push(key.slice(5));
+        }
+        const mode = action.mode;
+        const result = yield* createWorkspace(
+          {
+            ticket: action.ticket,
+            type: action.type,
+            repoIds: ids,
+            tags: action.selection.tags,
+            baseSource: mode.kind === "base" ? (mode.source ?? "cached-remote") : "cached-remote",
+            baseSourceExplicit: mode.kind === "base" && mode.source !== undefined,
+            ...(mode.kind === "base"
+              ? { base: mode.ref, remote: mode.remote }
+              : { reuseBranch: mode.branch }),
+            dryRun: false,
+          },
+          { interactive: false }
+        );
+        return {
+          kind: "workspace-created" as const,
+          ticket: result.data.ticket,
+          memberCount: result.data.worktrees.length,
+        };
+      }
       if (action.kind === "inspect-workspace") {
         const pin = yield* this.inventory.beginWorkspaceRead(action.handle, revision).pipe(
           Effect.mapError((error) =>
