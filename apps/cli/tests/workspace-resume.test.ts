@@ -696,3 +696,182 @@ describe("safe existing workspace resume", () => {
     expect(result.data.resumable).toBe(true);
   });
 });
+
+it("manager inspects dirty readiness explicitly with revision and request deduplication", async () => {
+  const f = await fixture();
+  const { randomUUID } = await import("node:crypto");
+  const { createManager } = await import("../src/manager/server.ts");
+  const manager = await createManager(
+    { home: f.home, cwd: f.home, environment: { ...process.env } },
+    new Map([["/", { bytes: Buffer.from("Outpost"), type: "text/html" }]])
+  );
+  try {
+    const call = (route: string, body?: unknown, bearer?: string) =>
+      fetch(`${manager.origin}/api/v1/${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          Origin: manager.origin,
+          "X-Outpost-Manager": "1",
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+          ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const proof = new URL(manager.pairingLink()).hash.slice(6);
+    const bearer = (await (await call("pair", { proof })).json()).data.bearer;
+    const gitCalls = vi.spyOn(Process, "commandResult");
+    const snap = (await (await call("snapshot?section=workspaces", undefined, bearer)).json()).data;
+    await call("snapshot?section=workspaces", undefined, bearer);
+    expect(gitCalls).not.toHaveBeenCalled();
+    gitCalls.mockRestore();
+    const operation = { kind: "inspect-workspace", handle: snap.workspaces[0].handle };
+    const stale = { requestId: randomUUID(), revision: randomUUID(), operation };
+    expect((await call("operations", stale, bearer)).status).toBe(409);
+    writeFileSync(path.join(f.created.worktrees[0].path, "dirty-untracked.txt"), "local work");
+    const body = { requestId: randomUUID(), revision: snap.revision, operation };
+    expect((await call("operations", body, bearer)).status).toBe(202);
+    const result = await manager.operations.settled(body.requestId);
+    expect(result.state).toBe("succeeded");
+    expect(result.result).toMatchObject({
+      kind: "workspace-readiness",
+      readiness: "ready",
+      members: [{ readiness: "ready", workingState: "dirty", untrackedEntries: 1 }],
+    });
+    const missingPath = `${f.created.worktrees[0].path}-held`;
+    renameSync(f.created.worktrees[0].path, missingPath);
+    try {
+      const missing = { ...body, requestId: randomUUID() };
+      expect((await call("operations", missing, bearer)).status).toBe(202);
+      const unavailable = await manager.operations.settled(missing.requestId);
+      expect(unavailable.state).toBe("succeeded");
+      expect(unavailable.result).toMatchObject({
+        readiness: "not-ready",
+        reason: "needs-inspection",
+      });
+    } finally {
+      renameSync(missingPath, f.created.worktrees[0].path);
+    }
+    const inventory = manager.operations.inventory;
+    const pin = await Effect.runPromise(
+      inventory.beginWorkspaceRead(operation.handle, snap.revision)
+    );
+    const configPath = path.join(f.home, "config.json");
+    const originalConfig = readFileSync(configPath);
+    const altered = JSON.parse(originalConfig.toString());
+    altered.extraInstructions = "intervening edit";
+    writeFileSync(configPath, JSON.stringify(altered));
+    await Effect.runPromise(inventory.read().pipe(Effect.provide(NodeServices.layer)));
+    writeFileSync(configPath, originalConfig);
+    const returned = await Effect.runPromise(
+      inventory.read().pipe(Effect.provide(NodeServices.layer))
+    );
+    await expect(
+      Effect.runPromise(inventory.finishWorkspaceRead(operation.handle, pin))
+    ).rejects.toThrow();
+    let release!: () => void;
+    let reached!: () => void;
+    let gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let atFinish = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const realFinish = inventory.finishWorkspaceRead.bind(inventory);
+    const finishSpy = vi
+      .spyOn(inventory, "finishWorkspaceRead")
+      .mockImplementation((handle, readPin) =>
+        Effect.promise(() => {
+          reached();
+          return gate;
+        }).pipe(Effect.andThen(realFinish(handle, readPin)))
+      );
+    const interruptedView = { requestId: randomUUID(), revision: returned.revision, operation };
+    expect((await call("operations", interruptedView, bearer)).status).toBe(202);
+    await atFinish;
+    writeFileSync(configPath, JSON.stringify(altered));
+    await Effect.runPromise(inventory.read().pipe(Effect.provide(NodeServices.layer)));
+    release();
+    const invalidated = await manager.operations.settled(interruptedView.requestId);
+    expect(invalidated.state).toBe("failed");
+    expect(invalidated.result).toBeUndefined();
+    writeFileSync(configPath, originalConfig);
+    const current = await Effect.runPromise(
+      inventory.read().pipe(Effect.provide(NodeServices.layer))
+    );
+    gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    atFinish = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const cancelled = { requestId: randomUUID(), revision: current.revision, operation };
+    expect((await call("operations", cancelled, bearer)).status).toBe(202);
+    await atFinish;
+    expect(
+      (await (await call(`operations/${cancelled.requestId}/cancel`, {}, bearer)).json()).data.state
+    ).toBe("draining");
+    const cancelledResult = await manager.operations.settled(cancelled.requestId);
+    expect(cancelledResult.state).toBe("unknown");
+    expect(cancelledResult.result).toBeUndefined();
+    release();
+    finishSpy.mockRestore();
+    const movedHome = `${f.home}-held`;
+    renameSync(f.home, movedHome);
+    mkdirSync(f.home);
+    try {
+      const response = await call(
+        "operations",
+        { requestId: randomUUID(), revision: current.revision, operation },
+        bearer
+      );
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe("identity-changed");
+    } finally {
+      rmSync(f.home, { recursive: true, force: true });
+      renameSync(movedHome, f.home);
+    }
+    expect(JSON.stringify(result)).not.toContain(f.home);
+    expect((await (await call("operations", body, bearer)).json()).data).toEqual(result);
+    expect(
+      (
+        await call(
+          "operations",
+          { ...body, operation: { ...operation, handle: randomUUID() } },
+          bearer
+        )
+      ).status
+    ).toBe(409);
+  } finally {
+    await manager.stop();
+  }
+});
+
+it("manager preserves partial readiness for a workspace with one unavailable member", async () => {
+  const f = await fixture(2);
+  const { randomUUID } = await import("node:crypto");
+  const { createManager } = await import("../src/manager/server.ts");
+  const manager = await createManager(
+    { home: f.home, cwd: f.home, environment: { ...process.env } },
+    new Map([["/", { bytes: Buffer.from("Outpost"), type: "text/html" }]])
+  );
+  const held = `${f.created.worktrees[1].path}-held`;
+  try {
+    const view = await Effect.runPromise(
+      manager.operations.inventory.read().pipe(Effect.provide(NodeServices.layer))
+    );
+    renameSync(f.created.worktrees[1].path, held);
+    const id = randomUUID();
+    await manager.operations.submit({
+      requestId: id,
+      revision: view.revision,
+      operation: { kind: "inspect-workspace", handle: view.workspaces[0].handle },
+    });
+    const result = await manager.operations.settled(id);
+    expect(result.state).toBe("succeeded");
+    expect(result.result).toMatchObject({ readiness: "partial", reason: "needs-inspection" });
+    expect(result.result?.members.map((m) => m.readiness).sort()).toEqual(["not-ready", "ready"]);
+  } finally {
+    renameSync(held, f.created.worktrees[1].path);
+    await manager.stop();
+  }
+});

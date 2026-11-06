@@ -3,7 +3,7 @@ export const ASSET_FILES: ReadonlyArray<{ path: string; type: string; sha256: st
   {
     path: "index.html",
     type: "text/html; charset=utf-8",
-    sha256: "4687baa1ff2132b71c2b6d6daf1703c14c583e27b5157690889995d8d283edbb",
+    sha256: "a207c644a37e124d4bb84713dbda70efe355488b49423c91f321bc77be281a0a",
   },
   {
     path: "assets/index-B3vA-0HQ.css",
@@ -11,8 +11,8 @@ export const ASSET_FILES: ReadonlyArray<{ path: string; type: string; sha256: st
     sha256: "a3eda5090b51dcba1d5504561e3dd702a860eab7fd75a9660972f0f67c05660d",
   },
   {
-    path: "assets/index-Bt6CQUed.js",
+    path: "assets/index-CLWPXlO8.js",
     type: "text/javascript; charset=utf-8",
-    sha256: "d2c603ce277304140062c14327952ab65fe046f1560f847425198d2d321711ac",
+    sha256: "822b00291bb7386b05a181b6ab0ff04c7b0afd6d8c0abebd32722afd4ce5b2a7",
   },
 ];
