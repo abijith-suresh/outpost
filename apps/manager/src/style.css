@@ -274,6 +274,7 @@ dialog::backdrop {
   }
   .title {
     align-items: flex-start;
+    flex-direction: column;
   }
   .row {
     align-items: flex-start;

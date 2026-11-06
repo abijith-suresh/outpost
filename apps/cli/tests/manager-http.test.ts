@@ -193,3 +193,112 @@ it("returns stale409 only after the inside-lock revision check and preserves the
     "newer CLI value"
   );
 });
+it("imports a managed repository only after the locked revision check and deduplicates the request", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const fs = await import("node:fs/promises");
+  const source = path.join(home, "source");
+  const remote = path.join(home, "remote.git");
+  execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+  execFileSync("git", ["init", source], { stdio: "ignore" });
+  execFileSync("git", ["-C", source, "remote", "add", "origin", remote]);
+  const snapshot = await (await call("snapshot?section=repositories", undefined, bearer)).json();
+  const operation = { kind: "import", checkoutPath: source, remoteName: "origin" };
+  const stale = { requestId: randomUUID(), revision: randomUUID(), operation };
+  expect((await call("operations", stale, bearer)).status).toBe(409);
+  expect((await manager.operations.settled(stale.requestId)).state).toBe("failed");
+  const body = { requestId: randomUUID(), revision: snapshot.data.revision, operation };
+  expect((await call("operations", body, bearer)).status).toBe(202);
+  expect((await manager.operations.settled(body.requestId)).state).toBe("succeeded");
+  const inventory = await (await call("snapshot?section=repositories", undefined, bearer)).json();
+  expect(inventory.data.repositories).toHaveLength(1);
+  expect(inventory.data.repositories[0].kind).toBe("managed");
+  const registry = await fs.readFile(path.join(home, "repos.json"));
+  expect((await (await call("operations", body, bearer)).json()).data.state).toBe("succeeded");
+  expect(await fs.readFile(path.join(home, "repos.json"))).toEqual(registry);
+});
+it("reports an actionable remote selection error without exposing Git output", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const source = path.join(home, "source");
+  execFileSync("git", ["init", source], { stdio: "ignore" });
+  for (const name of ["origin", "other"])
+    execFileSync("git", ["-C", source, "remote", "add", name, path.join(home, name)]);
+  const snapshot = await (await call("snapshot?section=repositories", undefined, bearer)).json();
+  const id = randomUUID();
+  await call(
+    "operations",
+    {
+      requestId: id,
+      revision: snapshot.data.revision,
+      operation: { kind: "import", checkoutPath: source },
+    },
+    bearer
+  );
+  const result = await manager.operations.settled(id);
+  expect(result.state).toBe("failed");
+  expect(result.message).toBe("Enter the name of the remote to import.");
+});
+it("keeps a failed transport outcome uncertain after import admission", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const source = path.join(home, "source");
+  execFileSync("git", ["init", source], { stdio: "ignore" });
+  execFileSync("git", ["-C", source, "remote", "add", "origin", path.join(home, "missing.git")]);
+  const snapshot = await (await call("snapshot?section=repositories", undefined, bearer)).json();
+  const id = randomUUID();
+  await call(
+    "operations",
+    {
+      requestId: id,
+      revision: snapshot.data.revision,
+      operation: { kind: "import", checkoutPath: source },
+    },
+    bearer
+  );
+  const result = await manager.operations.settled(id);
+  expect(result.state).toBe("unknown");
+  expect(result.message).toContain("inspect with the CLI");
+});
+
+it("uses the existing opaque-handle action for borrowed tags and rejects stale edits", async () => {
+  const { home, manager, call, bearer } = await fixture();
+  const { execFileSync } = await import("node:child_process");
+  const fs = await import("node:fs/promises");
+  const source = path.join(home, "source");
+  await fs.mkdir(source);
+  execFileSync("git", ["init", source], { stdio: "ignore" });
+  const snapshot = async () =>
+    (await (await call("snapshot?section=repositories", undefined, bearer)).json()).data;
+  const apply = async (revision: string, operation: unknown) => {
+    const requestId = randomUUID();
+    const response = await call("operations", { requestId, revision, operation }, bearer);
+    return { response, state: await manager.operations.settled(requestId) };
+  };
+  expect(
+    (
+      await apply((await snapshot()).revision, {
+        kind: "register",
+        checkoutPath: source,
+        name: "source",
+      })
+    ).state.state
+  ).toBe("succeeded");
+  const before = await snapshot();
+  await fs.rename(source, `${source}-moved`);
+  const operation = {
+    kind: "tags",
+    handle: before.repositories[0].handle,
+    add: ["job", "backend", "job"],
+    remove: [],
+  };
+  expect((await apply(before.revision, operation)).state.state).toBe("succeeded");
+  const after = await snapshot();
+  expect(after.repositories[0].tags).toEqual(["backend", "job"]);
+  expect(after.repositories[0].kind).toBe("borrowed");
+  const registry = await readFile(path.join(home, "repos.json"));
+  expect((await apply(before.revision, { ...operation, add: ["frontend"] })).response.status).toBe(
+    409
+  );
+  expect(await readFile(path.join(home, "repos.json"))).toEqual(registry);
+});

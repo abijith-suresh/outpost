@@ -11,6 +11,7 @@ export const BorrowedRecordSchema = Schema.Struct({
   id: Schema.String.check(Schema.isPattern(/^local:[0-9a-f-]{36}$/)),
   name: semanticIdentifierSchema("repository name"),
   registeredAt: Schema.String,
+  tags: Schema.optional(Schema.Array(Schema.String)),
   anchor: IdentitySchema,
   privateGit: IdentitySchema,
   common: IdentitySchema,

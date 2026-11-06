@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ApplicationInvocation, type Invocation, InvocationError } from "../application/context.js";
 import type { RecordedInventory } from "../application/inventory.js";
+import { importRepository } from "../application/repo-import.js";
 import { unregisterRepository } from "../application/repo-remove.js";
 import { restoreRepository } from "../application/repo-restore.js";
 import { registerRepository } from "../application/repositories.js";
@@ -16,6 +17,11 @@ const text = Schema.String.check(Schema.isMaxLength(4096));
 const handle = Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/));
 const Action = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("register"), checkoutPath: text, name: text }),
+  Schema.Struct({
+    kind: Schema.Literal("import"),
+    checkoutPath: text,
+    remoteName: Schema.optional(text),
+  }),
   Schema.Struct({
     kind: Schema.Literals(["verify-registration", "unregister", "restore"]),
     handle,
@@ -118,6 +124,7 @@ export class ManagerOperations {
     this.ledger.set(input.requestId, record);
     this.active = true;
     let admitted = false;
+    let safeImportError: string | undefined;
     const context = {
       ...this.context,
       beforeLock: Effect.tryPromise({
@@ -160,6 +167,19 @@ export class ManagerOperations {
       this.execute(input.operation, input.revision).pipe(
         Effect.tapError((error) =>
           Effect.sync(() => {
+            if (
+              input.operation.kind === "import" &&
+              typeof error === "object" &&
+              error !== null &&
+              "safeInput" in error
+            ) {
+              if (error.safeInput === "path")
+                safeImportError = "Check the absolute checkout path and try again.";
+              if (error.safeInput === "remote")
+                safeImportError = "Check the checkout's remote name and try again.";
+              if (error.safeInput === "multiple-remotes")
+                safeImportError = "Enter the name of the remote to import.";
+            }
             if (!admitted && !record.error) {
               const reason: unknown =
                 typeof error === "object" && error !== null && "reason" in error
@@ -200,10 +220,12 @@ export class ManagerOperations {
               : "Action completed.";
         },
         () => {
-          result.state = admitted ? "unknown" : "failed";
-          result.message = admitted
-            ? "The action did not complete normally. Preserve state and inspect with the CLI before retrying."
-            : "Action refused before admission. Reload recorded state and inspect the selected input.";
+          result.state = admitted && !safeImportError ? "unknown" : "failed";
+          result.message =
+            safeImportError ??
+            (admitted
+              ? "The action did not complete normally. Preserve state and inspect with the CLI before retrying."
+              : "Action refused before admission. Reload recorded state and inspect the selected input.");
         }
       )
       .finally(() => {
@@ -216,6 +238,14 @@ export class ManagerOperations {
   }
   private execute(action: Action, revision: string) {
     return Effect.gen({ self: this }, function* () {
+      if (action.kind === "import") {
+        const path = yield* Path.Path;
+        if (!path.isAbsolute(action.checkoutPath))
+          return yield* Effect.fail(new Error("Absolute path required"));
+        return yield* importRepository(action.checkoutPath, {
+          remoteName: action.remoteName || undefined,
+        });
+      }
       if (action.kind === "register") {
         const path = yield* Path.Path;
         if (!path.isAbsolute(action.checkoutPath))

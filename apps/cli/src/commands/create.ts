@@ -1337,7 +1337,7 @@ export function runCreate(
       const registry = yield* loadRepoRegistry(outpostHome).pipe(
         Effect.mapError((error) => usageError(error.message))
       );
-      const repoIds = registry.repos
+      const repoIds = [...registry.repos, ...(registry.borrowedRepositories ?? [])]
         .filter((repo) => matchesTags(repo, parsedArgsInput.tags ?? []))
         .map((repo) => repo.id);
       if (!repoIds.length)
@@ -1436,7 +1436,7 @@ export function runCreate(
         })),
       ],
       tagOnly
-        ? registry.repos
+        ? [...registry.repos, ...(registry.borrowedRepositories ?? [])]
             .filter((repo) => matchesTags(repo, parsedArgs.tags ?? []))
             .map((repo) => repo.id)
         : parsedArgs.repoIds
