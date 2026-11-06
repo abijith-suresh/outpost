@@ -128,26 +128,48 @@ function readBounded(file, limit) {
     fs.closeSync(fd);
   }
 }
-function verifyPinnedNpm(entry) {
+// Optional parent-only check observations; never replace a check's result/refusal.
+function notifyPreflight(trace, kind, id, state, match = null) {
+  if (!trace) return;
   try {
-    if (process.versions.node !== "24.22.1" || !path.isAbsolute(entry))
-      throw invalid("pin-mismatch");
+    trace(kind, id, state, match);
+  } catch {
+    /* Preserve original outcome. */
+  }
+}
+function verifyPinnedNpm(entry, trace) {
+  try {
+    const nodeMatch = process.versions.node === "24.22.1";
+    notifyPreflight(trace, "node", 0, nodeMatch ? "match" : "mismatch", nodeMatch);
+    if (!nodeMatch) throw invalid("pin-mismatch");
+    const absolute = path.isAbsolute(entry);
+    notifyPreflight(trace, "layout", 1, absolute ? "match" : "mismatch", absolute);
+    if (!absolute) throw invalid("pin-mismatch");
+    notifyPreflight(trace, "layout", 2, "unavailable");
     const canonical = fs.realpathSync.native(entry);
-    if (
-      path.basename(canonical) !== "npm-cli.js" ||
-      path.basename(path.dirname(canonical)) !== "bin"
-    )
-      throw invalid("pin-mismatch");
+    notifyPreflight(trace, "layout", 2, "match", true);
+    const leafMatch = path.basename(canonical) === "npm-cli.js";
+    notifyPreflight(trace, "layout", 3, leafMatch ? "match" : "mismatch", leafMatch);
+    if (!leafMatch) throw invalid("pin-mismatch");
+    const parentMatch = path.basename(path.dirname(canonical)) === "bin";
+    notifyPreflight(trace, "layout", 4, parentMatch ? "match" : "mismatch", parentMatch);
+    if (!parentMatch) throw invalid("pin-mismatch");
     const root = path.dirname(path.dirname(canonical));
-    if (JSON.parse(readBounded(path.join(root, "package.json"), 65536)).version !== "11.16.0")
-      throw invalid("pin-mismatch");
+    notifyPreflight(trace, "version", 0, "read-refused");
+    const versionMatch =
+      JSON.parse(readBounded(path.join(root, "package.json"), 65536)).version === "11.16.0";
+    notifyPreflight(trace, "version", 0, versionMatch ? "match" : "mismatch", versionMatch);
+    if (!versionMatch) throw invalid("pin-mismatch");
+    let id = 0;
     for (const [name, expected] of Object.entries(PINNED)) {
-      if (
+      id++;
+      notifyPreflight(trace, "file", id, "read-refused");
+      const match =
         createHash("sha256")
           .update(readBounded(path.join(root, name), 256 * 1024))
-          .digest("hex") !== expected
-      )
-        throw invalid("pin-mismatch");
+          .digest("hex") === expected;
+      notifyPreflight(trace, "file", id, match ? "match" : "hash-mismatch", match);
+      if (!match) throw invalid("pin-mismatch");
     }
     return { root, entry: canonical };
   } catch {
@@ -362,9 +384,10 @@ function createWaitObserver({
   };
 }
 
-function attachPinnedNpmObserver(entry, options = {}) {
-  const verified = verifyPinnedNpm(entry);
+function attachPinnedNpmObserver(entry, options = {}, trace) {
+  const verified = verifyPinnedNpm(entry, trace);
   let Arborist, Fetcher;
+  notifyPreflight(trace, "hook-load", 0, "load-refused");
   try {
     Arborist = require(path.join(verified.root, "node_modules/@npmcli/arborist"));
     Fetcher = require(path.join(verified.root, "node_modules/pacote/lib/fetcher.js"));
@@ -378,14 +401,19 @@ function attachPinnedNpmObserver(entry, options = {}) {
       extract: Fetcher.prototype.extract,
       tarballStream: Fetcher.prototype.tarballStream,
     };
+    notifyPreflight(trace, "hook-load", 0, "match", true);
+    let id = 0;
     for (const [name, expected] of Object.entries(HOOK_HASHES)) {
-      if (
-        typeof methods[name] !== "function" ||
+      id++;
+      notifyPreflight(trace, "hook", id, "shape-mismatch");
+      if (typeof methods[name] !== "function") throw invalid("hook-mismatch");
+      notifyPreflight(trace, "hook", id, "read-refused");
+      const match =
         createHash("sha256")
           .update(Function.prototype.toString.call(methods[name]))
-          .digest("hex") !== expected
-      )
-        throw invalid("hook-mismatch");
+          .digest("hex") === expected;
+      notifyPreflight(trace, "hook", id, match ? "match" : "hash-mismatch", match);
+      if (!match) throw invalid("hook-mismatch");
     }
   } catch {
     throw invalid("hook-mismatch");
@@ -406,6 +434,7 @@ function attachPinnedNpmObserver(entry, options = {}) {
       else delete prototype[key];
     });
   }
+  notifyPreflight(trace, "attach", 0, "attach-refused");
   try {
     patch(
       Arborist.prototype,
@@ -473,6 +502,7 @@ function attachPinnedNpmObserver(entry, options = {}) {
     observer.stop();
     throw invalid("hook-mismatch");
   }
+  notifyPreflight(trace, "attach", 0, "match", true);
   return {
     ...observer,
     entry: verified.entry,

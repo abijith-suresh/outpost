@@ -465,6 +465,10 @@ install's 180-second deadline and scripts-disabled arguments. It writes bounded,
 private, opaque wait observations inside owned scratch, then checks source
 preservation and cleans only the directory it still owns. It reports fixed
 categories instead of raw child output. No raw npm logs are uploaded.
+Two parent-only preflight records identify exact-version/layout matches and
+pinned-file/hook results with fixed numeric IDs. They reuse the existing checks,
+stop at the first refusal, and never print observed versions, paths or hashes.
+The fixed outer stage identifies the parent operation, not proof a child ran.
 
 This observer changes scheduling and rejection observation. Resource counts cover
 only whitelisted resources under observed attempt contexts. Counts do not identify
@@ -476,5 +480,5 @@ Run the diagnostic light guards using the supported toolchain, with `npm_execpat
 pointing to the verified installed npm JavaScript entry:
 
 ```sh
-node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs
+node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs scripts/npm-wait-preflight.test.mjs
 ```

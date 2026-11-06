@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import observer from "./npm-wait-observer.cjs";
 import owned from "./npm-wait-owned.cjs";
+import { parentPreflight } from "./npm-wait-preflight.mjs";
 import { snapshotCommit, sourceFingerprint } from "./prerelease.mjs";
 export const TARGET = Object.freeze({
   source: "0f3e0caf26b4e9a73f5c453eb59465dc1598041c",
@@ -24,11 +25,12 @@ const safe = (sink, value) => {
     /* Never replace child outcome. */
   }
 };
-export function locateNpm(command) {
+export function locateNpm(command, trace) {
   if (!path.isAbsolute(command) || path.basename(command).toLowerCase() !== "npm.cmd")
     throw refusal("npm-locator");
   return observer.verifyPinnedNpm(
-    path.join(path.dirname(command), "node_modules/npm/bin/npm-cli.js")
+    path.join(path.dirname(command), "node_modules/npm/bin/npm-cli.js"),
+    trace
   ).entry;
 }
 function git(root, args) {
@@ -120,13 +122,30 @@ export async function measureOwned(root, directory, identity, operation, sink = 
   if (sourceFailure) throw sourceFailure;
   return result;
 }
+const RUNNER_STAGES = new Set([
+  "locator",
+  "parent-attach",
+  "source-preflight",
+  "source-files",
+  "diagnostic-copy",
+  "warmup",
+  "measured-child",
+]);
+let runnerStage = "locator";
+const markStage = (stage) => {
+  if (RUNNER_STAGES.has(stage)) runnerStage = stage;
+};
 export async function runProbe(
   root,
   entry,
   sink = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 ) {
-  const verified = observer.attachPinnedNpmObserver(entry);
+  markStage("parent-attach");
+  const verified = parentPreflight(2, sink, (trace) =>
+    observer.attachPinnedNpmObserver(entry, {}, trace)
+  );
   verified.stop();
+  markStage("source-preflight");
   sourceFingerprint(root); // Preflight existing source/promisor restrictions before setup or install.
   const diagnosticHead = git(root, ["rev-parse", "HEAD"]).toString().trim();
   if (!/^[a-f0-9]{40}$/.test(diagnosticHead)) throw refusal("diagnostic-head");
@@ -150,6 +169,7 @@ export async function runProbe(
   } catch {
     throw refusal("source-unavailable");
   }
+  markStage("source-files");
   validateSourceFiles(root); // Root warmup lock parity, before any install.
   try {
     const blob = (file) =>
@@ -177,6 +197,7 @@ export async function runProbe(
   );
   let measured = false;
   try {
+    markStage("diagnostic-copy");
     // Copy exact reviewed diagnostic bytes before baseline; no source writes in measurement.
     const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
     const diagnosticHashes = {};
@@ -200,6 +221,7 @@ export async function runProbe(
     )
       throw refusal("source-pins");
     // Same ordinary root ci warmup as candidate CI, before the measured baseline.
+    markStage("warmup");
     execFileSync(process.execPath, [entry, "ci"], {
       cwd: root,
       maxBuffer: MAX_BUFFER,
@@ -218,6 +240,7 @@ export async function runProbe(
       diagnosticOnly: true,
       timingMayBePerturbed: true,
     });
+    markStage("measured-child");
     measured = true;
     return await measureOwned(
       root,
@@ -264,7 +287,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     if (process.argv.length !== 4 || process.argv[2] !== "--npm-command")
       throw refusal("invocation");
-    await runProbe(process.cwd(), locateNpm(process.argv[3]));
+    const sink = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+    const entry = parentPreflight(1, sink, (trace) => locateNpm(process.argv[3], trace));
+    await runProbe(process.cwd(), entry, sink);
   } catch (error) {
     const allowed = [
       "invocation",
@@ -294,7 +319,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
             : Number.isInteger(error.status)
               ? "child-exit"
               : "unknown";
-    process.stderr.write(`${JSON.stringify({ npmWaitProbeFailure: 1, category })}\n`);
+    process.stderr.write(
+      `${JSON.stringify({ npmWaitProbeFailure: 1, category, stage: runnerStage })}\n`
+    );
     process.exitCode =
       Number.isInteger(error.status) && error.status > 0 && error.status <= 255 ? error.status : 1;
   }
