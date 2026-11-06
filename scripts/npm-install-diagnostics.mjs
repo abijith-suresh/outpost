@@ -33,6 +33,18 @@ const empty = () => ({
   bounded: true,
   truncated: false,
   commandTimingObserved: false,
+  lineEndings: { lf: false, crlf: false, embeddedCR: false },
+  logLevels: { timing: 0, http: 0, silly: 0, verbose: 0, info: 0, warn: 0, error: 0, notice: 0 },
+  unknownRecordLines: 0,
+  unrecognizedTimingRecords: 0,
+  progress: {
+    idealTreeBuildDepsRecords: 0,
+    fetchManifestRecords: 0,
+    reifyMovesRecords: 0,
+    optionalDependencyFailureRecords: 0,
+    tarballCacheMissingRecords: 0,
+    unfinishedKnownPhaseRecords: 0,
+  },
   cacheHits: 0,
   cacheMisses: 0,
   httpFetches: 0,
@@ -105,7 +117,11 @@ export function summarizeNpmInstallLogs(directory) {
         }
         // Ignore an unterminated last line instead of interpreting partial evidence.
         const lines = text.slice(0, text.lastIndexOf("\n") + 1).split("\n");
-        for (const line of lines) {
+        for (const rawLine of lines) {
+          if (!rawLine) continue;
+          // npm11.16 writes os.EOL. Remove only its terminal CR, not arbitrary whitespace.
+          const crlf = rawLine.endsWith("\r");
+          const line = crlf ? rawLine.slice(0, -1) : rawLine;
           if (!line) continue;
           if (summary.linesRead >= MAX_LINES) {
             incomplete = true;
@@ -113,12 +129,32 @@ export function summarizeNpmInstallLogs(directory) {
             break;
           }
           summary.linesRead++;
+          summary.lineEndings.crlf ||= crlf;
+          summary.lineEndings.lf ||= !crlf;
+          summary.lineEndings.embeddedCR ||= line.includes("\r");
+          const prefix = /^\d+ (timing|http|silly|verbose|info|warn|error|notice)(?: |$)/.exec(
+            line
+          );
+          if (prefix) summary.logLevels[prefix[1]]++;
+          else summary.unknownRecordLines++;
+          const progress = summary.progress;
+          if (/^\d+ silly idealTree buildDeps$/.test(line)) progress.idealTreeBuildDepsRecords++;
+          if (/^\d+ silly fetch manifest(?: |$)/.test(line)) progress.fetchManifestRecords++;
+          if (/^\d+ silly reify moves(?: |$)/.test(line)) progress.reifyMovesRecords++;
+          if (/^\d+ verbose reify failed optional dependency(?: |$)/.test(line))
+            progress.optionalDependencyFailureRecords++;
+          if (/^\d+ silly tarball no local data for(?: |$)/.test(line))
+            progress.tarballCacheMissingRecords++;
+          const unfinished = /^\d+ silly unfinished npm timer ([A-Za-z:-]+) \d{1,16}$/.exec(line);
+          if (unfinished && phases.includes(unfinished[1])) progress.unfinishedKnownPhaseRecords++;
           const match = /^\d+ timing ([A-Za-z:-]+) Completed in (\d{1,9})ms$/.exec(line);
           if (match && phases.includes(match[1])) {
             const observed = timings.get(match[1]) ?? { phase: match[1], count: 0, maxMs: 0 };
             observed.count++;
             observed.maxMs = Math.max(observed.maxMs, Number(match[2]));
             timings.set(match[1], observed);
+          } else if (prefix?.[1] === "timing") {
+            summary.unrecognizedTimingRecords++;
           }
           if (/^\d+ http (?:cache|fetch) /.test(line)) {
             if (/\(cache hit\)$/.test(line)) summary.cacheHits++;

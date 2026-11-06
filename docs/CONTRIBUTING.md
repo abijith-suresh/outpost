@@ -411,6 +411,11 @@ failure never changes an operation's result, guards, cleanup or deadlines.
 Snapshot npm installation adds timing logs only under its existing owned scratch.
 A bounded summary reads at most eight log files, 256 KiB per file, 1 MiB total
 and 16,384 lines. It emits fixed timing phases, numeric counts and booleans only.
+The parser normalizes npm's LF/Windows CRLF terminators and reports line-ending
+booleans, fixed log-level counts and known progress-record counts without raw fields.
+Unrecognized timing records are counted rather than exposing their keys. npm timing
+records describe completed timers; missing completion does not prove a timer never
+started, and zero parsed counters do not establish no network or filesystem activity.
 Missing, truncated or unreadable evidence is unknown/incomplete; observed npm
 progress is not an install-success or root-cause claim. Raw logs are neither
 printed nor uploaded and remain subject to existing owned-scratch cleanup.

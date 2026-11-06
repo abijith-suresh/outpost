@@ -800,3 +800,65 @@ test("actual pinned npm ci emits bounded timing evidence with scripts still disa
     assert.equal(summaries[0].commandTimingObserved, true);
     assert.throws(() => readFileSync(join(consumer, "SCRIPT_EXECUTED")), { code: "ENOENT" });
   }));
+
+test("npm LF and CRLF grammar produce equivalent fixed progress observations", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    // Pinned npm11.16 log-file.js uses os.EOL and formatWithOptions numeric/level/title prefixes.
+    const rows = [
+      "1 timing idealTree Completed in 91ms",
+      "2 timing reify:unpack Completed in 11887ms",
+      "3 http cache https://PRIVATE.example/hidden 1ms (cache hit)",
+      "4 http fetch GET 200 https://PRIVATE.example/hidden 1ms (cache miss)",
+      "5 error code ETIMEDOUT",
+      "6 silly idealTree buildDeps",
+      "7 silly fetch manifest PRIVATE_SPECIFIER",
+      "8 silly reify moves { PRIVATE_PATH: 'PRIVATE' }",
+      "9 verbose reify failed optional dependency PRIVATE_PATH",
+      "10 silly tarball no local data for PRIVATE_URI. Extracting by manifest.",
+      "11 silly unfinished npm timer reify 1793910000000",
+      "12 timing PRIVATE_PHASE Completed in 1ms",
+      "13 timing reify unsupported PRIVATE_GRAMMAR",
+      "PRIVATE_CONTINUATION",
+      "",
+    ];
+    const results = [];
+    for (const eol of ["\n", "\r\n"]) {
+      const selected = join(dir, eol === "\n" ? "lf" : "crlf");
+      mkdirSync(selected);
+      writeFileSync(join(selected, "fixture.log"), rows.join(eol));
+      results.push(summarizeNpmInstallLogs(selected));
+    }
+    const withoutEol = ({ lineEndings: _lineEndings, ...summary }) => summary;
+    assert.deepEqual(withoutEol(results[0]), withoutEol(results[1]));
+    assert.doesNotMatch(JSON.stringify(results), /PRIVATE|https|unsupported/);
+  }));
+
+test("npm format summary distinguishes unknown timing forms and progress without claiming completion", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    writeFileSync(
+      join(dir, "fixture.log"),
+      [
+        "1 silly idealTree buildDeps\r\n",
+        "2 timing PRIVATE_PHASE Completed in 1ms\r\n",
+        "3 silly reify moves PRIVATE_PATH\r\n",
+        "4 verbose PRIVATE\rembedded\r\n",
+        "PRIVATE_UNFRAMED\r\n",
+      ].join("")
+    );
+    const result = summarizeNpmInstallLogs(dir);
+    assert.deepEqual(result.lineEndings, { lf: false, crlf: true, embeddedCR: true });
+    assert.equal(result.logLevels.timing, 1);
+    assert.equal(result.unrecognizedTimingRecords, 1);
+    assert.equal(result.unknownRecordLines, 1);
+    assert.equal(result.progress.reifyMovesRecords, 1);
+    assert.equal(result.progress.idealTreeBuildDepsRecords, 1);
+    assert.equal(result.commandTimingObserved, false);
+    assert.deepEqual(result.timings, []);
+    assert.equal(
+      Object.values(result.logLevels).reduce((a, b) => a + b, 0) + result.unknownRecordLines,
+      result.linesRead
+    );
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE|embedded\\r/);
+  }));
