@@ -85,6 +85,8 @@ const RESOURCES = Object.freeze({
   TCPWRAP: "tcp",
   TLSWRAP: "tls",
 });
+const FS_CLASSES = Object.freeze(["callback", "promise"]);
+const FS_COUNT_MAX = 65535;
 const RESOURCE_NAMES = Object.freeze(["fs", "decompression", "dns", "tcp", "tls"]);
 const zeroResources = () => Object.fromEntries(RESOURCE_NAMES.map((name) => [name, 0]));
 const invalid = (reason) =>
@@ -205,7 +207,18 @@ function createWaitObserver({
     }
   };
   const elapsed = () =>
-    safe(() => Math.max(0, Math.min(2147483647, Math.floor(clock() - start)))) ?? 0;
+    safe(() => {
+      const value = clock() - start;
+      if (!Number.isFinite(value) || value < 0) {
+        observerFault = true;
+        return 0;
+      }
+      if (value >= 2147483647) {
+        capacityLoss = true;
+        return 2147483647;
+      }
+      return Math.floor(value);
+    }) ?? 0;
   const recordState = (row, stage, state) =>
     safe(() => {
       if (row && STAGES.includes(stage)) row[stage] = state;
@@ -257,6 +270,54 @@ function createWaitObserver({
     }
     return trackPromise(stage, value);
   }
+  const newFsStats = () => ({
+    initialized: 0,
+    before: 0,
+    after: 0,
+    destroyed: 0,
+    lastBeforeAt: null,
+    lastAfterAt: null,
+  });
+  const increment = (stats, key) => {
+    if (stats[key] < FS_COUNT_MAX) stats[key]++;
+    if (stats[key] === FS_COUNT_MAX) capacityLoss = true;
+  };
+  const age = (now, at) => {
+    if (at === null) return null;
+    if (!Number.isInteger(at) || at < 0 || at > now) {
+      observerFault = true;
+      return 0;
+    }
+    return Math.min(2147483647, now - at);
+  };
+  function fsContext(resource) {
+    const row = attempts.get(resource.id);
+    if (!row || !FS_CLASSES.includes(resource.fsClass) || !row.fsActivity) {
+      observerFault = true;
+      return undefined;
+    }
+    const stats = row.fsActivity[resource.fsClass];
+    if (!stats || typeof stats !== "object") {
+      observerFault = true;
+      return undefined;
+    }
+    return stats;
+  }
+  function fsCallback(asyncId, event) {
+    safe(() => {
+      const resource = resources.get(asyncId);
+      if (stopped || !resource || resource.kind !== "fs") return;
+      const stats = fsContext(resource);
+      if (!stats) return;
+      if (event === "after" && !resource.beforeSeen) {
+        observerFault = true;
+        return;
+      }
+      increment(stats, event);
+      stats[event === "before" ? "lastBeforeAt" : "lastAfterAt"] = elapsed();
+      if (event === "before") resource.beforeSeen = true;
+    });
+  }
   function runAttempt(optional, operation) {
     if (stopped) return operation();
     if (attempts.size >= LIMITS.attempts) {
@@ -266,6 +327,7 @@ function createWaitObserver({
     const row = {
       id: attempts.size + 1,
       optional: optional === true,
+      fsActivity: { callback: newFsStats(), promise: newFsStats() },
       ...Object.fromEntries(STAGES.map((stage) => [stage, "unobserved"])),
     };
     attempts.set(row.id, row);
@@ -276,16 +338,45 @@ function createWaitObserver({
       safe(() => {
         const row = als.getStore(),
           kind = Object.hasOwn(RESOURCES, type) ? RESOURCES[type] : undefined;
-        if (stopped || !row || !kind) return;
+        if (stopped) return;
+        if (resources.has(asyncId)) {
+          observerFault = true;
+          return;
+        }
+        if (!row || !kind) return;
+        if (attempts.get(row.id) !== row) {
+          observerFault = true;
+          return;
+        }
         if (resources.size >= LIMITS.resources) {
           capacityLoss = true;
           return;
         }
-        resources.set(asyncId, { id: row.id, kind });
+        const resource = { id: row.id, kind };
+        if (kind === "fs") {
+          resource.fsClass = type === "FSREQCALLBACK" ? "callback" : "promise";
+          resource.createdAt = elapsed();
+          resource.beforeSeen = false;
+          increment(row.fsActivity[resource.fsClass], "initialized");
+        }
+        resources.set(asyncId, resource);
       });
     },
+    before(asyncId) {
+      fsCallback(asyncId, "before");
+    },
+    after(asyncId) {
+      fsCallback(asyncId, "after");
+    },
     destroy(asyncId) {
-      safe(() => resources.delete(asyncId));
+      safe(() => {
+        const resource = resources.get(asyncId);
+        if (resource?.kind === "fs") {
+          const stats = fsContext(resource);
+          if (stats) increment(stats, "destroyed");
+        }
+        resources.delete(asyncId);
+      });
     },
   };
   let hook;
@@ -320,14 +411,57 @@ function createWaitObserver({
       if (row.node === "pending") pending.push(row);
     }
     const livePerAttempt = new Map();
+    const fsLive = new Map();
     for (const resource of resources.values()) {
       live[resource.kind]++;
       if (!livePerAttempt.has(resource.id)) livePerAttempt.set(resource.id, zeroResources());
       livePerAttempt.get(resource.id)[resource.kind]++;
+      if (resource.kind === "fs") {
+        if (!fsContext(resource)) continue;
+        if (!fsLive.has(resource.id))
+          fsLive.set(
+            resource.id,
+            Object.fromEntries(
+              FS_CLASSES.map((kind) => [
+                kind,
+                { liveNeverSeen: 0, liveSeen: 0, oldestLiveAgeMs: null },
+              ])
+            )
+          );
+        const entry = fsLive.get(resource.id)[resource.fsClass];
+        entry[resource.beforeSeen ? "liveSeen" : "liveNeverSeen"]++;
+        entry.oldestLiveAgeMs = Math.max(
+          entry.oldestLiveAgeMs ?? 0,
+          age(elapsedMs, resource.createdAt)
+        );
+      }
     }
     const rowsTruncated = pending.length > LIMITS.rows;
+    // Explicit fields only. Internal timestamps and resource IDs never enter output.
+    const pendingRows = pending.slice(0, LIMITS.rows).map((row) => ({
+      id: row.id,
+      optional: row.optional,
+      ...Object.fromEntries(STAGES.map((stage) => [stage, row[stage]])),
+      liveResources: livePerAttempt.get(row.id) ?? zeroResources(),
+      fsActivity: FS_CLASSES.map((kind) => {
+        const stats = row.fsActivity[kind];
+        const live = fsLive.get(row.id)?.[kind];
+        return {
+          kind,
+          initialized: stats.initialized,
+          before: stats.before,
+          after: stats.after,
+          destroyed: stats.destroyed,
+          liveNeverSeen: live?.liveNeverSeen ?? 0,
+          liveSeen: live?.liveSeen ?? 0,
+          oldestLiveAgeMs: live?.oldestLiveAgeMs ?? null,
+          lastBeforeAgeMs: age(elapsedMs, stats.lastBeforeAt),
+          lastAfterAgeMs: age(elapsedMs, stats.lastAfterAt),
+        };
+      }),
+    }));
     return {
-      npmWaitProbe: 1,
+      npmWaitProbe: 2,
       valid: true,
       coverage: capacityLoss || observerFault || rowsTruncated ? "unknown" : "observed",
       elapsedMs,
@@ -339,9 +473,7 @@ function createWaitObserver({
       optionalRejectedHandled,
       liveResources: live,
       phases: PHASES.map((phase) => ({ phase, ...phaseState.get(phase) })),
-      pending: pending
-        .slice(0, LIMITS.rows)
-        .map((row) => ({ ...row, liveResources: livePerAttempt.get(row.id) ?? zeroResources() })),
+      pending: pendingRows,
     };
   }
   function emit() {
@@ -349,7 +481,7 @@ function createWaitObserver({
       let data = snapshot();
       if (Buffer.byteLength(JSON.stringify(data)) > LIMITS.bytes) {
         observerFault = true;
-        data = { npmWaitProbe: 1, valid: false, coverage: "unknown", reason: "checkpoint-bound" };
+        data = { npmWaitProbe: 2, valid: false, coverage: "unknown", reason: "checkpoint-bound" };
       }
       sink(data);
       return true;
@@ -527,6 +659,7 @@ module.exports = {
   STAGES,
   STATES,
   RESOURCE_NAMES,
+  FS_CLASSES,
   verifyPinnedNpm,
   createWaitObserver,
   attachPinnedNpmObserver,
@@ -561,7 +694,7 @@ function validateWaitCheckpoint(value) {
   ];
   if (
     !keys(value, topKeys) ||
-    value.npmWaitProbe !== 1 ||
+    value.npmWaitProbe !== 2 ||
     value.valid !== true ||
     !["observed", "unknown"].includes(value.coverage) ||
     !count(value.elapsedMs, 2147483647) ||
@@ -607,7 +740,7 @@ function validateWaitCheckpoint(value) {
   const ids = new Set();
   for (const row of value.pending) {
     if (
-      !keys(row, ["id", "optional", ...STAGES, "liveResources"]) ||
+      !keys(row, ["id", "optional", ...STAGES, "liveResources", "fsActivity"]) ||
       !count(row.id, value.trackedAttempts) ||
       row.id === 0 ||
       ids.has(row.id) ||
@@ -617,6 +750,43 @@ function validateWaitCheckpoint(value) {
       !resourceCounts(row.liveResources)
     )
       throw invalid("checkpoint-invalid");
+    if (!Array.isArray(row.fsActivity) || row.fsActivity.length !== 2)
+      throw invalid("checkpoint-invalid");
+    let fsLiveTotal = 0;
+    for (const [index, stats] of row.fsActivity.entries()) {
+      if (
+        !keys(stats, [
+          "kind",
+          "initialized",
+          "before",
+          "after",
+          "destroyed",
+          "liveNeverSeen",
+          "liveSeen",
+          "oldestLiveAgeMs",
+          "lastBeforeAgeMs",
+          "lastAfterAgeMs",
+        ]) ||
+        stats.kind !== FS_CLASSES[index] ||
+        !["initialized", "before", "after", "destroyed"].every((key) =>
+          count(stats[key], FS_COUNT_MAX)
+        ) ||
+        !count(stats.liveNeverSeen, LIMITS.resources) ||
+        !count(stats.liveSeen, LIMITS.resources) ||
+        !["oldestLiveAgeMs", "lastBeforeAgeMs", "lastAfterAgeMs"].every(
+          (key) => stats[key] === null || count(stats[key], 2147483647)
+        ) ||
+        (stats.liveNeverSeen + stats.liveSeen === 0) !== (stats.oldestLiveAgeMs === null) ||
+        (stats.before === 0) !== (stats.lastBeforeAgeMs === null) ||
+        (stats.after === 0) !== (stats.lastAfterAgeMs === null) ||
+        (value.coverage === "observed" &&
+          (stats.initialized - stats.destroyed !== stats.liveNeverSeen + stats.liveSeen ||
+            [stats.initialized, stats.before, stats.after, stats.destroyed].includes(FS_COUNT_MAX)))
+      )
+        throw invalid("checkpoint-invalid");
+      fsLiveTotal += stats.liveNeverSeen + stats.liveSeen;
+    }
+    if (fsLiveTotal !== row.liveResources.fs) throw invalid("checkpoint-invalid");
     ids.add(row.id);
   }
   return value;
@@ -625,7 +795,7 @@ function readWaitCheckpoint(file) {
   try {
     return validateWaitCheckpoint(JSON.parse(readBounded(file, LIMITS.bytes).toString("utf8")));
   } catch {
-    return { npmWaitProbe: 1, valid: false, coverage: "unknown", reason: "checkpoint-unavailable" };
+    return { npmWaitProbe: 2, valid: false, coverage: "unknown", reason: "checkpoint-unavailable" };
   }
 }
 module.exports.validateWaitCheckpoint = validateWaitCheckpoint;
