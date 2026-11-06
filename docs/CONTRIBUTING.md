@@ -477,14 +477,23 @@ Two parent-only preflight records identify exact-version/layout matches and
 pinned-file/hook results with fixed numeric IDs. They reuse the existing checks,
 stop at the first refusal, and never print observed versions, paths or hashes.
 The fixed outer stage identifies the parent operation, not proof a child ran.
-Private checkpoint schema v2 adds two fixed filesystem-request summaries per
+Private checkpoint schema v3 retains two fixed filesystem-request summaries per
 pending attempt: callback-event counts, resource ages and whether a callback was
 observed. Counts saturate at 65535 and loss/fault makes coverage unknown. Before
 and after describe JavaScript callback dispatch, and destruction is resource
 lifetime; none proves byte progress or OS completion. Raw IDs and internal
 timestamps are not serialized. The existing live ZLIB count is not a pending
 asynchronous decompression task: the pinned minizlib processes chunks synchronously.
-Historical v1 receipts remain separate evidence; the v2 reader refuses v1 input.
+Two additional exactly pinned class methods report positive ReadStream read-byte
+counts/last age and returned tar UNPEND work-retirement counts/last age. Read
+classification handles positive, zero and error callbacks without inspecting
+buffers or error objects. The read class is not exclusively cached tar input;
+zero callbacks can be synthetic EOF. Retirements include skips/errors and do not
+mean successful files. Reported bytes are capped at 2147483647 and retirements
+at 65535, with saturation unknown. The original eleven source/five method pins
+remain exact, with only two required source/method matches added. Parent fixed
+preflight rows therefore cover thirteen sources and seven methods.
+Historical v1/v2 receipts remain separate; the v3 reader refuses both versions.
 This route includes npm-run wrapper context, unlike the earlier direct-Node probe.
 It is closer to the preparation helper convention but remains a diagnostic
 execution with different setup and no Chromium stage, not an identical candidate.
@@ -499,5 +508,5 @@ Run the diagnostic light guards using the supported toolchain, with `npm_execpat
 pointing to the verified installed npm JavaScript entry:
 
 ```sh
-node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs scripts/npm-wait-preflight.test.mjs scripts/npm-wait-fs.test.cjs
+node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs scripts/npm-wait-preflight.test.mjs scripts/npm-wait-fs.test.cjs scripts/npm-wait-semantic.test.cjs
 ```

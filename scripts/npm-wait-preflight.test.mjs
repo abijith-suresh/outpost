@@ -15,7 +15,11 @@ const installed = observer.verifyPinnedNpm(entry);
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outpost-preflight-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  for (const name of ["package.json", ...Object.keys(observer.PINNED)]) {
+  for (const name of [
+    "package.json",
+    ...Object.keys(observer.PINNED),
+    ...Object.keys(observer.EXTRA_PINNED),
+  ]) {
     const file = path.join(dir, name);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.copyFileSync(path.join(installed.root, name), file);

@@ -33,6 +33,16 @@ const PINNED = Object.freeze({
   "node_modules/promise-all-reject-late/index.js":
     "d73d2201981f5c083f8cd7b8d80927e466c53a03dbea80167d7e67b918f7412d",
 });
+const EXTRA_PINNED = Object.freeze({
+  "node_modules/fs-minipass/lib/index.js":
+    "912b77fd03d013203ad1c3fa7c8712660f599e4d194af41815fceb059ff88faf",
+  "node_modules/tar/dist/commonjs/index.min.js":
+    "061e60146ee68dec451e5854efd1ac7e01957232bce2cfc22ee271203640a736",
+});
+const EXTRA_HOOK_HASHES = Object.freeze({
+  readBoundary: "261736d365b66d71a51aa6a1cd3e63086835723edf9c1ebc8ccba525f156fdab",
+  retireBoundary: "fe331743ec462367bbd6d7b3ea539121f55123a9eb70f6d63eb45a1f48b9a96d",
+});
 const HOOK_HASHES = Object.freeze({
   reifyNode: "884e466487e5ece614068022273ac8f6bc99bb4d9fe976c793f31fb049e50960",
   checkBins: "e4a400bd7e71f5ee1e59029e2abde4d49a99906cf190317a1b0639fde2cd56df",
@@ -87,6 +97,8 @@ const RESOURCES = Object.freeze({
 });
 const FS_CLASSES = Object.freeze(["callback", "promise"]);
 const FS_COUNT_MAX = 65535;
+const BYTE_MAX = 2147483647;
+const READ_RESULTS = Object.freeze(["unobserved", "positive", "zero", "error", "unknown"]);
 const RESOURCE_NAMES = Object.freeze(["fs", "decompression", "dns", "tcp", "tls"]);
 const zeroResources = () => Object.fromEntries(RESOURCE_NAMES.map((name) => [name, 0]));
 const invalid = (reason) =>
@@ -163,7 +175,7 @@ function verifyPinnedNpm(entry, trace) {
     notifyPreflight(trace, "version", 0, versionMatch ? "match" : "mismatch", versionMatch);
     if (!versionMatch) throw invalid("pin-mismatch");
     let id = 0;
-    for (const [name, expected] of Object.entries(PINNED)) {
+    for (const [name, expected] of Object.entries({ ...PINNED, ...EXTRA_PINNED })) {
       id++;
       notifyPreflight(trace, "file", id, "read-refused");
       const match =
@@ -318,6 +330,45 @@ function createWaitObserver({
       if (event === "before") resource.beforeSeen = true;
     });
   }
+  function readBoundary(hasError, bytes) {
+    safe(() => {
+      const row = als.getStore();
+      if (stopped || !row) return;
+      if (attempts.get(row.id) !== row) {
+        observerFault = true;
+        return;
+      }
+      const state = row.semantic;
+      state.readSeen = true;
+      if (hasError === true) {
+        state.lastReadResult = "error";
+        return;
+      }
+      if (hasError !== false || !Number.isSafeInteger(bytes) || bytes < 0) {
+        state.lastReadResult = "unknown";
+        observerFault = true;
+        return;
+      }
+      state.lastReadResult = bytes === 0 ? "zero" : "positive";
+      if (bytes > 0) {
+        state.positiveReadBytes = Math.min(BYTE_MAX, state.positiveReadBytes + bytes);
+        if (state.positiveReadBytes === BYTE_MAX) capacityLoss = true;
+        state.lastPositiveReadAt = elapsed();
+      }
+    });
+  }
+  function retireBoundary() {
+    safe(() => {
+      const row = als.getStore();
+      if (stopped || !row) return;
+      if (attempts.get(row.id) !== row) {
+        observerFault = true;
+        return;
+      }
+      increment(row.semantic, "retiredEntryWork");
+      row.semantic.lastRetiredAt = elapsed();
+    });
+  }
   function runAttempt(optional, operation) {
     if (stopped) return operation();
     if (attempts.size >= LIMITS.attempts) {
@@ -328,6 +379,14 @@ function createWaitObserver({
       id: attempts.size + 1,
       optional: optional === true,
       fsActivity: { callback: newFsStats(), promise: newFsStats() },
+      semantic: {
+        readSeen: false,
+        lastReadResult: "unobserved",
+        positiveReadBytes: 0,
+        lastPositiveReadAt: null,
+        retiredEntryWork: 0,
+        lastRetiredAt: null,
+      },
       ...Object.fromEntries(STAGES.map((stage) => [stage, "unobserved"])),
     };
     attempts.set(row.id, row);
@@ -443,6 +502,14 @@ function createWaitObserver({
       optional: row.optional,
       ...Object.fromEntries(STAGES.map((stage) => [stage, row[stage]])),
       liveResources: livePerAttempt.get(row.id) ?? zeroResources(),
+      semantic: {
+        readSeen: row.semantic.readSeen,
+        lastReadResult: row.semantic.lastReadResult,
+        positiveReadBytes: row.semantic.positiveReadBytes,
+        lastPositiveReadAgeMs: age(elapsedMs, row.semantic.lastPositiveReadAt),
+        retiredEntryWork: row.semantic.retiredEntryWork,
+        lastRetiredAgeMs: age(elapsedMs, row.semantic.lastRetiredAt),
+      },
       fsActivity: FS_CLASSES.map((kind) => {
         const stats = row.fsActivity[kind];
         const live = fsLive.get(row.id)?.[kind];
@@ -461,7 +528,7 @@ function createWaitObserver({
       }),
     }));
     return {
-      npmWaitProbe: 2,
+      npmWaitProbe: 3,
       valid: true,
       coverage: capacityLoss || observerFault || rowsTruncated ? "unknown" : "observed",
       elapsedMs,
@@ -481,7 +548,7 @@ function createWaitObserver({
       let data = snapshot();
       if (Buffer.byteLength(JSON.stringify(data)) > LIMITS.bytes) {
         observerFault = true;
-        data = { npmWaitProbe: 2, valid: false, coverage: "unknown", reason: "checkpoint-bound" };
+        data = { npmWaitProbe: 3, valid: false, coverage: "unknown", reason: "checkpoint-bound" };
       }
       sink(data);
       return true;
@@ -504,6 +571,8 @@ function createWaitObserver({
   }
   return {
     runAttempt,
+    readBoundary,
+    retireBoundary,
     observe,
     trackPromise,
     snapshot,
@@ -516,13 +585,46 @@ function createWaitObserver({
   };
 }
 
+// Two fixed wrappers only; no resource/data inspection or general hook registry.
+function wrapReadBoundary(original, observer) {
+  return function (...args) {
+    try {
+      observer.readBoundary(!!args[0], args[1]);
+    } catch {
+      /* Never replace original behavior. */
+    }
+    return Reflect.apply(original, this, args);
+  };
+}
+function wrapRetireBoundary(original, observer) {
+  return function (...args) {
+    const result = Reflect.apply(original, this, args);
+    try {
+      observer.retireBoundary();
+    } catch {
+      /* Never replace original behavior. */
+    }
+    return result;
+  };
+}
+function pinnedSymbol(prototype, description) {
+  const keys = Object.getOwnPropertySymbols(prototype).filter(
+    (key) => key.description === description
+  );
+  if (keys.length !== 1) throw invalid("hook-mismatch");
+  return keys[0];
+}
 function attachPinnedNpmObserver(entry, options = {}, trace) {
   const verified = verifyPinnedNpm(entry, trace);
-  let Arborist, Fetcher;
+  let Arborist, Fetcher, ReadStream, Unpack, readKey, retireKey;
   notifyPreflight(trace, "hook-load", 0, "load-refused");
   try {
     Arborist = require(path.join(verified.root, "node_modules/@npmcli/arborist"));
     Fetcher = require(path.join(verified.root, "node_modules/pacote/lib/fetcher.js"));
+    ReadStream = require(path.join(verified.root, "node_modules/fs-minipass")).ReadStream;
+    Unpack = require(path.join(verified.root, "node_modules/tar")).Unpack;
+    readKey = pinnedSymbol(ReadStream.prototype, "_onread");
+    retireKey = pinnedSymbol(Unpack.prototype, "unpend");
     const methods = {
       ...Object.fromEntries(
         ["reifyNode", "checkBins", "handleOptionalFailure"].map((name) => [
@@ -532,10 +634,12 @@ function attachPinnedNpmObserver(entry, options = {}, trace) {
       ),
       extract: Fetcher.prototype.extract,
       tarballStream: Fetcher.prototype.tarballStream,
+      readBoundary: ReadStream.prototype[readKey],
+      retireBoundary: Unpack.prototype[retireKey],
     };
     notifyPreflight(trace, "hook-load", 0, "match", true);
     let id = 0;
-    for (const [name, expected] of Object.entries(HOOK_HASHES)) {
+    for (const [name, expected] of Object.entries({ ...HOOK_HASHES, ...EXTRA_HOOK_HASHES })) {
       id++;
       notifyPreflight(trace, "hook", id, "shape-mismatch");
       if (typeof methods[name] !== "function") throw invalid("hook-mismatch");
@@ -568,6 +672,8 @@ function attachPinnedNpmObserver(entry, options = {}, trace) {
   }
   notifyPreflight(trace, "attach", 0, "attach-refused");
   try {
+    patch(ReadStream.prototype, readKey, (original) => wrapReadBoundary(original, observer));
+    patch(Unpack.prototype, retireKey, (original) => wrapRetireBoundary(original, observer));
     patch(
       Arborist.prototype,
       Symbol.for("reifyNode"),
@@ -654,7 +760,11 @@ function attachPinnedNpmObserver(entry, options = {}, trace) {
 module.exports = {
   LIMITS,
   PINNED,
+  EXTRA_PINNED,
   HOOK_HASHES,
+  EXTRA_HOOK_HASHES,
+  wrapReadBoundary,
+  wrapRetireBoundary,
   PHASES,
   STAGES,
   STATES,
@@ -694,7 +804,7 @@ function validateWaitCheckpoint(value) {
   ];
   if (
     !keys(value, topKeys) ||
-    value.npmWaitProbe !== 2 ||
+    value.npmWaitProbe !== 3 ||
     value.valid !== true ||
     !["observed", "unknown"].includes(value.coverage) ||
     !count(value.elapsedMs, 2147483647) ||
@@ -740,7 +850,7 @@ function validateWaitCheckpoint(value) {
   const ids = new Set();
   for (const row of value.pending) {
     if (
-      !keys(row, ["id", "optional", ...STAGES, "liveResources", "fsActivity"]) ||
+      !keys(row, ["id", "optional", ...STAGES, "liveResources", "fsActivity", "semantic"]) ||
       !count(row.id, value.trackedAttempts) ||
       row.id === 0 ||
       ids.has(row.id) ||
@@ -787,6 +897,34 @@ function validateWaitCheckpoint(value) {
       fsLiveTotal += stats.liveNeverSeen + stats.liveSeen;
     }
     if (fsLiveTotal !== row.liveResources.fs) throw invalid("checkpoint-invalid");
+    const progress = row.semantic;
+    if (
+      !keys(progress, [
+        "readSeen",
+        "lastReadResult",
+        "positiveReadBytes",
+        "lastPositiveReadAgeMs",
+        "retiredEntryWork",
+        "lastRetiredAgeMs",
+      ]) ||
+      typeof progress.readSeen !== "boolean" ||
+      !READ_RESULTS.includes(progress.lastReadResult) ||
+      progress.readSeen !== (progress.lastReadResult !== "unobserved") ||
+      !count(progress.positiveReadBytes, BYTE_MAX) ||
+      !count(progress.retiredEntryWork, FS_COUNT_MAX) ||
+      !["lastPositiveReadAgeMs", "lastRetiredAgeMs"].every(
+        (key) => progress[key] === null || count(progress[key], 2147483647)
+      ) ||
+      (progress.positiveReadBytes === 0) !== (progress.lastPositiveReadAgeMs === null) ||
+      (progress.retiredEntryWork === 0) !== (progress.lastRetiredAgeMs === null) ||
+      (!progress.readSeen && progress.positiveReadBytes !== 0) ||
+      (progress.lastReadResult === "positive" && progress.positiveReadBytes === 0) ||
+      (value.coverage === "observed" &&
+        (progress.positiveReadBytes === BYTE_MAX ||
+          progress.retiredEntryWork === FS_COUNT_MAX ||
+          progress.lastReadResult === "unknown"))
+    )
+      throw invalid("checkpoint-invalid");
     ids.add(row.id);
   }
   return value;
@@ -795,7 +933,7 @@ function readWaitCheckpoint(file) {
   try {
     return validateWaitCheckpoint(JSON.parse(readBounded(file, LIMITS.bytes).toString("utf8")));
   } catch {
-    return { npmWaitProbe: 2, valid: false, coverage: "unknown", reason: "checkpoint-unavailable" };
+    return { npmWaitProbe: 3, valid: false, coverage: "unknown", reason: "checkpoint-unavailable" };
   }
 }
 module.exports.validateWaitCheckpoint = validateWaitCheckpoint;

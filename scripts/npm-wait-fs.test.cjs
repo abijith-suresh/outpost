@@ -10,6 +10,7 @@ const {
   createWaitObserver,
   validateWaitCheckpoint,
   verifyPinnedNpm,
+  attachPinnedNpmObserver,
 } = require("./npm-wait-observer.cjs");
 const owned = require("./npm-wait-owned.cjs");
 const fake = () => ({ enable() {}, disable() {} });
@@ -125,7 +126,7 @@ test("synthetic saturation, corrupted tracked lifecycle and bad clocks are guard
   }
 });
 
-test("strict v2 schema rejects leaked timestamps/raw IDs, wrong class, inconsistent live counts and v1", () => {
+test("strict v3 schema rejects leaked timestamps/raw IDs, wrong class, inconsistent live counts and v1", () => {
   const s = synthetic();
   try {
     s.observer.runAttempt(false, () => {
@@ -133,7 +134,7 @@ test("strict v2 schema rejects leaked timestamps/raw IDs, wrong class, inconsist
       return new Promise(() => {});
     });
     const good = s.observer.snapshot();
-    assert.equal(good.npmWaitProbe, 2);
+    assert.equal(good.npmWaitProbe, 3);
     for (const mutate of [
       (v) => {
         v.npmWaitProbe = 1;
@@ -199,8 +200,11 @@ test("one owned pinned FSMinipass to driver gate to tar extraction observes call
   for (const name of ["a", "b"]) fs.writeFileSync(path.join(input, name), randomBytes(8192));
   tar.c({ sync: true, gzip: true, cwd: input, file: archive }, ["a", "b"]);
   assert.ok(fs.statSync(archive).size <= 65536);
-  const observer = createWaitObserver();
-  let source, gate, extractor, fd, releaseGate, barrier, gateReached;
+  const observer = attachPinnedNpmObserver(process.env.npm_execpath);
+  let source, gate, extractor, fd, releaseGate, barrier, gateReached, pipelineDone, releaseNode;
+  const holdNode = new Promise((resolve) => {
+    releaseNode = resolve;
+  });
   let clean = false,
     stageTimer;
   const reached = new Promise((resolve) => {
@@ -246,7 +250,8 @@ test("one owned pinned FSMinipass to driver gate to tar extraction observes call
       source = new ReadStream(archive, { fd, autoClose: false, readSize: 1024 });
       source.pipe(gate);
       const sourceDone = source.promise();
-      barrier = Promise.all([sourceDone, gateDone, gateClosed, extractionDone]);
+      pipelineDone = Promise.all([sourceDone, gateDone, gateClosed, extractionDone]);
+      barrier = pipelineDone.then(() => holdNode);
       return barrier;
     });
     assert.equal(returned, barrier);
@@ -260,6 +265,12 @@ test("one owned pinned FSMinipass to driver gate to tar extraction observes call
       assert.ok(row.fsActivity[0].before > 0);
       assert.equal(typeof releaseGate, "function");
       releaseGate();
+      await pipelineDone;
+      const semantic = validateWaitCheckpoint(observer.snapshot()).pending[0].semantic;
+      assert.ok(semantic.readSeen);
+      assert.ok(semantic.positiveReadBytes > 0);
+      assert.equal(semantic.retiredEntryWork, 2);
+      releaseNode();
       await returned;
       assert.deepEqual(
         fs.readFileSync(path.join(output, "a")),
@@ -283,6 +294,7 @@ test("one owned pinned FSMinipass to driver gate to tar extraction observes call
     clearTimeout(stageTimer);
     // ALWAYS release test-only backpressure before draining. Never remove live fixture files.
     if (releaseGate) releaseGate();
+    releaseNode();
     if (barrier) {
       let drainTimer;
       const settled = await Promise.race([
