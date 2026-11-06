@@ -402,6 +402,12 @@ staged lifecycle exercises native launcher, registration, borrowed local create 
 remove, resume and foreground manager/browser flows using disposable fixtures.
 The receipt does not imply live corporate repository or owner laptop acceptance.
 
+Preparation emits bounded JSON phase records on stderr using fixed labels and
+allowlisted failure/cause categories. Child output, arbitrary exception messages,
+paths, configuration, URLs and environment values are never copied into these
+records. A category identifies the failing boundary, not a root cause. Logging
+failure never changes an operation's result, guards, cleanup or deadlines.
+
 Ordinary PR CI prepares a platform-local candidate and runs that lifecycle on
 Linux and native Windows. This is **premerge** evidence only. After this workflow
 is merged, the parent runs manual `publish=false` dispatch on integrated main.

@@ -13,6 +13,7 @@ import {
 import { verifyRegisterWorkflow } from "../apps/cli/scripts/register-smoke.mjs";
 import { verifyResumeWorkflow } from "../apps/cli/scripts/resume-smoke.mjs";
 import { installPrepared, preserveFixture } from "./prerelease.mjs";
+import { preparationPhase as phase } from "./prerelease-diagnostics.mjs";
 
 export async function checkInstalledPrerelease(installation) {
   const smokeRoot = mkdtempSync(join(tmpdir(), "outpost candidate é "));
@@ -48,21 +49,29 @@ export async function checkInstalledPrerelease(installation) {
     const version = runInstalled(["--version"]);
     assert.equal(version.status, 0, version.stderr);
     assert.equal(version.stdout.trim(), installation.version);
-    verifyRegisterWorkflow({ runInstalled, validateInstalled, smokeRoot });
+    phase("lifecycle-register", () =>
+      verifyRegisterWorkflow({ runInstalled, validateInstalled, smokeRoot })
+    );
     const previousCwd = process.cwd();
     try {
       process.chdir(fileURLToPath(new URL("../apps/cli", import.meta.url)));
-      verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, smokeRoot });
+      phase("lifecycle-borrowed", () =>
+        verifyBorrowedLocalWorkflow({ runInstalled, validateInstalled, smokeRoot })
+      );
     } finally {
       process.chdir(previousCwd);
     }
-    verifyResumeWorkflow({ runInstalled, validateInstalled, smokeRoot });
-    await verifyManagerWorkflow({
-      launcher: installation.executable,
-      runInstalled,
-      smokeRoot,
-      installedPackage,
-    });
+    phase("lifecycle-resume", () =>
+      verifyResumeWorkflow({ runInstalled, validateInstalled, smokeRoot })
+    );
+    await phase("lifecycle-manager", () =>
+      verifyManagerWorkflow({
+        launcher: installation.executable,
+        runInstalled,
+        smokeRoot,
+        installedPackage,
+      })
+    );
     console.log(
       `Staged CLI/manager lifecycle passed on ${process.platform}: ${installation.version}`
     );

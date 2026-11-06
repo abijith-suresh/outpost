@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { verifyInstalledRuntime } from "../apps/cli/scripts/runtime-dependencies.mjs";
 import { runNpm } from "./npm-command.mjs";
+import { preparationPhase as phase, preparationDiagnostic } from "./prerelease-diagnostics.mjs";
 import { makeBuildIdentity, validateBuildIdentity } from "./prerelease-identity.mjs";
 
 const gitEnvironment = () => {
@@ -235,6 +236,9 @@ function own(directory) {
   return directory;
 }
 function removeOwned(directory) {
+  return phase("owned-cleanup", () => removeOwnedOperation(directory));
+}
+function removeOwnedOperation(directory) {
   const expected = ownedDirectories.get(directory);
   const state = lstatSync(directory, { bigint: true });
   if (
@@ -288,7 +292,10 @@ export function validateDispatch(context) {
 }
 
 /** Export one bounded Git object snapshot; never switch or modify the bound checkout. */
-export function snapshotCommit(root, directory, sha) {
+export function snapshotCommit(...args) {
+  return phase("snapshot", () => snapshotCommitOperation(...args));
+}
+function snapshotCommitOperation(root, directory, sha) {
   if (typeof sha !== "string" || !/^[a-f0-9]{40}$/.test(sha) || /^0+$/.test(sha))
     invalid("Supply a full source commit SHA.");
   if (git(root, ["rev-parse", "--verify", `${sha}^{commit}`], { encoding: "utf8" }).trim() !== sha)
@@ -412,7 +419,10 @@ const sums = (manifest, manifestBytes) =>
     ...manifest.packages.map((pkg) => `${pkg.sha256}  ${pkg.filename}`),
     `${hash(manifestBytes)}  manifest.json`,
   ].join("\n")}\n`;
-export function verifyPrepared(directory) {
+export function verifyPrepared(...args) {
+  return phase("bundle-verify", () => verifyPreparedOperation(...args));
+}
+function verifyPreparedOperation(directory) {
   const bytes = readBounded(join(directory, "manifest.json"));
   const manifest = validateManifest(JSON.parse(bytes.toString("utf8")));
   const expected = [
@@ -495,7 +505,10 @@ export function verifyInstalledContents(directory, manifest) {
   }
   verifyInstalledRuntime(join(directory, "node_modules", packages[0].name));
 }
-export function installPrepared(bundle, destination, expectedSha) {
+export function installPrepared(...args) {
+  return phase("consumer-install", () => installPreparedOperation(...args));
+}
+function installPreparedOperation(bundle, destination, expectedSha) {
   const manifest = verifyPrepared(bundle);
   if (manifest.build.sourceSha !== expectedSha)
     invalid("Bundle does not match the approved source SHA.");
@@ -542,8 +555,10 @@ export function installPrepared(bundle, destination, expectedSha) {
         },
       })
     );
-    invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], directory);
-    verifyInstalledContents(directory, manifest);
+    phase("consumer-dependencies", () =>
+      invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], directory)
+    );
+    phase("installed-bytes", () => verifyInstalledContents(directory, manifest));
     const cli = join(directory, "node_modules", "@abijith-suresh", "outpost", "dist", "cli.js");
     const run = (args) =>
       execFileSync(process.execPath, [cli, ...args], {
@@ -560,8 +575,10 @@ export function installPrepared(bundle, destination, expectedSha) {
       join(directory, "node_modules", packages[0].name, "dist", "build-receipt.json")
     );
     if (!isDeepStrictEqual(info, manifest.build)) invalid("Installed build receipt differs.");
-    if (run(["--version"]).trim() !== manifest.build.version)
-      invalid("Installed version verification failed.");
+    phase("installed-version", () => {
+      if (run(["--version"]).trim() !== manifest.build.version)
+        invalid("Installed version verification failed.");
+    });
     const binDirectory = join(directory, "node_modules", ".bin");
     const executable = join(binDirectory, process.platform === "win32" ? "outpost.cmd" : "outpost");
     if (!existsSync(executable)) invalid("Installed CLI launcher is missing.");
@@ -692,9 +709,9 @@ export async function preparePrerelease(root, destination, input, options = {}) 
       process.env.OUTPOST_PRERELEASE_PUBLISH_REQUESTED !== "false")
   )
     invalid("Publication is disabled.");
-  toolchain();
-  const before = sourceFingerprint(root);
-  const directory = createDestination(destination, root);
+  phase("toolchain", toolchain);
+  const before = phase("source-before", () => sourceFingerprint(root));
+  const directory = phase("destination", () => createDestination(destination, root));
   let temporary;
   let preserve = false;
   try {
@@ -702,22 +719,26 @@ export async function preparePrerelease(root, destination, input, options = {}) 
     const snapshot = join(temporary, "source");
     mkdirSync(snapshot);
     snapshotCommit(root, snapshot, identity.sourceSha);
-    const { manifests, runtime } = validateRepository(snapshot);
+    const { manifests, runtime } = phase("source-manifest", () => validateRepository(snapshot));
     if (manifests[0].version !== identity.sourceVersion)
       invalid("Build source version differs from the selected commit.");
-    invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], snapshot);
+    phase("snapshot-install", () =>
+      invoke(["ci", "--ignore-scripts", "--no-audit", "--no-fund"], snapshot)
+    );
     const sourceMetadata = manifests[0];
     sourceMetadata.version = identity.version;
     sourceMetadata.outpostBuild = identity;
     writeFileSync(join(snapshot, "apps/cli/package.json"), encode(sourceMetadata));
-    invoke(["run", "build", "--workspace", packages[0].name], snapshot);
+    phase("build", () => invoke(["run", "build", "--workspace", packages[0].name], snapshot));
     writeFileSync(join(snapshot, "apps/cli/dist/build-receipt.json"), encode(identity));
     const prepared = [];
     for (const pkg of packages) {
-      const [listing] = JSON.parse(
-        invoke(
-          ["pack", "--dry-run", "--json", "--ignore-scripts", "--workspace", pkg.name],
-          snapshot
+      const [listing] = phase("package-list", () =>
+        JSON.parse(
+          invoke(
+            ["pack", "--dry-run", "--json", "--ignore-scripts", "--workspace", pkg.name],
+            snapshot
+          )
         )
       );
       if (
@@ -726,36 +747,41 @@ export async function preparePrerelease(root, destination, input, options = {}) 
         listing.files.length > MAX_FILES
       )
         invalid();
-      const stage = join(temporary, `package-${prepared.length}`);
-      mkdirSync(stage);
-      for (const file of listing.files) {
-        if (!publicPath(file.path)) invalid("Public package includes an unsupported path.");
-        const source = join(snapshot, pkg.directory, file.path);
-        const bytes = readBounded(source);
-        mkdirSync(dirname(join(stage, file.path)), { recursive: true });
-        writeFileSync(join(stage, file.path), bytes);
-        chmodSync(join(stage, file.path), lstatSync(source).mode & 0o777);
-      }
-      const metadata = json(join(stage, "package.json"));
-      metadata.version = identity.version;
-      metadata.outpostBuild = identity;
-      metadata.private = true;
-      delete metadata.publishConfig;
-      delete metadata.devDependencies;
-      delete metadata.scripts;
-      for (const section of [
-        "dependencies",
-        "optionalDependencies",
-        "peerDependencies",
-        "devDependencies",
-      ]) {
-        for (const name of Object.keys(metadata[section] ?? {}))
-          if (packages.some((item) => item.name === name))
-            metadata[section][name] = identity.version;
-      }
-      writeFileSync(join(stage, "package.json"), encode(metadata));
-      const [packed] = JSON.parse(
-        invoke(["pack", "--json", "--ignore-scripts", "--pack-destination", directory], stage)
+      const stage = phase("package-stage", () => {
+        const stage = join(temporary, `package-${prepared.length}`);
+        mkdirSync(stage);
+        for (const file of listing.files) {
+          if (!publicPath(file.path)) invalid("Public package includes an unsupported path.");
+          const source = join(snapshot, pkg.directory, file.path);
+          const bytes = readBounded(source);
+          mkdirSync(dirname(join(stage, file.path)), { recursive: true });
+          writeFileSync(join(stage, file.path), bytes);
+          chmodSync(join(stage, file.path), lstatSync(source).mode & 0o777);
+        }
+        const metadata = json(join(stage, "package.json"));
+        metadata.version = identity.version;
+        metadata.outpostBuild = identity;
+        metadata.private = true;
+        delete metadata.publishConfig;
+        delete metadata.devDependencies;
+        delete metadata.scripts;
+        for (const section of [
+          "dependencies",
+          "optionalDependencies",
+          "peerDependencies",
+          "devDependencies",
+        ]) {
+          for (const name of Object.keys(metadata[section] ?? {}))
+            if (packages.some((item) => item.name === name))
+              metadata[section][name] = identity.version;
+        }
+        writeFileSync(join(stage, "package.json"), encode(metadata));
+        return stage;
+      });
+      const [packed] = phase("package-pack", () =>
+        JSON.parse(
+          invoke(["pack", "--json", "--ignore-scripts", "--pack-destination", directory], stage)
+        )
       );
       if (
         packed.name !== pkg.name ||
@@ -782,39 +808,46 @@ export async function preparePrerelease(root, destination, input, options = {}) 
         files,
       });
     }
-    const manifest = validateManifest({
-      schemaVersion: 1,
-      build: identity,
-      tag: identity.channel,
-      publication: "disabled",
-      requirements: REQUIREMENTS,
-      runtime,
-      packages: prepared,
+    const { manifest, bytes } = phase("manifest-write", () => {
+      const manifest = validateManifest({
+        schemaVersion: 1,
+        build: identity,
+        tag: identity.channel,
+        publication: "disabled",
+        requirements: REQUIREMENTS,
+        runtime,
+        packages: prepared,
+      });
+      const bytes = Buffer.from(encode(manifest));
+      writeFileSync(join(directory, "manifest.json"), bytes);
+      writeFileSync(join(directory, "SHA256SUMS"), sums(manifest, bytes));
+      return { manifest, bytes };
     });
-    const bytes = Buffer.from(encode(manifest));
-    writeFileSync(join(directory, "manifest.json"), bytes);
-    writeFileSync(join(directory, "SHA256SUMS"), sums(manifest, bytes));
     verifyPrepared(directory);
     const installation = installPrepared(
       directory,
       join(temporary, "consumer install é"),
       identity.sourceSha
     );
-    await options.checkInstalled?.(installation, manifest);
-    if (sourceFingerprint(root) !== before) invalid("Preparation changed the source checkout.");
+    await phase("lifecycle", () => options.checkInstalled?.(installation, manifest));
+    phase("source-after", () => {
+      if (sourceFingerprint(root) !== before) invalid("Preparation changed the source checkout.");
+    });
     return { directory, manifestSha256: hash(bytes), manifest };
   } catch (error) {
     preserve = preserveFixture(error);
-    if (!preserve) removeOwned(directory);
+    if (!preserve) phase("artifact-cleanup", () => removeOwned(directory));
     throw new Error("Prerelease preparation failed; its partial artifact directory was removed.", {
       cause: error,
     });
   } finally {
-    if (temporary && !preserve) removeOwned(temporary);
-    if (sourceFingerprint(root) !== before) {
-      if (existsSync(directory) && !preserve) removeOwned(directory);
-      invalid("Preparation changed the source checkout; the output was removed.");
-    }
+    if (temporary && !preserve) phase("scratch-cleanup", () => removeOwned(temporary));
+    phase("source-finalizer", () => {
+      if (sourceFingerprint(root) !== before) {
+        if (existsSync(directory) && !preserve) removeOwned(directory);
+        invalid("Preparation changed the source checkout; the output was removed.");
+      }
+    });
   }
 }
 
@@ -847,9 +880,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         /^0+$/.test(values["--source-sha"])
       )
         invalid("Supply a full source commit SHA.");
-      const sourceVersion = JSON.parse(
-        git(root, ["show", `${values["--source-sha"]}:apps/cli/package.json`], { encoding: "utf8" })
-      ).version;
+      const sourceVersion = phase(
+        "source-identity",
+        () =>
+          JSON.parse(
+            git(root, ["show", `${values["--source-sha"]}:apps/cli/package.json`], {
+              encoding: "utf8",
+            })
+          ).version
+      );
       const identity = makeBuildIdentity({
         sourceSha: values["--source-sha"],
         sourceVersion,
@@ -881,7 +920,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
           checkInstalledPrerelease(installation, manifest),
       });
       process.stdout.write(`${JSON.stringify(result)}\n`);
-    } catch {
+    } catch (error) {
+      preparationDiagnostic("prepare-cli", "failure", error);
       process.stderr.write(
         "Prerelease preparation failed. Publication remains disabled; inspect the selected source, arguments, pinned toolchain and registry/cache availability.\n"
       );

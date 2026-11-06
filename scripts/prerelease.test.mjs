@@ -445,3 +445,144 @@ test("missing promisor source objects refuse before transport and preserve split
     assert.deepEqual(tree(), withoutPromisor);
     assert.throws(() => readFileSync(marker), { code: "ENOENT" });
   }));
+
+test("preparation diagnostics preserve real child failure and redact all child output", async () => {
+  const { preparationPhase } = await import("./prerelease-diagnostics.mjs");
+  const records = [];
+  let actual;
+  assert.throws(
+    () =>
+      preparationPhase(
+        "snapshot-install",
+        () => {
+          try {
+            execFileSync(
+              process.execPath,
+              [
+                "-e",
+                "process.stdout.write('PRIVATE_URI_CONFIG');process.stderr.write('PRIVATE_CREDENTIAL');process.exit(23)",
+              ],
+              {
+                encoding: "utf8",
+                stdio: ["ignore", "pipe", "pipe"],
+                timeout: 2000,
+              }
+            );
+          } catch (error) {
+            actual = error;
+            throw error;
+          }
+        },
+        (record) => records.push(record)
+      ),
+    (error) => error === actual && error.status === 23
+  );
+  assert.deepEqual(records, [
+    { preparation: 1, phase: "snapshot-install", outcome: "start" },
+    {
+      preparation: 1,
+      phase: "snapshot-install",
+      outcome: "failure",
+      causes: ["child-exit-nonzero"],
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(records), /PRIVATE|stdout|stderr|message|stack|args/);
+});
+
+test("diagnostic async failures and bounded cause chains preserve exact error identity", async () => {
+  const { preparationPhase, safePreparationCauses } = await import("./prerelease-diagnostics.mjs");
+  const child = Object.assign(new Error("PRIVATE_CHILD"), { code: "ETIMEDOUT", stderr: "PRIVATE" });
+  const error = new Error(
+    "Prerelease preparation failed; its partial artifact directory was removed.",
+    { cause: child }
+  );
+  const records = [];
+  await assert.rejects(
+    preparationPhase(
+      "lifecycle-manager",
+      async () => {
+        throw error;
+      },
+      (r) => records.push(r)
+    ),
+    (observed) => observed === error
+  );
+  assert.deepEqual(records.at(-1).causes, ["preparation-wrapper", "child-timeout"]);
+  child.cause = child;
+  assert.deepEqual(safePreparationCauses(error), ["preparation-wrapper", "child-timeout"]);
+  let deep = new Error("PRIVATE");
+  for (let i = 0; i < 20; i++) deep = new Error("PRIVATE", { cause: deep });
+  assert.equal(safePreparationCauses(deep).length, 4);
+  assert.doesNotMatch(JSON.stringify(records), /PRIVATE/);
+});
+
+test("diagnostic sink failures cannot change success, failure or safe label bounds", async () => {
+  const { preparationPhase, preparationDiagnostic } = await import("./prerelease-diagnostics.mjs");
+  const sink = () => {
+    throw new Error("PRIVATE_LOG_FAILURE");
+  };
+  const result = {};
+  assert.equal(
+    preparationPhase("bundle-verify", () => result, sink),
+    result
+  );
+  const failure = new Error("PRIVATE_ORIGINAL");
+  assert.throws(
+    () =>
+      preparationPhase(
+        "owned-cleanup",
+        () => {
+          throw failure;
+        },
+        sink
+      ),
+    (e) => e === failure
+  );
+  await assert.rejects(
+    preparationPhase(
+      "source-finalizer",
+      async () => {
+        throw failure;
+      },
+      sink
+    ),
+    (e) => e === failure
+  );
+  const records = [];
+  preparationDiagnostic("PRIVATE_PHASE", "PRIVATE_OUTCOME", failure, (r) => records.push(r));
+  assert.deepEqual(records, [{ preparation: 1, phase: "unknown", outcome: "unknown" }]);
+});
+
+test("real archive checksum refusal emits safe phase while retaining nonzero failure", async () =>
+  scope((dir) => {
+    fixture(dir);
+    writeFileSync(join(dir, "candidate.tgz"), "PRIVATE_ARCHIVE_BYTES");
+    const script = `import { verifyPrepared } from ${JSON.stringify(new URL("./prerelease.mjs", import.meta.url).href)};
+      try { verifyPrepared(${JSON.stringify(dir)}); } catch { process.exitCode = 23; }`;
+    let failure;
+    try {
+      execFileSync(process.execPath, ["--input-type=module", "--eval", script], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 2000,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(failure.status, 23);
+    const records = failure.stderr
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(records, [
+      { preparation: 1, phase: "bundle-verify", outcome: "start" },
+      {
+        preparation: 1,
+        phase: "bundle-verify",
+        outcome: "failure",
+        causes: ["archive-checksum-refused"],
+      },
+    ]);
+    assert.doesNotMatch(failure.stderr, /PRIVATE|stdout|stderr|message|stack/);
+    assert.equal(readFileSync(join(dir, "candidate.tgz"), "utf8"), "PRIVATE_ARCHIVE_BYTES");
+  }));
