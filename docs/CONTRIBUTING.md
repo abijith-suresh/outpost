@@ -461,6 +461,12 @@ The runner pins the selected source/tree/lock in `scripts/probe-npm-wait.mjs`,
 checks the installed npm sources and hook methods, and refuses unavailable source
 without a moving-ref fallback. The private root `probe:npm-wait` script runs through bash `npm run` and uses
 that npm invocation's supplied `npm_execpath`, with no wrapper lookup or fallback.
+The diagnostic checkout alone supplies process-scoped Git settings
+`core.autocrlf=false` and `core.eol=lf` so its working files retain reviewed blob
+bytes. These settings are absent from later steps and do not persist in Git
+configuration. The exact-byte source validator remains unchanged. This explicit
+LF checkout is a diagnostic setup difference, not proof that a native refusal
+was caused by CRLF or that ordinary candidate installs behave identically.
 An explicit source fetch and the ordinary root
 cache warmup precede measurement. The measured child retains the preparation
 install's 180-second deadline and scripts-disabled arguments. It writes bounded,
