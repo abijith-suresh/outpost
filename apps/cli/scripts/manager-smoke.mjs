@@ -288,6 +288,30 @@ export async function verifyManagerWorkflow({
         )
         .toBe("succeeded");
     };
+    const cloneActions = page.getByRole("group", {
+      name: "Actions for registered clone",
+      exact: true,
+    });
+    await cloneActions.getByRole("button", { name: "Edit tags", exact: true }).click();
+    await page.getByLabel("Tags, separated by commas").fill("backend, job");
+    await finished(() => page.getByRole("button", { name: "Confirm", exact: true }).click());
+    await expect(page.getByText("Tags: backend, job", { exact: true })).toBeVisible();
+    const tagged = JSON.parse(
+      runInstalled(["repo", "list", "--json"], { OUTPOST_HOME: home }).stdout
+    ).data.repos;
+    assert.deepEqual(tagged.find((repo) => repo.name === "registered clone")?.tags, [
+      "backend",
+      "job",
+    ]);
+    await page.getByLabel("Filter by tags").fill("backend, job");
+    await expect(page.getByRole("button", { name: "registered clone", exact: true })).toBeVisible();
+    await page.getByLabel("Filter by tags").fill("backend, missing");
+    await expect(page.getByText("No repositories match these filters.")).toBeVisible();
+    await page.getByLabel("Filter by tags").fill("");
+    await page.getByRole("button", { name: "Group by tag", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "backend", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "job", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Group by tag", exact: true }).click();
     await page.getByRole("button", { name: "Import repository", exact: true }).click();
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(page.getByText("Enter an absolute native checkout path.")).toBeVisible();
@@ -330,6 +354,8 @@ export async function verifyManagerWorkflow({
     ).data;
     assert.equal(retained.repos.length, 1);
     await page.getByRole("button", { name: "Retained", exact: true }).click();
+    await expect(page.getByText("Tags: backend, job", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit tags", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Restore", exact: true }).click();
     await finished(() => page.getByRole("button", { name: "Confirm", exact: true }).click());
     assert.equal(
