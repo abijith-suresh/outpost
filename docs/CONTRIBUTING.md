@@ -446,3 +446,71 @@ Use a new absolute output directory outside the repository. Browser lifecycle
 checks require `npm.cmd exec -- playwright install chromium` first. Registry
 access is needed when the locked dependencies are absent from cache. Local run
 coordinates are local evidence and must not be presented as a GitHub dispatch.
+
+### Native npm wait diagnostic
+
+The separate `Native npm wait probe` workflow observes one snapshot dependency
+installation. It does not build a candidate or satisfy the required candidate
+checks. Its only trigger is a label on a same-repository PR from
+`chore/native-npm-wait-probe`: `npmwait-` followed by that PR's exact full head SHA.
+The owner applies this label only after reviewing the complete diagnostic head;
+a later push needs a separately reviewed head and label. Only run attempt 1 is
+eligible. Existing CI and the trusted-main artifact dispatch remain independent.
+
+The runner pins the selected source/tree/lock in `scripts/probe-npm-wait.mjs`,
+checks the installed npm sources and hook methods, and refuses unavailable source
+without a moving-ref fallback. The private root `probe:npm-wait` script runs through bash `npm run` and uses
+that npm invocation's supplied `npm_execpath`, with no wrapper lookup or fallback.
+The diagnostic checkout alone supplies process-scoped Git settings
+`core.autocrlf=false` and `core.eol=lf` so its working files retain reviewed blob
+bytes. These settings are absent from later steps and do not persist in Git
+configuration. The exact-byte source validator remains unchanged. This explicit
+LF checkout is a diagnostic setup difference, not proof that a native refusal
+was caused by CRLF or that ordinary candidate installs behave identically.
+An explicit source fetch and the ordinary root
+cache warmup precede measurement. The completion-only diagnostic child has a
+fixed 600000ms budget, recorded as `measurementBudgetMs` in its provenance; the
+required production preparation/candidate bound remains 180000ms. The workflow
+job cap remains 25 minutes. This longer diagnostic can establish completion under
+instrumentation only, not production performance, artifact acceptance or an OS
+cause. Scripts-disabled install arguments remain unchanged. It writes bounded,
+private, opaque wait observations inside owned scratch, then checks source
+preservation and cleans only the directory it still owns. It reports fixed
+categories instead of raw child output. No raw npm logs are uploaded.
+Two parent-only preflight records identify exact-version/layout matches and
+pinned-file/hook results with fixed numeric IDs. They reuse the existing checks,
+stop at the first refusal, and never print observed versions, paths or hashes.
+The fixed outer stage identifies the parent operation, not proof a child ran.
+Private checkpoint schema v3 retains two fixed filesystem-request summaries per
+pending attempt: callback-event counts, resource ages and whether a callback was
+observed. Counts saturate at 65535 and loss/fault makes coverage unknown. Before
+and after describe JavaScript callback dispatch, and destruction is resource
+lifetime; none proves byte progress or OS completion. Raw IDs and internal
+timestamps are not serialized. The existing live ZLIB count is not a pending
+asynchronous decompression task: the pinned minizlib processes chunks synchronously.
+Two additional exactly pinned class methods report positive ReadStream read-byte
+counts/last age and returned tar UNPEND work-retirement counts/last age. Read
+classification handles positive, zero and error callbacks without inspecting
+buffers or error objects. The read class is not exclusively cached tar input;
+zero callbacks can be synthetic EOF. Retirements include skips/errors and do not
+mean successful files. Reported bytes are capped at 2147483647 and retirements
+at 65535, with saturation unknown. The original eleven source/five method pins
+remain exact, with only two required source/method matches added. Parent fixed
+preflight rows therefore cover thirteen sources and seven methods.
+Historical v1/v2 receipts remain separate; the v3 reader refuses both versions.
+This route includes npm-run wrapper context, unlike the earlier direct-Node probe.
+It is closer to the preparation helper convention but remains a diagnostic
+execution with different setup and no Chromium stage, not an identical candidate.
+
+This observer changes scheduling and rejection observation. Resource counts cover
+only whitelisted resources under observed attempt contexts. Counts do not identify
+packages, establish OS blocking, prove the absence of network activity, or show a
+performance fix. A diagnostic success is not artifact acceptance. A new dispatch
+workflow absent from main cannot be dispatched before merge.
+
+Run the diagnostic light guards using the supported toolchain, with `npm_execpath`
+pointing to the verified installed npm JavaScript entry:
+
+```sh
+node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs scripts/npm-wait-preflight.test.mjs scripts/npm-wait-fs.test.cjs scripts/npm-wait-semantic.test.cjs
+```
