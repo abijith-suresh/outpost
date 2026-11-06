@@ -623,3 +623,48 @@ remove fields or restore old metadata to bypass that barrier.
 
 The shared tag operation and recorded inventory support existing-clone tags.
 Borrowed tag controls remain a separate frontend increment; use the CLI today.
+
+### Unpublished dev/alpha tarballs on Windows
+
+Candidates are manual preparation artifacts, not npm releases. Obtain the bundle
+from an approved `Prepare dev or alpha artifacts` run and check its source SHA and
+manifest SHA256 against the retained trusted run receipt. Do not treat a checksum
+shipped alongside an untrusted download as approval. The canonical run builds on
+Linux and verifies the same downloaded tarball on native Windows.
+
+Use supported Node 24 and npm from the repository requirements, not an arbitrary
+latest Node. Preparation and the verifier require the repository's exact tool
+pins. Node/npm and Git must already be available on this corporate machine;
+these steps need no administrator, WSL or execution-policy bypass. Use `npm.cmd`
+and `outpost.cmd` to avoid PowerShell's `.ps1` execution-policy restriction.
+Dependencies still need registry access or a populated npm cache.
+
+From the approved source checkout with its pinned tooling:
+
+```powershell
+$bundle = 'C:\Users\me\Downloads\outpost-dev-bundle'
+Get-FileHash "$bundle\manifest.json" -Algorithm SHA256
+# Compare with the trusted run's retained checksum before continuing.
+$sha = 'FULL_APPROVED_SOURCE_SHA'
+$install = 'C:\Users\me\outpost\candidate-1'
+npm.cmd run install:prerelease -- $bundle $install $sha
+& "$install\node_modules\.bin\outpost.cmd" --version
+& "$install\node_modules\.bin\outpost.cmd" manage
+```
+
+The installer validates archives, installs with scripts disabled, checks every
+installed package file and the exact runtime cohort before executing `--version`.
+It refuses existing install directories. The inert offline identity receipt is
+`$install\node_modules\@abijith-suresh\outpost\dist\build-receipt.json`.
+For an update, install the next approved bundle into `candidate-2` and explicitly
+invoke its `.cmd` launcher. Keep `candidate-1` for rollback and invoke that old
+launcher when needed. Stop any foreground manager before switching. This changes
+program bytes only; it does not undo workspace or home metadata written by newer
+commands. Keep state backups and respect old-writer barriers.
+
+For a source install, use a fresh approved source folder, the pinned Node/npm and
+`npm.cmd ci`, then `npm.cmd run build --workspace @abijith-suresh/outpost`. Run
+`node.exe apps\cli\dist\cli.js --version` or `node.exe apps\cli\dist\cli.js manage`.
+Update by building another approved source folder, retaining the previous folder
+for rollback. Do not overwrite a working source checkout or install globally to
+an administrator-owned prefix. Source builds are not canonical artifact evidence.
