@@ -55,25 +55,14 @@ function App() {
     if (!groupTags()) return repos.map((repo) => ({ repo, heading: "" }));
     const groups = new Map<string, typeof repos>();
     for (const repo of repos)
-      for (const key of repo.kind === "borrowed"
-        ? ["kind:borrowed"]
-        : repo.tags.length
-          ? repo.tags.map((tag) => `tag:${tag}`)
-          : ["untagged"])
+      for (const key of repo.tags.length ? repo.tags.map((tag) => `tag:${tag}`) : ["untagged"])
         groups.set(key, [...(groups.get(key) ?? []), repo]);
     return [...groups]
       .sort(([a], [b]) => a.localeCompare(b))
       .flatMap(([key, rows]) =>
         rows.map((repo, index) => ({
           repo,
-          heading:
-            index === 0
-              ? key === "kind:borrowed"
-                ? "Registered clones"
-                : key === "untagged"
-                  ? "Untagged"
-                  : key.slice(4)
-              : "",
+          heading: index === 0 ? (key === "untagged" ? "Untagged" : key.slice(4)) : "",
         }))
       );
   };
@@ -571,7 +560,7 @@ function App() {
                                   </>
                                 )}
                               </div>
-                              <Show when={r.kind === "managed" && r.tags.length > 0}>
+                              <Show when={r.tags.length > 0}>
                                 <div class="meta">Tags: {r.tags.join(", ")}</div>
                               </Show>
                             </div>
@@ -610,18 +599,16 @@ function App() {
                                   >
                                     Verify
                                   </button>
-                                  <Show when={r.kind === "managed"}>
-                                    <button
-                                      type="button"
-                                      disabled={busy()}
-                                      onClick={() => {
-                                        setTags(r.tags.join(", "));
-                                        openDialog("tags", r.handle);
-                                      }}
-                                    >
-                                      Edit tags
-                                    </button>
-                                  </Show>
+                                  <button
+                                    type="button"
+                                    disabled={busy()}
+                                    onClick={() => {
+                                      setTags(r.tags.join(", "));
+                                      openDialog("tags", r.handle);
+                                    }}
+                                  >
+                                    Edit tags
+                                  </button>
                                   <button
                                     type="button"
                                     disabled={busy()}
