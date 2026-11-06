@@ -446,3 +446,35 @@ Use a new absolute output directory outside the repository. Browser lifecycle
 checks require `npm.cmd exec -- playwright install chromium` first. Registry
 access is needed when the locked dependencies are absent from cache. Local run
 coordinates are local evidence and must not be presented as a GitHub dispatch.
+
+### Native npm wait diagnostic
+
+The separate `Native npm wait probe` workflow observes one snapshot dependency
+installation. It does not build a candidate or satisfy the required candidate
+checks. Its only trigger is a label on a same-repository PR from
+`chore/native-npm-wait-probe`: `npmwait-` followed by that PR's exact full head SHA.
+The owner applies this label only after reviewing the complete diagnostic head;
+a later push needs a separately reviewed head and label. Only run attempt 1 is
+eligible. Existing CI and the trusted-main artifact dispatch remain independent.
+
+The runner pins the selected source/tree/lock in `scripts/probe-npm-wait.mjs`,
+checks the installed npm sources and hook methods, and refuses unavailable source
+without a moving-ref fallback. An explicit source fetch and the ordinary root
+cache warmup precede measurement. The measured child retains the preparation
+install's 180-second deadline and scripts-disabled arguments. It writes bounded,
+private, opaque wait observations inside owned scratch, then checks source
+preservation and cleans only the directory it still owns. It reports fixed
+categories instead of raw child output. No raw npm logs are uploaded.
+
+This observer changes scheduling and rejection observation. Resource counts cover
+only whitelisted resources under observed attempt contexts. Counts do not identify
+packages, establish OS blocking, prove the absence of network activity, or show a
+performance fix. A diagnostic success is not artifact acceptance. A new dispatch
+workflow absent from main cannot be dispatched before merge.
+
+Run the diagnostic light guards using the supported toolchain, with `npm_execpath`
+pointing to the verified installed npm JavaScript entry:
+
+```sh
+node --test scripts/npm-wait-observer.test.cjs scripts/npm-wait-wiring.test.mjs
+```
