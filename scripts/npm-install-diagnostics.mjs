@@ -19,12 +19,48 @@ const phases = [
   "idealTree",
   "npm-ci:rm",
   "reify:loadTrees",
+  "reify:diffTrees",
+  "reify:retireShallow",
+  "reify:createSparse",
+  "reify:loadShrinkwraps",
+  "reify:loadBundles",
+  "reify:audit",
   "reify:unpack",
+  "reify:unretire",
+  "build",
+  "build:deps",
+  "build:links",
+  "build:queue",
+  "build:link",
   "reify:build",
+  "reify:trash",
   "reify:save",
   "reify",
   "command:ci",
 ];
+// Locations never leave this classifier. Only these two constant aggregate names do.
+const namespaceBuckets = ["reifyNode:bucket", "build:link:bucket"];
+function timingPhase(key) {
+  if (phases.includes(key)) return key;
+  for (const [prefix, bucket] of [
+    ["reifyNode:", namespaceBuckets[0]],
+    ["build:link:", namespaceBuckets[1]],
+  ]) {
+    if (!key.startsWith(prefix)) continue;
+    const suffix = key.slice(prefix.length);
+    if (
+      suffix.length > 0 &&
+      suffix.length <= 512 &&
+      [...suffix].every((character) => {
+        const code = character.charCodeAt(0);
+        return code >= 32 && (code < 127 || code > 159);
+      })
+    )
+      return bucket;
+  }
+  return undefined;
+}
+
 const empty = () => ({
   npmInstallProgress: 1,
   outcome: "unknown",
@@ -147,12 +183,13 @@ export function summarizeNpmInstallLogs(directory) {
             progress.tarballCacheMissingRecords++;
           const unfinished = /^\d+ silly unfinished npm timer ([A-Za-z:-]+) \d{1,16}$/.exec(line);
           if (unfinished && phases.includes(unfinished[1])) progress.unfinishedKnownPhaseRecords++;
-          const match = /^\d+ timing ([A-Za-z:-]+) Completed in (\d{1,9})ms$/.exec(line);
-          if (match && phases.includes(match[1])) {
-            const observed = timings.get(match[1]) ?? { phase: match[1], count: 0, maxMs: 0 };
+          const match = /^\d+ timing ([^\r\n]{1,1024}) Completed in (\d{1,9})ms$/.exec(line);
+          const phase = match ? timingPhase(match[1]) : undefined;
+          if (phase) {
+            const observed = timings.get(phase) ?? { phase, count: 0, maxMs: 0 };
             observed.count++;
             observed.maxMs = Math.max(observed.maxMs, Number(match[2]));
-            timings.set(match[1], observed);
+            timings.set(phase, observed);
           } else if (prefix?.[1] === "timing") {
             summary.unrecognizedTimingRecords++;
           }
@@ -192,7 +229,9 @@ export function summarizeNpmInstallLogs(directory) {
       }
     }
   }
-  summary.timings = phases.filter((phase) => timings.has(phase)).map((phase) => timings.get(phase));
+  summary.timings = [...phases, ...namespaceBuckets]
+    .filter((phase) => timings.has(phase))
+    .map((phase) => timings.get(phase));
   summary.commandTimingObserved = timings.has("command:ci");
   summary.outcome = incomplete ? "incomplete" : summary.filesRead ? "observed" : "unknown";
   return summary;

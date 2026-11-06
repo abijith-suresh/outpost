@@ -416,6 +416,10 @@ booleans, fixed log-level counts and known progress-record counts without raw fi
 Unrecognized timing records are counted rather than exposing their keys. npm timing
 records describe completed timers; missing completion does not prove a timer never
 started, and zero parsed counters do not establish no network or filesystem activity.
+Additional pinned reify/build completions are recognized. Location-bearing npm
+`reifyNode:` and `build:link:` timer names are reduced to exactly two fixed bucket
+names with count/max-duration only; locations never leave the parser. Rotated files
+are aggregated without claiming chronological order or a globally last completion.
 Missing, truncated or unreadable evidence is unknown/incomplete; observed npm
 progress is not an install-success or root-cause claim. Raw logs are neither
 printed nor uploaded and remain subject to existing owned-scratch cleanup.

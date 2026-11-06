@@ -862,3 +862,95 @@ test("npm format summary distinguishes unknown timing forms and progress without
     );
     assert.doesNotMatch(JSON.stringify(result), /PRIVATE|embedded\\r/);
   }));
+
+test("npm pinned reify/build forms use only fixed phases and two bounded location buckets", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    // Pinned npm11.16 Arborist reify.js/rebuild.js time.start names, serialized by npm's formatter.
+    const fixed = [
+      "reify:diffTrees",
+      "reify:retireShallow",
+      "reify:createSparse",
+      "reify:loadShrinkwraps",
+      "reify:loadBundles",
+      "reify:audit",
+      "reify:unretire",
+      "reify:trash",
+      "build",
+      "build:deps",
+      "build:links",
+      "build:queue",
+      "build:link",
+    ];
+    const keys = [
+      ...fixed,
+      "reifyNode:node_modules/@PRIVATE_SCOPE/PRIVATE_NAME9",
+      "reifyNode:PRIVATE_FOLDER/other",
+      "build:link:node_modules/PRIVATE_BINARY",
+      "PRIVATE_UNKNOWN_KEY",
+      "reifyNode:",
+      "build:link:",
+      `reifyNode:${"PRIVATE".repeat(100)}`,
+      "reifyNode:PRIVATE\u0000CONTROL",
+      "build:link:PRIVATE\tCONTROL",
+      "reifyNode:PRIVATE\rCONTROL",
+      "reifyNode:PRIVATE\nNEWLINE",
+      "build:link:PRIVATE\u007fCONTROL",
+    ];
+    const results = [];
+    for (const eol of ["\n", "\r\n"]) {
+      const selected = join(dir, eol === "\n" ? "lf" : "crlf");
+      mkdirSync(selected);
+      writeFileSync(
+        join(selected, "fixture.log"),
+        keys.map((key, i) => `${i} timing ${key} Completed in ${i + 1}ms${eol}`).join("")
+      );
+      const result = summarizeNpmInstallLogs(selected);
+      assert.deepEqual(
+        result.timings
+          .filter((t) => fixed.includes(t.phase))
+          .map((t) => t.phase)
+          .sort(),
+        [...fixed].sort()
+      );
+      assert.deepEqual(
+        result.timings.filter((t) => t.phase.endsWith(":bucket")),
+        [
+          { phase: "reifyNode:bucket", count: 2, maxMs: 15 },
+          { phase: "build:link:bucket", count: 1, maxMs: 16 },
+        ]
+      );
+      assert.ok(result.unrecognizedTimingRecords > 0);
+      assert.equal(result.commandTimingObserved, false);
+      assert.doesNotMatch(JSON.stringify(result), /PRIVATE|node_modules|CONTROL|NEWLINE/);
+      assert.equal(Object.hasOwn(result, "lastCompletion"), false);
+      results.push(result);
+    }
+    const withoutEol = ({ lineEndings: _lineEndings, ...rest }) => rest;
+    assert.deepEqual(withoutEol(results[0]), withoutEol(results[1]));
+  }));
+
+test("npm bucket suffix limits and rotation aggregation never expose names or invent ordering", async () =>
+  scope(async (dir) => {
+    const { summarizeNpmInstallLogs } = await import("./npm-install-diagnostics.mjs");
+    writeFileSync(
+      join(dir, "later.log"),
+      `8 timing reifyNode:${"x".repeat(512)} Completed in 23ms\r\n9 timing build:link:PRIVATE Completed in 7ms\r\n`
+    );
+    writeFileSync(
+      join(dir, "earlier.log"),
+      `1 timing reifyNode:${"x".repeat(513)} Completed in 999ms\n2 timing reifyNode:PRIVATE Completed in 4ms\n`
+    );
+    const result = summarizeNpmInstallLogs(dir);
+    assert.deepEqual(result.timings, [
+      { phase: "reifyNode:bucket", count: 2, maxMs: 23 },
+      { phase: "build:link:bucket", count: 1, maxMs: 7 },
+    ]);
+    assert.equal(result.unrecognizedTimingRecords, 1);
+    assert.equal(result.lineEndings.lf, true);
+    assert.equal(result.lineEndings.crlf, true);
+    assert.doesNotMatch(
+      JSON.stringify(result),
+      /PRIVATE|xxxxx|earlier|later|last|location|package/
+    );
+  }));
