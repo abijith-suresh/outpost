@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import observer from "./npm-wait-observer.cjs";
 import { parentPreflight } from "./npm-wait-preflight.mjs";
-import { locateNpm } from "./probe-npm-wait.mjs";
+import { suppliedNpmEntry } from "./probe-npm-wait.mjs";
 
 const require = createRequire(import.meta.url);
 const entry = process.env.npm_execpath;
@@ -216,14 +216,16 @@ test("observer callback, output sink and serialization faults preserve exact ope
   privateAbsent(record);
 });
 
-test("parent CLI emits one bounded locator record then same fixed refusal with locator stage; no npm entry executes", (t) => {
+test("parent CLI emits one bounded supplied-entry record then same fixed refusal with entry stage; no npm entry executes", (t) => {
   const dir = fixture(t);
-  const command = path.join(dir, "npm.cmd");
-  const result = spawnSync(
-    process.execPath,
-    [path.resolve("scripts/probe-npm-wait.mjs"), "--npm-command", command],
-    { cwd: dir, timeout: 2000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-  );
+  const entry = path.join(dir, "PRIVATE_MISSING.js");
+  const result = spawnSync(process.execPath, [path.resolve("scripts/probe-npm-wait.mjs")], {
+    cwd: dir,
+    env: { ...process.env, npm_execpath: entry },
+    timeout: 2000,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   assert.equal(result.status, 1);
   const records = result.stdout
     .trim()
@@ -235,19 +237,12 @@ test("parent CLI emits one bounded locator record then same fixed refusal with l
   assert.deepEqual(JSON.parse(result.stderr), {
     npmWaitProbeFailure: 1,
     category: "invalid-probe",
-    stage: "locator",
+    stage: "npm-entry",
   });
 });
 
-test("strict native-layout locator forwards existing checks without any fallback", (t) => {
-  const dir = fixture(t);
-  fs.mkdirSync(path.join(dir, "node_modules"), { recursive: true });
-  fs.symlinkSync(
-    installed.root,
-    path.join(dir, "node_modules/npm"),
-    process.platform === "win32" ? "junction" : "dir"
-  );
-  const { value, error, record } = capture((trace) => locateNpm(path.join(dir, "npm.cmd"), trace));
+test("supplied npm JavaScript entry forwards existing checks without fallback", () => {
+  const { value, error, record } = capture((trace) => suppliedNpmEntry(entry, trace));
   assert.equal(error, undefined);
   assert.equal(value, installed.entry);
   assert.equal(record.selectedNpmVersionMatch, true);

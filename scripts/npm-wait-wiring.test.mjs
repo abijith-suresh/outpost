@@ -8,9 +8,9 @@ import { test } from "node:test";
 import observer from "./npm-wait-observer.cjs";
 import owned from "./npm-wait-owned.cjs";
 import {
-  locateNpm,
   measureOwned,
   observeChild,
+  suppliedNpmEntry,
   TARGET,
   validateSourceFiles,
 } from "./probe-npm-wait.mjs";
@@ -143,10 +143,10 @@ test("narrow child rejects bad npm pin before any npm execution and leaks no sup
   assert.equal(fs.existsSync(path.join(dir, "EXECUTED")), false);
 });
 
-test("locator refuses guessed entry and source validation refuses wrong lock before install", (t) => {
+test("npm-supplied entry refuses guessed wrappers and source validation refuses wrong lock before install", (t) => {
   const dir = fixture(t);
-  assert.throws(() => locateNpm("npm.cmd"));
-  assert.throws(() => locateNpm(path.join(dir, "npm.cmd")));
+  assert.throws(() => suppliedNpmEntry("npm.cmd"));
+  assert.throws(() => suppliedNpmEntry(path.join(dir, "npm.cmd")));
   fs.mkdirSync(path.join(dir, "apps/cli"), { recursive: true });
   fs.writeFileSync(path.join(dir, "package-lock.json"), "{}");
   fs.writeFileSync(
@@ -217,7 +217,13 @@ test("workflow route is separate, label-bound, read-only and contains no raw eve
     file,
     /workflow_dispatch|pull_request_target|secrets\.|id-token|contents: write/
   );
-  assert.doesNotMatch(file.slice(file.indexOf("run: |")), /\$\{\{/);
+  const activeStep = file.slice(file.indexOf("- name: One install-only"));
+  assert.doesNotMatch(activeStep, /\$\{\{/);
+  assert.match(activeStep, /shell: bash\s+run: npm run probe:npm-wait/);
+  assert.doesNotMatch(file, /Get-Command|pwsh|--npm-command/);
+  const root = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  assert.equal(root.private, true);
+  assert.equal(root.scripts["probe:npm-wait"], "node scripts/probe-npm-wait.mjs");
   const child = fs.readFileSync("scripts/npm-wait-child.cjs", "utf8");
   assert.doesNotMatch(child, /\.on\(["']data|\.pipe\(|\.resume\(/);
   const { prepare } = require("./npm-wait-child.cjs");
@@ -254,15 +260,39 @@ test("verified child setup checkpoints on exit without running npm, unref does n
   }
 });
 
-test("npm command locator resolves a verified native-layout fixture without executing wrappers", (t) => {
-  const dir = fixture(t);
-  fs.mkdirSync(path.join(dir, "node_modules"));
+test("supplied JavaScript entry retains exact pinned verification without wrapper lookup", () => {
   const verified = observer.verifyPinnedNpm(process.env.npm_execpath);
-  fs.symlinkSync(
-    verified.root,
-    path.join(dir, "node_modules/npm"),
-    process.platform === "win32" ? "junction" : "dir"
+  assert.equal(suppliedNpmEntry(process.env.npm_execpath), verified.entry);
+  for (const value of [undefined, "", "npm", "relative.js"])
+    assert.throws(() => suppliedNpmEntry(value));
+});
+
+test("one actual pinned npm run supplies verified JavaScript entry to an owned minimal fixture", (t) => {
+  const dir = fixture(t);
+  const verified = observer.verifyPinnedNpm(process.env.npm_execpath);
+  const runnerUrl = new URL("./probe-npm-wait.mjs", import.meta.url).href;
+  const code = `import path from "node:path";import {suppliedNpmEntry} from ${JSON.stringify(runnerUrl)};const selected=process.env.npm_execpath;const canonical=suppliedNpmEntry(selected);process.stdout.write(JSON.stringify({supplied:typeof selected==='string',absoluteJavaScriptEntry:typeof selected==='string'&&path.isAbsolute(selected)&&selected.endsWith('.js'),verifiedIdentity:canonical===${JSON.stringify(verified.entry)},npmRunContext:process.env.npm_lifecycle_event==='identity'}));`;
+  fs.writeFileSync(path.join(dir, "identity.mjs"), code);
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    JSON.stringify({ private: true, scripts: { identity: "node identity.mjs" } })
   );
-  fs.writeFileSync(path.join(dir, "npm.cmd"), "DO NOT EXECUTE");
-  assert.equal(locateNpm(path.join(dir, "npm.cmd")), verified.entry);
+  const env = { ...process.env };
+  delete env.npm_execpath;
+  const output = execFileSync(process.execPath, [verified.entry, "run", "identity", "--silent"], {
+    cwd: dir,
+    env,
+    timeout: 15000,
+    maxBuffer: 8192,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+  const proof = JSON.parse(output);
+  assert.deepEqual(proof, {
+    supplied: true,
+    absoluteJavaScriptEntry: true,
+    verifiedIdentity: true,
+    npmRunContext: true,
+  });
+  t.diagnostic(JSON.stringify(proof));
 });

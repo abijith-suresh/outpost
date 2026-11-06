@@ -28,6 +28,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run format:check && npm run lint && npm run test:policy && npm run verify --workspaces --if-present",
     "version:packages": "changeset version && npm install --package-lock-only --ignore-scripts",
+    "probe:npm-wait": "node scripts/probe-npm-wait.mjs",
     "prepare:prerelease": "node scripts/prerelease.mjs",
     "install:prerelease": "node scripts/install-prerelease.mjs",
     "check:prerelease": "node scripts/check-prerelease.mjs",

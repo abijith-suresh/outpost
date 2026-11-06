@@ -25,14 +25,12 @@ const safe = (sink, value) => {
     /* Never replace child outcome. */
   }
 };
-export function locateNpm(command, trace) {
-  if (!path.isAbsolute(command) || path.basename(command).toLowerCase() !== "npm.cmd")
-    throw refusal("npm-locator");
-  return observer.verifyPinnedNpm(
-    path.join(path.dirname(command), "node_modules/npm/bin/npm-cli.js"),
-    trace
-  ).entry;
+export function suppliedNpmEntry(entry, trace) {
+  if (!entry || !path.isAbsolute(entry) || !/\.(?:c?js|mjs)$/i.test(entry))
+    throw refusal("npm-entry");
+  return observer.verifyPinnedNpm(entry, trace).entry;
 }
+
 function git(root, args) {
   const env = {
     ...process.env,
@@ -123,7 +121,7 @@ export async function measureOwned(root, directory, identity, operation, sink = 
   return result;
 }
 const RUNNER_STAGES = new Set([
-  "locator",
+  "npm-entry",
   "parent-attach",
   "source-preflight",
   "source-files",
@@ -131,7 +129,7 @@ const RUNNER_STAGES = new Set([
   "warmup",
   "measured-child",
 ]);
-let runnerStage = "locator";
+let runnerStage = "npm-entry";
 const markStage = (stage) => {
   if (RUNNER_STAGES.has(stage)) runnerStage = stage;
 };
@@ -285,16 +283,17 @@ export async function runProbe(
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    if (process.argv.length !== 4 || process.argv[2] !== "--npm-command")
-      throw refusal("invocation");
+    if (process.argv.length !== 2) throw refusal("invocation");
     const sink = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
-    const entry = parentPreflight(1, sink, (trace) => locateNpm(process.argv[3], trace));
+    const entry = parentPreflight(1, sink, (trace) =>
+      suppliedNpmEntry(process.env.npm_execpath, trace)
+    );
     await runProbe(process.cwd(), entry, sink);
   } catch (error) {
     const allowed = [
       "invocation",
       "scratch-location",
-      "npm-locator",
+      "npm-entry",
       "git-environment",
       "diagnostic-head",
       "source-pins",

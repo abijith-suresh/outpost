@@ -459,7 +459,9 @@ eligible. Existing CI and the trusted-main artifact dispatch remain independent.
 
 The runner pins the selected source/tree/lock in `scripts/probe-npm-wait.mjs`,
 checks the installed npm sources and hook methods, and refuses unavailable source
-without a moving-ref fallback. An explicit source fetch and the ordinary root
+without a moving-ref fallback. The private root `probe:npm-wait` script runs through bash `npm run` and uses
+that npm invocation's supplied `npm_execpath`, with no wrapper lookup or fallback.
+An explicit source fetch and the ordinary root
 cache warmup precede measurement. The measured child retains the preparation
 install's 180-second deadline and scripts-disabled arguments. It writes bounded,
 private, opaque wait observations inside owned scratch, then checks source
@@ -469,6 +471,9 @@ Two parent-only preflight records identify exact-version/layout matches and
 pinned-file/hook results with fixed numeric IDs. They reuse the existing checks,
 stop at the first refusal, and never print observed versions, paths or hashes.
 The fixed outer stage identifies the parent operation, not proof a child ran.
+This route includes npm-run wrapper context, unlike the earlier direct-Node probe.
+It is closer to the preparation helper convention but remains a diagnostic
+execution with different setup and no Chromium stage, not an identical candidate.
 
 This observer changes scheduling and rejection observation. Resource counts cover
 only whitelisted resources under observed attempt contexts. Counts do not identify

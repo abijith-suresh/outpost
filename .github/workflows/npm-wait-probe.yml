@@ -35,8 +35,5 @@ jobs:
         shell: bash
         run: npm install --global npm@11.16.0
       - name: One install-only observation, without candidate acceptance
-        shell: pwsh
-        run: |
-          $npmCommand = (Get-Command npm.cmd -CommandType Application -ErrorAction Stop).Source
-          node scripts/probe-npm-wait.mjs --npm-command "$npmCommand"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: bash
+        run: npm run probe:npm-wait
