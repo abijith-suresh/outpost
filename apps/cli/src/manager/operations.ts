@@ -8,6 +8,7 @@ import { unregisterRepository } from "../application/repo-remove.js";
 import { restoreRepository } from "../application/repo-restore.js";
 import { registerRepository } from "../application/repositories.js";
 import { runRepoTag, setFutureRoot, setInstructions } from "../application/settings.js";
+import { inspectWorkspaceReadiness } from "../application/workspace-readiness.js";
 import { verifyBorrowed } from "../borrowed-repo.js";
 import { loadConfig, loadRepoRegistry } from "../config.js";
 import { verifyRetainedRepository } from "../managed-repo.js";
@@ -17,6 +18,7 @@ const text = Schema.String.check(Schema.isMaxLength(4096));
 const handle = Schema.String.check(Schema.isPattern(/^[0-9a-f-]{36}$/));
 const Action = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("register"), checkoutPath: text, name: text }),
+  Schema.Struct({ kind: Schema.Literal("inspect-workspace"), handle }),
   Schema.Struct({
     kind: Schema.Literal("import"),
     checkoutPath: text,
@@ -45,6 +47,21 @@ export type OperationState = {
   id: string;
   state: "accepted" | "running" | "draining" | "succeeded" | "failed" | "unknown";
   message?: string;
+  result?: {
+    kind: "workspace-readiness";
+    checkedAt: string;
+    readiness: "ready" | "partial" | "not-ready";
+    reason: "none" | "needs-inspection";
+    members: Array<{
+      name: string;
+      readiness: "ready" | "not-ready";
+      workingState: "clean" | "dirty" | "unknown";
+      trackedEntries?: number;
+      untrackedEntries?: number;
+      conflictedEntries?: number;
+      reason: "none" | "needs-inspection";
+    }>;
+  };
 };
 /** Lifetime is the process instance, deliberately independent of browser sessions. */
 export class ManagerOperations {
@@ -125,6 +142,7 @@ export class ManagerOperations {
     this.active = true;
     let admitted = false;
     let safeImportError: string | undefined;
+    let staleRead = false;
     const context = {
       ...this.context,
       beforeLock: Effect.tryPromise({
@@ -164,7 +182,10 @@ export class ManagerOperations {
     };
     result.state = "running";
     record.done = Effect.runPromise(
-      this.execute(input.operation, input.revision).pipe(
+      this.execute(input.operation, input.revision, () => {
+        admitted = true;
+        acknowledge();
+      }).pipe(
         Effect.tapError((error) =>
           Effect.sync(() => {
             if (
@@ -180,12 +201,27 @@ export class ManagerOperations {
               if (error.safeInput === "multiple-remotes")
                 safeImportError = "Enter the name of the remote to import.";
             }
+            if (
+              input.operation.kind === "inspect-workspace" &&
+              admitted &&
+              typeof error === "object" &&
+              error !== null &&
+              "reason" in error &&
+              (error as { reason: unknown }).reason === "stale-state"
+            )
+              staleRead = true;
             if (!admitted && !record.error) {
               const reason: unknown =
                 typeof error === "object" && error !== null && "reason" in error
                   ? error.reason
                   : undefined;
-              if (reason === "stale-state")
+              if (reason === "identity-changed")
+                record.error = new RequestFailure(
+                  409,
+                  "identity-changed",
+                  "Selected home changed. Preserve state and inspect before restarting."
+                );
+              else if (reason === "stale-state")
                 record.error = new RequestFailure(
                   409,
                   "stale-state",
@@ -212,20 +248,25 @@ export class ManagerOperations {
       { signal: abort.signal }
     )
       .then(
-        () => {
+        (value) => {
           result.state = "succeeded";
+          if (value && "kind" in value && value.kind === "workspace-readiness")
+            result.result = value;
           result.message =
-            input.operation.kind === "verify-registration"
-              ? "Registration identity verified at request time. Working content was not checked."
-              : "Action completed.";
+            input.operation.kind === "inspect-workspace"
+              ? "Readiness check completed."
+              : input.operation.kind === "verify-registration"
+                ? "Registration identity verified at request time. Working content was not checked."
+                : "Action completed.";
         },
         () => {
-          result.state = admitted && !safeImportError ? "unknown" : "failed";
-          result.message =
-            safeImportError ??
-            (admitted
-              ? "The action did not complete normally. Preserve state and inspect with the CLI before retrying."
-              : "Action refused before admission. Reload recorded state and inspect the selected input.");
+          result.state = admitted && !safeImportError && !staleRead ? "unknown" : "failed";
+          result.message = staleRead
+            ? "Recorded state changed during the check. Reload and check again."
+            : (safeImportError ??
+              (admitted
+                ? "The action did not complete normally. Preserve state and inspect with the CLI before retrying."
+                : "Action refused before admission. Reload recorded state and inspect the selected input."));
         }
       )
       .finally(() => {
@@ -236,8 +277,59 @@ export class ManagerOperations {
     if (record.error) throw record.error;
     return { ...result };
   }
-  private execute(action: Action, revision: string) {
+  private execute(action: Action, revision: string, admitRead: () => void) {
     return Effect.gen({ self: this }, function* () {
+      if (action.kind === "inspect-workspace") {
+        const pin = yield* this.inventory.beginWorkspaceRead(action.handle, revision).pipe(
+          Effect.mapError((error) =>
+            error.reason === "identity-changed"
+              ? error
+              : new InvocationError({
+                  message: "Recorded state changed or workspace is unavailable.",
+                  reason: "stale-state",
+                })
+          )
+        );
+        yield* Effect.sync(admitRead);
+        const data = yield* inspectWorkspaceReadiness({ ticket: pin.ticket });
+        yield* this.inventory.finishWorkspaceRead(action.handle, pin).pipe(
+          Effect.mapError(
+            () =>
+              new InvocationError({
+                message: "Recorded state changed during inspection.",
+                reason: "stale-state",
+              })
+          )
+        );
+        if (
+          data.resumable !== (data.status === "ready") ||
+          data.worktrees.some((m) => m.resumable !== (m.status === "ready"))
+        )
+          return yield* Effect.fail(new Error("Inconsistent readiness"));
+        return {
+          kind: "workspace-readiness" as const,
+          checkedAt: new Date().toISOString(),
+          readiness: data.status,
+          reason: data.status === "ready" ? ("none" as const) : ("needs-inspection" as const),
+          members: data.worktrees.map((m) => {
+            const w = m.workingState;
+            const known = w && !w.truncated && w.status !== "unknown";
+            return {
+              name: m.name,
+              readiness: m.status,
+              workingState: known ? w.status : ("unknown" as const),
+              ...(known
+                ? {
+                    trackedEntries: w.trackedEntries,
+                    untrackedEntries: w.untrackedEntries,
+                    conflictedEntries: w.conflictedEntries,
+                  }
+                : {}),
+              reason: m.resumable ? ("none" as const) : ("needs-inspection" as const),
+            };
+          }),
+        };
+      }
       if (action.kind === "import") {
         const path = yield* Path.Path;
         if (!path.isAbsolute(action.checkoutPath))

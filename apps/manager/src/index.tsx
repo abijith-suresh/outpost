@@ -26,6 +26,9 @@ function App() {
   const [detail, setDetail] = createSignal<WorkspaceDetail>(),
     [settings, setSettings] = createSignal<Settings>(),
     [dialog, setDialog] = createSignal("");
+  const [workspaceHandle, setWorkspaceHandle] = createSignal(""),
+    [readiness, setReadiness] = createSignal<Operation["result"]>(),
+    [readinessRevision, setReadinessRevision] = createSignal("");
   const [selected, setSelected] = createSignal(""),
     [name, setName] = createSignal(""),
     [remoteName, setRemoteName] = createSignal(""),
@@ -81,6 +84,7 @@ function App() {
   let controller: AbortController | undefined;
   let pollTimer: number | undefined;
   let activeInput: OperationInput | undefined;
+  let activeRevision = "";
   const message = (e: unknown) => (e instanceof Error ? e.message : "Request failed.");
   async function load(cursor?: string) {
     if (section() === "settings" || !session()) return;
@@ -179,6 +183,14 @@ function App() {
   repair();
   async function follow(op: Operation) {
     setOperation(op);
+    if (
+      activeInput?.kind === "inspect-workspace" &&
+      activeInput.handle === workspaceHandle() &&
+      op.result
+    ) {
+      setReadiness(op.result);
+      setReadinessRevision(activeRevision);
+    }
     if (["accepted", "running", "draining"].includes(op.state)) {
       pollTimer = window.setTimeout(async () => {
         try {
@@ -251,6 +263,7 @@ function App() {
     });
     setBusy(true);
     activeInput = input;
+    activeRevision = revision;
     setError("");
     try {
       const accepted = await api.submit(revision, input, requestId);
@@ -285,6 +298,8 @@ function App() {
     }
   }
   async function openWorkspace(handle: string) {
+    setWorkspaceHandle(handle);
+    setReadiness(undefined);
     controller?.abort();
     const c = new AbortController();
     controller = c;
@@ -657,7 +672,52 @@ function App() {
                     <button type="button" onClick={() => void copyPath(detail()?.ticket)}>
                       Copy ticket ID
                     </button>
-                    <p class="muted">Recorded metadata. Working state: Not checked.</p>
+                    <p class="muted">
+                      Recorded metadata. Working state is checked only on request.
+                    </p>
+                    <p>Checking may run Git and configured tools, which can contact a network.</p>
+                    <button
+                      type="button"
+                      disabled={busy()}
+                      onClick={() => {
+                        setReadiness(undefined);
+                        void submit(
+                          { kind: "inspect-workspace", handle: workspaceHandle() },
+                          detail()?.revision
+                        );
+                      }}
+                    >
+                      Check readiness
+                    </button>
+                    <Show when={readiness()}>
+                      {(r) => (
+                        <div class="notice">
+                          <p>
+                            Readiness: {r().readiness} · Checked {r().checkedAt}
+                          </p>
+                          <Show when={snapshot()?.revision !== readinessRevision()}>
+                            <p>Recorded state changed since this check. Check again.</p>
+                          </Show>
+                          <Show when={r().reason !== "none"}>
+                            <p>
+                              Preserve work and inspect with the CLI workspace resume or doctor
+                              command.
+                            </p>
+                          </Show>
+                          <For each={r().members}>
+                            {(m) => (
+                              <p>
+                                {m.name}: {m.readiness}, working state {m.workingState}
+                                {m.trackedEntries !== undefined
+                                  ? ` · ${m.trackedEntries} tracked, ${m.untrackedEntries} untracked, ${m.conflictedEntries} conflicts`
+                                  : ""}
+                              </p>
+                            )}
+                          </For>
+                          <p>This observation describes the time of the check.</p>
+                        </div>
+                      )}
+                    </Show>
                     <Show when={detail()?.notice}>
                       <div class="notice">{detail()?.notice}</div>
                     </Show>

@@ -119,6 +119,8 @@ export async function verifyManagerWorkflow({
     "-m",
     "tracked source"
   );
+  git("push", "local", "main");
+  git("--git-dir", importRemote, "symbolic-ref", "HEAD", "refs/heads/main");
   git("update-index", "--split-index");
   writeFileSync(join(source, "tracked.txt"), "dirty source bytes\n");
   writeFileSync(join(source, "untracked.txt"), "untracked source bytes\n");
@@ -325,6 +327,20 @@ export async function verifyManagerWorkflow({
     ).data.repos;
     assert.equal(imported.length, 2);
     assert.equal(imported.filter((repo) => repo.name === "mi" && repo.managedRepoPath).length, 1);
+    const managed = imported.find((repo) => repo.name === "mi" && repo.managedRepoPath);
+    const created = runInstalled(
+      ["create", "--ticket", "CHECK", "--type", "feat", "--repo", managed.id, "--json"],
+      { OUTPOST_HOME: home }
+    );
+    assert.equal(created.status, 0, created.stderr);
+    await page.getByRole("button", { name: "Workspaces", exact: true }).click();
+    await page.getByRole("button", { name: "Details", exact: true }).click();
+    await finished(() =>
+      page.getByRole("button", { name: "Check readiness", exact: true }).click()
+    );
+    await expect(page.getByText(/Readiness: ready/)).toBeVisible();
+    await expect(page.getByText(/working state clean/)).toBeVisible();
+
     assert.equal(
       (await page.locator("body").innerText()).includes("SECRET_TRANSPORT_MARKER"),
       false

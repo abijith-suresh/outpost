@@ -392,6 +392,69 @@ export class RecordedInventory {
       };
     });
   }
+  /** Pin a read-only inspection to the submitted recorded view without a write lock. */
+  beginWorkspaceRead(handle: string, revision: string) {
+    return Effect.gen({ self: this }, function* () {
+      const key = this.resolve(handle);
+      const expected = this.fingerprint;
+      if (!key?.startsWith("workspace:") || !revision || revision !== this.token || !expected)
+        return yield* new InvocationError({
+          message: "Recorded state changed.",
+          reason: "stale-state",
+        });
+      const checkHome = Effect.tryPromise({
+        try: () => this.files.validate(),
+        catch: () =>
+          new InvocationError({ message: "Selected home changed.", reason: "identity-changed" }),
+      });
+      if (!(yield* checkHome))
+        return yield* new InvocationError({
+          message: "Selected home changed.",
+          reason: "identity-changed",
+        });
+      const capture = yield* Effect.tryPromise({ try: () => this.files.capture(), catch: failure });
+      if (
+        capture.fingerprint !== expected ||
+        revision !== this.token ||
+        !(yield* Effect.tryPromise({ try: () => this.files.validate(), catch: failure }))
+      )
+        return yield* new InvocationError({
+          message: "Recorded state changed.",
+          reason: "stale-state",
+        });
+      const ticket = key.slice(10);
+      const source = capture.files.get(`workspaces/${ticket}.json`);
+      if (
+        !source ||
+        capture.files.has(".mutation.lock") ||
+        capture.files.has(`workspaces/${ticket}.lock`)
+      )
+        return yield* failure();
+      const manifest = yield* Schema.decodeUnknownEffect(ManifestSchema)(
+        yield* Effect.try({ try: () => JSON.parse(source) as unknown, catch: failure }),
+        { onExcessProperty: "error" }
+      ).pipe(Effect.mapError(failure));
+      if (manifest.ticket !== ticket || manifest.repositories.length > 128) return yield* failure();
+      return { ticket, key, fingerprint: expected, revision };
+    });
+  }
+  finishWorkspaceRead(handle: string, pin: { key: string; fingerprint: string; revision: string }) {
+    return Effect.gen({ self: this }, function* () {
+      const capture = yield* Effect.tryPromise({ try: () => this.files.capture(), catch: failure });
+      if (
+        !(yield* Effect.tryPromise({ try: () => this.files.validate(), catch: failure })) ||
+        this.resolve(handle) !== pin.key ||
+        this.token !== pin.revision ||
+        capture.fingerprint !== pin.fingerprint ||
+        capture.files.has(".mutation.lock") ||
+        capture.files.has(`workspaces/${pin.key.slice(10)}.lock`)
+      )
+        return yield* new InvocationError({
+          message: "Recorded state changed during inspection.",
+          reason: "stale-state",
+        });
+    });
+  }
   /** Call only inside the existing home mutation lock. Lock itself is excluded from revision comparison. */
   checkRevision(token: string) {
     return Effect.gen({ self: this }, function* () {
